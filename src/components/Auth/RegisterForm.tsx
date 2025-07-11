@@ -92,7 +92,7 @@ export const RegisterForm: React.FC = () => {
               <div className="bg-blue-600 p-2 rounded-lg">
                 <Building2 className="h-8 w-8 text-white" />
               </div>
-              <span className="text-2xl font-bold text-gray-900">My Business</span>
+              <span className="text-2xl font-bold text-gray-900">{formData.business_name || 'My Business'}</span>
             </div>
           </div>
           <h2 className="mt-6 text-center text-3xl font-extrabold text-gray-900">

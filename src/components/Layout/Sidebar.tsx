@@ -73,7 +73,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose }) => {
           {/* Logo */}
           <div className="flex items-center justify-center h-16 px-4 bg-blue-600 text-white">
             <Building2 className="h-8 w-8 mr-2" />
-            <span className="text-xl font-bold">My Business</span>
+            <span className="text-xl font-bold">{user?.business_name || 'My Business'}</span>
           </div>
 
           {/* Navigation */}
