@@ -1,0 +1,29 @@
+{
+  "name": "hr-business-management",
+  "version": "1.0.0",
+  "framework": "react",
+  "buildCommand": "bun run build",
+  "outputDirectory": "dist",
+  "installCommand": "bun install",
+  "devCommand": "bun run dev",
+  "rootDirectory": "./",
+  "regions": ["sfo1"],
+  "functions": {
+    "backend/dist/server_sqlite.js": {
+      "runtime": "nodejs18.x",
+      "memory": 512,
+      "timeout": 30
+    }
+  },
+  "env": {
+    "NODE_ENV": "production",
+    "JWT_SECRET": "your-secure-jwt-secret-here-change-this",
+    "FRONTEND_URL": "https://your-domain.vercel.app"
+  },
+  "rewrites": [
+    {
+      "source": "/api/(.*)",
+      "destination": "/backend/dist/server_sqlite.js"
+    }
+  ]
+}

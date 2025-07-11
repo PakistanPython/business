@@ -1,0 +1,39 @@
+{
+  "version": 2,
+  "name": "hr-business-management",
+  "builds": [
+    {
+      "src": "backend/dist/server_sqlite.js",
+      "use": "@vercel/node"
+    },
+    {
+      "src": "package.json",
+      "use": "@vercel/static-build",
+      "config": {
+        "distDir": "dist"
+      }
+    }
+  ],
+  "routes": [
+    {
+      "src": "/api/(.*)",
+      "dest": "/backend/dist/server_sqlite.js"
+    },
+    {
+      "src": "/(.*)",
+      "dest": "/dist/$1"
+    }
+  ],
+  "env": {
+    "NODE_ENV": "production",
+    "JWT_SECRET": "@jwt_secret",
+    "FRONTEND_URL": "https://hr-business-management.vercel.app"
+  },
+  "functions": {
+    "backend/dist/server_sqlite.js": {
+      "maxDuration": 30
+    }
+  },
+  "installCommand": "bun install && cd backend && bun install",
+  "buildCommand": "bun run build && cd backend && bun run build"
+}

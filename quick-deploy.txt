@@ -1,0 +1,88 @@
+#!/bin/bash
+
+# 🚀 Quick Deploy Script for HR Management System
+# This script prepares your project for deployment to get a live URL
+
+echo "🚀 HR Management System - Quick Deploy Preparation"
+echo "=================================================="
+
+# Check if bun is installed
+if ! command -v bun &> /dev/null; then
+    echo "❌ Bun is not installed. Please install bun first: https://bun.sh"
+    exit 1
+fi
+
+echo "📦 Installing frontend dependencies..."
+bun install
+
+echo "🏗️ Building frontend..."
+bun run build
+
+if [ $? -ne 0 ]; then
+    echo "❌ Frontend build failed!"
+    exit 1
+fi
+
+echo "📦 Installing backend dependencies..."
+cd backend
+bun install
+
+echo "🏗️ Building backend..."
+bun run build
+
+if [ $? -ne 0 ]; then
+    echo "❌ Backend build failed!"
+    cd ..
+    exit 1
+fi
+
+cd ..
+
+echo "✅ Build completed successfully!"
+echo ""
+echo "🌐 Your project is ready for deployment!"
+echo ""
+echo "📁 Files ready for deployment:"
+echo "   - Frontend: ./dist/"
+echo "   - Backend: ./backend/dist/"
+echo ""
+echo "🚀 Next steps to get your live URL:"
+echo ""
+echo "Option 1 - Vercel (Recommended):"
+echo "   1. Go to https://vercel.com"
+echo "   2. Connect your GitHub repository"
+echo "   3. Set build command: bun install && bun run build && cd backend && bun run build"
+echo "   4. Set output directory: dist"
+echo "   5. Add environment variables:"
+echo "      - NODE_ENV=production"
+echo "      - JWT_SECRET=your-secure-secret-key"
+echo "      - FRONTEND_URL=https://your-domain.vercel.app"
+echo "   6. Deploy and get your live URL!"
+echo ""
+echo "Option 2 - Netlify:"
+echo "   1. Go to https://netlify.com"
+echo "   2. Drag & drop the 'dist' folder"
+echo "   3. Get instant live URL!"
+echo ""
+echo "Option 3 - Using Vercel CLI (fastest):"
+echo "   1. npm install -g vercel"
+echo "   2. vercel login"
+echo "   3. vercel (follow prompts)"
+echo "   4. Get your live URL instantly!"
+echo ""
+echo "🎉 Your HR Management System will be live in minutes!"
+echo "📖 Check LIVE_DEPLOYMENT_GUIDE.md for detailed instructions"
+
+# Create a deployment status file
+cat > deployment-status.txt << EOF
+✅ Build Status: SUCCESS
+📅 Built on: $(date)
+🏗️ Frontend: Built successfully (dist/ folder created)
+🏗️ Backend: Built successfully (backend/dist/ folder created)
+🚀 Ready for deployment to get live URL
+
+Next: Choose a deployment platform and follow LIVE_DEPLOYMENT_GUIDE.md
+EOF
+
+echo ""
+echo "📄 Deployment status saved to: deployment-status.txt"
