@@ -132,6 +132,96 @@ router.get('/', async (req, res) => {
         res.status(500).json({ error: 'Failed to fetch payroll records' });
     }
 });
+router.get('/:id/payslip', async (req, res) => {
+    try {
+        const payrollId = parseInt(req.params.id);
+        if (isNaN(payrollId)) {
+            return res.status(400).json({
+                success: false,
+                message: 'Invalid payroll ID'
+            });
+        }
+        const payroll = await (0, database_1.dbGet)(`
+      SELECT 
+        p.*,
+        (e.first_name || ' ' || e.last_name) as employee_name,
+        e.employee_code,
+        e.position,
+        e.department,
+        e.hire_date,
+        u.business_name
+      FROM payroll p
+      JOIN employees e ON p.employee_id = e.id
+      JOIN users u ON p.business_id = u.id
+      WHERE p.id = ? AND p.business_id = ?
+    `, [payrollId, req.user.userId]);
+        if (!payroll) {
+            return res.status(404).json({
+                success: false,
+                message: 'Payroll record not found'
+            });
+        }
+        const payslipData = {
+            payroll_id: payroll.id,
+            employee: {
+                name: payroll.employee_name,
+                employee_id: payroll.employee_code,
+                position: payroll.position,
+                department: payroll.department,
+                join_date: payroll.hire_date
+            },
+            company: {
+                name: payroll.business_name || 'Company Name'
+            },
+            pay_period: {
+                start: payroll.pay_period_start,
+                end: payroll.pay_period_end
+            },
+            earnings: {
+                basic_salary: parseFloat(payroll.basic_salary),
+                overtime_amount: parseFloat(payroll.overtime_amount || 0),
+                bonus: parseFloat(payroll.bonus || 0),
+                allowances: parseFloat(payroll.allowances || 0),
+                total_earnings: parseFloat(payroll.gross_salary)
+            },
+            deductions: {
+                tax_deduction: parseFloat(payroll.tax_deduction || 0),
+                insurance_deduction: parseFloat(payroll.insurance_deduction || 0),
+                other_deductions: parseFloat(payroll.other_deductions || 0),
+                total_deductions: parseFloat(payroll.total_deductions)
+            },
+            summary: {
+                gross_salary: parseFloat(payroll.gross_salary),
+                total_deductions: parseFloat(payroll.total_deductions),
+                net_salary: parseFloat(payroll.net_salary)
+            },
+            attendance: {
+                total_working_days: payroll.total_working_days || 0,
+                total_present_days: payroll.total_present_days || 0,
+                total_overtime_hours: payroll.total_overtime_hours || 0
+            },
+            payment: {
+                method: payroll.payment_method,
+                status: payroll.status,
+                generated_date: new Date().toISOString()
+            },
+            notes: payroll.notes
+        };
+        res.json({
+            success: true,
+            data: {
+                payslip: payslipData
+            }
+        });
+    }
+    catch (error) {
+        console.error('Generate payslip error:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Internal server error'
+        });
+    }
+});
 router.get('/:id', async (req, res) => {
     try {
         const { id } = req.params;

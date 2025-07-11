@@ -87,6 +87,47 @@ router.get('/', [
         });
     }
 });
+router.get('/:id/payments', async (req, res) => {
+    try {
+        const userId = req.user.userId;
+        const charityId = parseInt(req.params.id);
+        if (isNaN(charityId)) {
+            return res.status(400).json({
+                success: false,
+                message: 'Invalid charity ID'
+            });
+        }
+        const charity = await (0, database_1.dbGet)('SELECT id FROM charity WHERE id = ? AND user_id = ?', [charityId, userId]);
+        if (!charity) {
+            return res.status(404).json({
+                success: false,
+                message: 'Charity record not found'
+            });
+        }
+        const payments = await (0, database_1.dbAll)(`SELECT 
+        amount,
+        description,
+        date,
+        created_at
+      FROM transactions 
+      WHERE user_id = ? AND transaction_type = 'charity' AND reference_id = ?
+      ORDER BY date DESC, created_at DESC`, [userId, charityId]);
+        res.json({
+            success: true,
+            data: {
+                charity_id: charityId,
+                payments: payments
+            }
+        });
+    }
+    catch (error) {
+        console.error('Get charity payments error:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Internal server error'
+        });
+    }
+});
 router.get('/:id', async (req, res) => {
     try {
         const userId = req.user.userId;

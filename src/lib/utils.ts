@@ -6,8 +6,8 @@ export function cn(...inputs: ClassValue[]) {
 }
 
 // Format currency
-export const formatCurrency = (amount: number, currency = 'USD'): string => {
-  return new Intl.NumberFormat('en-US', {
+export const formatCurrency = (amount: number, currency = 'PKR'): string => {
+  return new Intl.NumberFormat('en-PK', {
     style: 'currency',
     currency: currency,
     minimumFractionDigits: 2,

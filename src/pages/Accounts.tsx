@@ -24,6 +24,7 @@ import {
 } from 'lucide-react';
 import { accountApi } from '../lib/api';
 import { Account, AccountForm } from '../lib/types';
+import { formatCurrency } from '../lib/utils';
 import toast from 'react-hot-toast';
 
 export const AccountsPage: React.FC = () => {
@@ -46,7 +47,8 @@ export const AccountsPage: React.FC = () => {
     from_account_id: 0,
     to_account_id: 0,
     amount: 0,
-    description: ''
+    description: '',
+    date: new Date().toISOString().split('T')[0]
   });
 
   useEffect(() => {
@@ -158,7 +160,8 @@ export const AccountsPage: React.FC = () => {
       from_account_id: 0,
       to_account_id: 0,
       amount: 0,
-      description: ''
+      description: '',
+      date: new Date().toISOString().split('T')[0]
     });
   };
 
@@ -255,7 +258,7 @@ export const AccountsPage: React.FC = () => {
             <DollarSign className="h-4 w-4 text-blue-600" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold text-blue-900">${totalBalance.toFixed(2)}</div>
+            <div className="text-2xl font-bold text-blue-900">{formatCurrency(totalBalance)}</div>
             <p className="text-xs text-blue-600 mt-1">Across all accounts</p>
           </CardContent>
         </Card>
@@ -270,8 +273,7 @@ export const AccountsPage: React.FC = () => {
               {accounts.filter(a => a.account_type === 'cash').length}
             </div>
             <p className="text-xs text-green-600 mt-1">
-              {/* --- FIX APPLIED HERE --- */}
-              ${accounts.filter(a => a.account_type === 'cash').reduce((sum, a) => sum + Number(a.balance), 0).toFixed(2)}
+              {formatCurrency(accounts.filter(a => a.account_type === 'cash').reduce((sum, a) => sum + Number(a.balance), 0))}
             </p>
           </CardContent>
         </Card>
@@ -286,8 +288,7 @@ export const AccountsPage: React.FC = () => {
               {accounts.filter(a => a.account_type === 'bank').length}
             </div>
             <p className="text-xs text-purple-600 mt-1">
-              {/* --- FIX APPLIED HERE --- */}
-              ${accounts.filter(a => a.account_type === 'bank').reduce((sum, a) => sum + Number(a.balance), 0).toFixed(2)}
+              {formatCurrency(accounts.filter(a => a.account_type === 'bank').reduce((sum, a) => sum + Number(a.balance), 0))}
             </p>
           </CardContent>
         </Card>
@@ -302,8 +303,7 @@ export const AccountsPage: React.FC = () => {
               {accounts.filter(a => a.account_type === 'savings').length}
             </div>
             <p className="text-xs text-orange-600 mt-1">
-              {/* --- FIX APPLIED HERE --- */}
-              ${accounts.filter(a => a.account_type === 'savings').reduce((sum, a) => sum + Number(a.balance), 0).toFixed(2)}
+              {formatCurrency(accounts.filter(a => a.account_type === 'savings').reduce((sum, a) => sum + Number(a.balance), 0))}
             </p>
           </CardContent>
         </Card>
@@ -380,7 +380,7 @@ export const AccountsPage: React.FC = () => {
                       <TableCell className="font-medium text-lg">
                         {/* --- FIX APPLIED HERE --- */}
                         <span className={Number(account.balance) >= 0 ? 'text-green-600' : 'text-red-600'}>
-                          ${Number(account.balance).toFixed(2)}
+                          {formatCurrency(Number(account.balance))}
                         </span>
                       </TableCell>
                       <TableCell>{new Date(account.created_at).toLocaleDateString()}</TableCell>
@@ -525,7 +525,7 @@ export const AccountsPage: React.FC = () => {
                     {accounts.map((account) => (
                       <SelectItem key={account.id} value={account.id.toString()}>
                         {/* --- FIX APPLIED HERE --- */}
-                        {account.account_name} (${Number(account.balance).toFixed(2)})
+                        {account.account_name} ({formatCurrency(Number(account.balance))})
                       </SelectItem>
                     ))}
                   </SelectContent>
@@ -545,7 +545,7 @@ export const AccountsPage: React.FC = () => {
                     {accounts.map((account) => (
                       <SelectItem key={account.id} value={account.id.toString()} disabled={account.id === transferForm.from_account_id}>
                         {/* --- FIX APPLIED HERE --- */}
-                        {account.account_name} (${Number(account.balance).toFixed(2)})
+                        {account.account_name} ({formatCurrency(Number(account.balance))})
                       </SelectItem>
                     ))}
                   </SelectContent>
@@ -562,6 +562,17 @@ export const AccountsPage: React.FC = () => {
                   value={transferForm.amount}
                   onChange={(e) => setTransferForm({...transferForm, amount: parseFloat(e.target.value) || 0})}
                   placeholder="0.00"
+                  required
+                />
+              </div>
+
+              <div className="grid gap-2">
+                <Label htmlFor="transfer_date">Transfer Date *</Label>
+                <Input
+                  id="transfer_date"
+                  type="date"
+                  value={transferForm.date}
+                  onChange={(e) => setTransferForm({...transferForm, date: e.target.value})}
                   required
                 />
               </div>

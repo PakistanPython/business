@@ -37,7 +37,8 @@ export const IncomePage: React.FC = () => {
     description: '',
     category: '',
     source: '',
-    date: new Date().toISOString().split('T')[0]
+    date: new Date().toISOString().split('T')[0],
+    charity_percentage: 2.5
   });
 
   useEffect(() => {
@@ -120,7 +121,8 @@ export const IncomePage: React.FC = () => {
       description: '',
       category: '',
       source: '',
-      date: new Date().toISOString().split('T')[0]
+      date: new Date().toISOString().split('T')[0],
+      charity_percentage: 2.5
     });
     setEditingIncome(null);
   };
@@ -240,6 +242,23 @@ export const IncomePage: React.FC = () => {
                   placeholder="Optional description..."
                   rows={3}
                 />
+              </div>
+
+              <div>
+                <Label htmlFor="charity_percentage">Charity Percentage (%)</Label>
+                <Input
+                  id="charity_percentage"
+                  type="number"
+                  step="0.1"
+                  min="0"
+                  max="100"
+                  value={formData.charity_percentage || 2.5}
+                  onChange={(e) => setFormData(prev => ({ ...prev, charity_percentage: parseFloat(e.target.value) || 0 }))}
+                  placeholder="e.g., 2.5"
+                />
+                <p className="text-xs text-gray-500 mt-1">
+                  This percentage will be automatically calculated as charity requirement
+                </p>
               </div>
 
               <DialogFooter>

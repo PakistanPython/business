@@ -140,7 +140,11 @@ router.post('/', [
         .withMessage('Source cannot exceed 100 characters'),
     (0, express_validator_1.body)('date')
         .isISO8601()
-        .withMessage('Date must be valid ISO date')
+        .withMessage('Date must be valid ISO date'),
+    (0, express_validator_1.body)('charity_percentage')
+        .optional()
+        .isFloat({ min: 0, max: 100 })
+        .withMessage('Charity percentage must be between 0 and 100')
 ], async (req, res) => {
     try {
         const errors = (0, express_validator_1.validationResult)(req);
@@ -152,10 +156,10 @@ router.post('/', [
             });
         }
         const userId = req.user.userId;
-        const { amount, description, category = 'General', source, date } = req.body;
+        const { amount, description, category = 'General', source, date, charity_percentage = 2.5 } = req.body;
         try {
             await (0, database_1.dbRun)('BEGIN TRANSACTION');
-            const incomeResult = await (0, database_1.dbRun)('INSERT INTO income (user_id, amount, description, category, source, date) VALUES (?, ?, ?, ?, ?, ?)', [userId, amount, description, category, source, date]);
+            const incomeResult = await (0, database_1.dbRun)('INSERT INTO income (user_id, amount, description, category, source, date, charity_percentage) VALUES (?, ?, ?, ?, ?, ?, ?)', [userId, amount, description, category, source, date, charity_percentage]);
             const incomeId = incomeResult.lastID;
             const incomeRecord = await (0, database_1.dbGet)('SELECT * FROM income WHERE id = ?', [incomeId]);
             const charityAmount = parseFloat(incomeRecord.charity_required);
@@ -210,7 +214,11 @@ router.put('/:id', [
     (0, express_validator_1.body)('date')
         .optional()
         .isISO8601()
-        .withMessage('Date must be valid ISO date')
+        .withMessage('Date must be valid ISO date'),
+    (0, express_validator_1.body)('charity_percentage')
+        .optional()
+        .isFloat({ min: 0, max: 100 })
+        .withMessage('Charity percentage must be between 0 and 100')
 ], async (req, res) => {
     try {
         const errors = (0, express_validator_1.validationResult)(req);
@@ -236,7 +244,7 @@ router.put('/:id', [
                 message: 'Income record not found'
             });
         }
-        const { amount, description, category, source, date } = req.body;
+        const { amount, description, category, source, date, charity_percentage } = req.body;
         const oldAmount = existingRecord.amount;
         const updates = [];
         const values = [];
@@ -260,6 +268,10 @@ router.put('/:id', [
             updates.push('date = ?');
             values.push(date);
         }
+        if (charity_percentage !== undefined) {
+            updates.push('charity_percentage = ?');
+            values.push(charity_percentage);
+        }
         if (updates.length === 0) {
             return res.status(400).json({
                 success: false,
@@ -270,8 +282,6 @@ router.put('/:id', [
         try {
             await (0, database_1.dbRun)('BEGIN TRANSACTION');
             await (0, database_1.dbRun)(`UPDATE income SET ${updates.join(', ')}, updated_at = CURRENT_TIMESTAMP WHERE id = ?`, values);
-            if (amount !== undefined && amount !== oldAmount) {
-            }
             const updatedRecord = await (0, database_1.dbGet)('SELECT * FROM income WHERE id = ?', [incomeId]);
             await (0, database_1.dbRun)('COMMIT');
             res.json({

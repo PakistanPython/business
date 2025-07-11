@@ -66,6 +66,47 @@ router.get('/', [
         });
     }
 });
+router.get('/:id/payments', async (req, res) => {
+    try {
+        const userId = req.user.userId;
+        const loanId = parseInt(req.params.id);
+        if (isNaN(loanId)) {
+            return res.status(400).json({
+                success: false,
+                message: 'Invalid loan ID'
+            });
+        }
+        const loan = await (0, database_1.dbGet)('SELECT id FROM loans WHERE id = ? AND user_id = ?', [loanId, userId]);
+        if (!loan) {
+            return res.status(404).json({
+                success: false,
+                message: 'Loan not found'
+            });
+        }
+        const payments = await (0, database_1.dbAll)(`SELECT 
+        amount,
+        description,
+        date,
+        created_at
+      FROM transactions 
+      WHERE user_id = ? AND transaction_type = 'loan_payment' AND reference_id = ?
+      ORDER BY date DESC, created_at DESC`, [userId, loanId]);
+        res.json({
+            success: true,
+            data: {
+                loan_id: loanId,
+                payments: payments
+            }
+        });
+    }
+    catch (error) {
+        console.error('Get loan payments error:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Internal server error'
+        });
+    }
+});
 router.get('/:id', async (req, res) => {
     try {
         const userId = req.user.userId;

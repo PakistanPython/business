@@ -13,7 +13,7 @@ import { Switch } from '../components/ui/switch';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '../components/ui/table';
 import { Separator } from '../components/ui/separator';
 import { useAuth } from '../contexts/AuthContext';
-import { api } from '../lib/api';
+import { api, payrollApi } from '../lib/api';
 import { Payroll, PayrollStats, PayrollForm, Employee, BulkPayrollForm } from '../lib/types';
 import toast from 'react-hot-toast';
 
@@ -270,6 +270,154 @@ export const PayrollPage: React.FC = () => {
     } catch (error: any) {
       console.error('Error updating payroll status:', error);
       toast.error(error.response?.data?.error || 'Failed to update payroll status');
+    }
+  };
+
+  const handleGeneratePayslip = async (payroll: Payroll) => {
+    try {
+      const response = await payrollApi.generatePayslip(payroll.id);
+      const payslipData = response.data.data.payslip;
+      
+      // Create a printable pay slip in a new window
+      const printWindow = window.open('', '_blank');
+      if (printWindow) {
+        printWindow.document.write(`
+          <!DOCTYPE html>
+          <html>
+          <head>
+            <title>Pay Slip - ${payslipData.employee.name}</title>
+            <style>
+              body { font-family: Arial, sans-serif; margin: 20px; }
+              .header { text-align: center; border-bottom: 2px solid #333; padding-bottom: 10px; margin-bottom: 20px; }
+              .company-name { font-size: 24px; font-weight: bold; }
+              .payslip-title { font-size: 18px; margin-top: 5px; }
+              .employee-info { margin-bottom: 20px; }
+              .section { margin-bottom: 15px; }
+              .section-title { font-weight: bold; border-bottom: 1px solid #ccc; margin-bottom: 5px; }
+              .row { display: flex; justify-content: space-between; margin-bottom: 3px; }
+              .label { font-weight: bold; }
+              .amount { text-align: right; }
+              .total-row { border-top: 2px solid #333; margin-top: 10px; padding-top: 5px; font-weight: bold; }
+              .net-salary { background-color: #f0f0f0; padding: 10px; margin-top: 15px; text-align: center; font-size: 18px; font-weight: bold; }
+              @media print { body { margin: 0; } }
+            </style>
+          </head>
+          <body>
+            <div class="header">
+              <div class="company-name">${payslipData.company.name}</div>
+              <div class="payslip-title">Pay Slip</div>
+            </div>
+            
+            <div class="employee-info">
+              <div class="row">
+                <span class="label">Employee Name:</span>
+                <span>${payslipData.employee.name}</span>
+              </div>
+              <div class="row">
+                <span class="label">Employee ID:</span>
+                <span>${payslipData.employee.employee_id || 'N/A'}</span>
+              </div>
+              <div class="row">
+                <span class="label">Position:</span>
+                <span>${payslipData.employee.position || 'N/A'}</span>
+              </div>
+              <div class="row">
+                <span class="label">Department:</span>
+                <span>${payslipData.employee.department || 'N/A'}</span>
+              </div>
+              <div class="row">
+                <span class="label">Pay Period:</span>
+                <span>${new Date(payslipData.pay_period.start).toLocaleDateString()} - ${new Date(payslipData.pay_period.end).toLocaleDateString()}</span>
+              </div>
+            </div>
+            
+            <div class="section">
+              <div class="section-title">Earnings</div>
+              <div class="row">
+                <span>Basic Salary</span>
+                <span class="amount">PKR ${payslipData.earnings.basic_salary.toFixed(2)}</span>
+              </div>
+              <div class="row">
+                <span>Overtime Amount</span>
+                <span class="amount">PKR ${payslipData.earnings.overtime_amount.toFixed(2)}</span>
+              </div>
+              <div class="row">
+                <span>Bonus</span>
+                <span class="amount">PKR ${payslipData.earnings.bonus.toFixed(2)}</span>
+              </div>
+              <div class="row">
+                <span>Allowances</span>
+                <span class="amount">PKR ${payslipData.earnings.allowances.toFixed(2)}</span>
+              </div>
+              <div class="row total-row">
+                <span class="label">Total Earnings</span>
+                <span class="amount">PKR ${payslipData.earnings.total_earnings.toFixed(2)}</span>
+              </div>
+            </div>
+            
+            <div class="section">
+              <div class="section-title">Deductions</div>
+              <div class="row">
+                <span>Tax Deduction</span>
+                <span class="amount">PKR ${payslipData.deductions.tax_deduction.toFixed(2)}</span>
+              </div>
+              <div class="row">
+                <span>Insurance Deduction</span>
+                <span class="amount">PKR ${payslipData.deductions.insurance_deduction.toFixed(2)}</span>
+              </div>
+              <div class="row">
+                <span>Other Deductions</span>
+                <span class="amount">PKR ${payslipData.deductions.other_deductions.toFixed(2)}</span>
+              </div>
+              <div class="row total-row">
+                <span class="label">Total Deductions</span>
+                <span class="amount">PKR ${payslipData.deductions.total_deductions.toFixed(2)}</span>
+              </div>
+            </div>
+            
+            <div class="net-salary">
+              Net Salary: PKR ${payslipData.summary.net_salary.toFixed(2)}
+            </div>
+            
+            <div class="section">
+              <div class="section-title">Attendance</div>
+              <div class="row">
+                <span>Total Working Days</span>
+                <span>${payslipData.attendance.total_working_days}</span>
+              </div>
+              <div class="row">
+                <span>Total Present Days</span>
+                <span>${payslipData.attendance.total_present_days}</span>
+              </div>
+              <div class="row">
+                <span>Total Overtime Hours</span>
+                <span>${payslipData.attendance.total_overtime_hours}</span>
+              </div>
+            </div>
+            
+            ${payslipData.notes ? `
+            <div class="section">
+              <div class="section-title">Notes</div>
+              <p>${payslipData.notes}</p>
+            </div>
+            ` : ''}
+            
+            <div style="margin-top: 30px; text-align: center; font-size: 12px; color: #666;">
+              Generated on: ${new Date(payslipData.payment.generated_date).toLocaleDateString()}
+            </div>
+          </body>
+          </html>
+        `);
+        
+        printWindow.document.close();
+        printWindow.focus();
+        printWindow.print();
+      }
+      
+      toast.success('Pay slip generated successfully');
+    } catch (error: any) {
+      console.error('Error generating payslip:', error);
+      toast.error(error.response?.data?.message || 'Failed to generate pay slip');
     }
   };
 
@@ -542,7 +690,7 @@ export const PayrollPage: React.FC = () => {
                             Mark as Paid
                           </DropdownMenuItem>
                         )}
-                        <DropdownMenuItem>
+                        <DropdownMenuItem onClick={() => handleGeneratePayslip(payroll)}>
                           <Download className="mr-2 h-4 w-4" />
                           Generate Pay Slip
                         </DropdownMenuItem>

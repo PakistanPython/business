@@ -168,7 +168,11 @@ router.post('/', [
     .withMessage('Source cannot exceed 100 characters'),
   body('date')
     .isISO8601()
-    .withMessage('Date must be valid ISO date')
+    .withMessage('Date must be valid ISO date'),
+  body('charity_percentage')
+    .optional()
+    .isFloat({ min: 0, max: 100 })
+    .withMessage('Charity percentage must be between 0 and 100')
 ], async (req, res) => {
   try {
     const errors = validationResult(req);
@@ -181,26 +185,26 @@ router.post('/', [
     }
 
     const userId = req.user!.userId;
-    const { amount, description, category = 'General', source, date } = req.body;
+    const { amount, description, category = 'General', source, date, charity_percentage = 2.5 } = req.body;
 
     try {
       await dbRun('BEGIN TRANSACTION');
 
-      // Insert income record (charity_required is auto-calculated by the database)
+      // Insert income record with charity percentage
       const incomeResult = await dbRun(
-        'INSERT INTO income (user_id, amount, description, category, source, date) VALUES (?, ?, ?, ?, ?, ?)',
-        [userId, amount, description, category, source, date]
+        'INSERT INTO income (user_id, amount, description, category, source, date, charity_percentage) VALUES (?, ?, ?, ?, ?, ?, ?)',
+        [userId, amount, description, category, source, date, charity_percentage]
       );
 
       const incomeId = incomeResult.lastID;
 
-      // Get the created income record with calculated charity_required
+      // Get the created income record (charity_required will be auto-calculated)
       const incomeRecord = await dbGet(
         'SELECT * FROM income WHERE id = ?',
         [incomeId]
       );
 
-      // Create charity record with auto-calculated 2.5% amount
+      // Create charity record using the calculated charity_required
       const charityAmount = parseFloat(incomeRecord.charity_required);
       await dbRun(
         'INSERT INTO charity (user_id, income_id, amount_required, description) VALUES (?, ?, ?, ?)',
@@ -264,7 +268,11 @@ router.put('/:id', [
   body('date')
     .optional()
     .isISO8601()
-    .withMessage('Date must be valid ISO date')
+    .withMessage('Date must be valid ISO date'),
+  body('charity_percentage')
+    .optional()
+    .isFloat({ min: 0, max: 100 })
+    .withMessage('Charity percentage must be between 0 and 100')
 ], async (req, res) => {
   try {
     const errors = validationResult(req);
@@ -299,7 +307,7 @@ router.put('/:id', [
       });
     }
 
-    const { amount, description, category, source, date } = req.body;
+    const { amount, description, category, source, date, charity_percentage } = req.body;
     const oldAmount = existingRecord.amount;
 
     const updates: string[] = [];
@@ -325,6 +333,10 @@ router.put('/:id', [
       updates.push('date = ?');
       values.push(date);
     }
+    if (charity_percentage !== undefined) {
+      updates.push('charity_percentage = ?');
+      values.push(charity_percentage);
+    }
 
     if (updates.length === 0) {
       return res.status(400).json({
@@ -344,12 +356,7 @@ router.put('/:id', [
         values
       );
 
-      // If amount changed, update related charity record
-      if (amount !== undefined && amount !== oldAmount) {
-        // The charity_required is a generated column, so it updates automatically.
-        // We might need to trigger an update on the charity table if its schema doesn't auto-update.
-        // For now, we assume the generated column handles it.
-      }
+      // Charity required is now updated as part of the income record update above
 
       // Get updated record
       const updatedRecord = await dbGet(

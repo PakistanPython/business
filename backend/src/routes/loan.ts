@@ -78,6 +78,61 @@ router.get('/', [
   }
 });
 
+// Get loan payment history
+router.get('/:id/payments', async (req, res) => {
+  try {
+    const userId = req.user!.userId;
+    const loanId = parseInt(req.params.id);
+
+    if (isNaN(loanId)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid loan ID'
+      });
+    }
+
+    // Verify loan belongs to user
+    const loan = await dbGet(
+      'SELECT id FROM loans WHERE id = ? AND user_id = ?',
+      [loanId, userId]
+    );
+
+    if (!loan) {
+      return res.status(404).json({
+        success: false,
+        message: 'Loan not found'
+      });
+    }
+
+    // Get payment history from transactions table
+    const payments = await dbAll(
+      `SELECT 
+        amount,
+        description,
+        date,
+        created_at
+      FROM transactions 
+      WHERE user_id = ? AND transaction_type = 'loan_payment' AND reference_id = ?
+      ORDER BY date DESC, created_at DESC`,
+      [userId, loanId]
+    );
+
+    res.json({
+      success: true,
+      data: {
+        loan_id: loanId,
+        payments: payments
+      }
+    });
+  } catch (error) {
+    console.error('Get loan payments error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Internal server error'
+    });
+  }
+});
+
 // Get loan by ID
 router.get('/:id', async (req, res) => {
   try {

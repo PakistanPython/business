@@ -265,7 +265,7 @@ router.put('/:id', [
       if (amount !== undefined) {
         const newCharityAmount = amount * 0.025;
         await dbRun(
-          'UPDATE charity SET amount_required = ?, amount_remaining = amount_required - amount_paid, updated_at = CURRENT_TIMESTAMP WHERE income_id = ? AND user_id = ?',
+          'UPDATE charity SET amount_required = ?, updated_at = CURRENT_TIMESTAMP WHERE income_id = ? AND user_id = ?',
           [newCharityAmount, incomeId, userId]
         );
       }

@@ -200,7 +200,7 @@ router.put('/:id', [
             await (0, database_sqlite_1.dbRun)(`UPDATE income SET ${updates.join(', ')} WHERE id = ? AND user_id = ?`, values);
             if (amount !== undefined) {
                 const newCharityAmount = amount * 0.025;
-                await (0, database_sqlite_1.dbRun)('UPDATE charity SET amount_required = ?, amount_remaining = amount_required - amount_paid, updated_at = CURRENT_TIMESTAMP WHERE income_id = ? AND user_id = ?', [newCharityAmount, incomeId, userId]);
+                await (0, database_sqlite_1.dbRun)('UPDATE charity SET amount_required = ?, updated_at = CURRENT_TIMESTAMP WHERE income_id = ? AND user_id = ?', [newCharityAmount, incomeId, userId]);
             }
             await (0, database_sqlite_1.dbRun)('COMMIT');
             res.json({
