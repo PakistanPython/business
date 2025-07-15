@@ -39,27 +39,28 @@ router.get('/', [
     const sortOrder = req.query.sort_order as string || 'desc';
 
     // Build WHERE clause
-    let whereClause = 'WHERE user_id = ?';
-    const whereParams = [userId];
+    let whereClause = 'WHERE p.business_id = $1';
+    const whereParams: any[] = [userId];
+    let paramIndex = 2;
 
     if (category) {
-      whereClause += ' AND category = ?';
+      whereClause += ` AND c.name = $${paramIndex++}`;
       whereParams.push(category);
     }
 
     if (startDate) {
-      whereClause += ' AND date >= ?';
+      whereClause += ` AND p.date >= $${paramIndex++}`;
       whereParams.push(startDate);
     }
 
     if (endDate) {
-      whereClause += ' AND date <= ?';
+      whereClause += ` AND p.date <= $${paramIndex++}`;
       whereParams.push(endDate);
     }
 
     // Get total count
     const countResult = await dbGet(
-      `SELECT COUNT(*) as total FROM purchases ${whereClause}`,
+      `SELECT COUNT(*) as total FROM purchases p JOIN categories c ON p.category_id = c.id ${whereClause}`,
       whereParams
     );
     const total = countResult.total;
@@ -67,12 +68,13 @@ router.get('/', [
     // Get purchase records
     const purchaseRecords = await dbAll(
       `SELECT 
-        id, amount, description, category, payment_method, date, 
-        receipt_path, created_at, updated_at
-       FROM purchases 
+        p.id, p.amount, p.description, c.name as category, p.date, 
+        p.created_at, p.updated_at
+       FROM purchases p
+       JOIN categories c ON p.category_id = c.id
        ${whereClause} 
        ORDER BY ${sortBy} ${sortOrder.toUpperCase()}
-       LIMIT ? OFFSET $2`,
+       LIMIT $${paramIndex++} OFFSET $${paramIndex++}`,
       [...whereParams, limit, offset]
     );
 
@@ -82,7 +84,7 @@ router.get('/', [
     const hasPrev = page > 1;
 
     res.json({
-      success : true,
+      success: true,
       data: {
         purchases: purchaseRecords,
         pagination: {
@@ -117,16 +119,17 @@ router.get('/:id', async (req, res) => {
       });
     }
 
-    const [purchaseRecords] = await dbAll(
+    const purchaseRecord = await dbGet(
       `SELECT 
-        id, amount, description, category, payment_method, date, 
-        receipt_path, created_at, updated_at
-       FROM purchases 
-       WHERE id = ? AND user_id = $2`,
+        p.id, p.amount, p.description, c.name as category, p.date, 
+        p.created_at, p.updated_at
+       FROM purchases p
+       JOIN categories c ON p.category_id = c.id
+       WHERE p.id = $1 AND p.business_id = $2`,
       [purchaseId, userId]
-    ) as any[];
+    );
 
-    if (purchaseRecords.length === 0) {
+    if (!purchaseRecord) {
       return res.status(404).json({
         success: false,
         message: 'Purchase record not found'
@@ -135,7 +138,7 @@ router.get('/:id', async (req, res) => {
 
     res.json({
       success: true,
-      data: { purchase: purchaseRecords[0] }
+      data: { purchase: purchaseRecord }
     });
   } catch (error) {
     console.error('Get purchase by ID error:', error);
@@ -159,21 +162,10 @@ router.post('/', [
   body('category')
     .trim()
     .notEmpty()
-    .isLength({ max: 50 })
-    .withMessage('Category is required and cannot exceed 50 characters'),
-  body('payment_method')
-    .optional()
-    .trim()
-    .isLength({ max: 50 })
-    .withMessage('Payment method cannot exceed 50 characters'),
+    .withMessage('Category is required'),
   body('date')
     .isISO8601()
-    .withMessage('Date must be valid ISO date'),
-  body('receipt_path')
-    .optional()
-    .trim()
-    .isLength({ max: 255 })
-    .withMessage('Receipt path cannot exceed 255 characters')
+    .withMessage('Date must be valid ISO date')
 ], async (req, res) => {
   try {
     const errors = validationResult(req);
@@ -186,26 +178,29 @@ router.post('/', [
     }
 
     const userId = req.user!.userId;
-    const { amount, description = null, category, payment_method = 'Cash', date, receipt_path = null } = req.body;
+    const { amount, description = null, category, date } = req.body;
 
-    // Insert purchase record
+    const categoryRecord = await dbGet(
+      'SELECT id FROM categories WHERE name = $1 AND business_id = $2 AND type = \'purchase\'',
+      [category, userId]
+    );
+    if (!categoryRecord) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid purchase category'
+      });
+    }
+
     const purchaseResult = await dbRun(
-      'INSERT INTO purchases (user_id, amount, description, category, payment_method, date, receipt_path) VALUES ($1, $2, $3, $4, $5, $6, $7)',
-      [userId, amount, description, category, payment_method, date, receipt_path]
+      'INSERT INTO purchases (business_id, amount, description, category_id, date) VALUES ($1, $2, $3, $4, $5) RETURNING id',
+      [userId, amount, description, categoryRecord.id, date]
     );
 
-    const purchaseId = purchaseResult.rows?.[0]?.id;
+    const purchaseId = purchaseResult.lastID;
 
-    // Get the created purchase record
     const purchaseRecord = await dbGet(
       'SELECT * FROM purchases WHERE id = $1',
       [purchaseId]
-    );
-
-    // Record transaction for audit trail
-    await dbRun(
-      'INSERT INTO transactions (user_id, transaction_type, reference_id, reference_table, amount, description, date) VALUES ($1, $2, $3, $4, $5, $6, $7)',
-      [userId, 'purchase', purchaseId, 'purchases', amount, `Purchase: ${description || category}`, date]
     );
 
     res.status(201).json({
@@ -237,22 +232,11 @@ router.put('/:id', [
     .optional()
     .trim()
     .notEmpty()
-    .isLength({ max: 50 })
-    .withMessage('Category cannot be empty and cannot exceed 50 characters'),
-  body('payment_method')
-    .optional()
-    .trim()
-    .isLength({ max: 50 })
-    .withMessage('Payment method cannot exceed 50 characters'),
+    .withMessage('Category cannot be empty'),
   body('date')
     .optional()
     .isISO8601()
-    .withMessage('Date must be valid ISO date'),
-  body('receipt_path')
-    .optional()
-    .trim()
-    .isLength({ max: 255 })
-    .withMessage('Receipt path cannot exceed 255 characters')
+    .withMessage('Date must be valid ISO date')
 ], async (req, res) => {
   try {
     const errors = validationResult(req);
@@ -274,9 +258,8 @@ router.put('/:id', [
       });
     }
 
-    // Check if purchase record exists and belongs to user
     const existingRecord = await dbGet(
-      'SELECT id FROM purchases WHERE id = ? AND user_id = $2',
+      'SELECT id, category_id FROM purchases WHERE id = $1 AND business_id = $2',
       [purchaseId, userId]
     );
 
@@ -287,34 +270,42 @@ router.put('/:id', [
       });
     }
 
-    const { amount, description, category, payment_method, date, receipt_path } = req.body;
+    const { amount, description, category, date } = req.body;
+
+    let categoryId = existingRecord.category_id;
+    if (category) {
+      const categoryRecord = await dbGet(
+        'SELECT id FROM categories WHERE name = $1 AND business_id = $2 AND type = \'purchase\'',
+        [category, userId]
+      );
+      if (!categoryRecord) {
+        return res.status(400).json({
+          success: false,
+          message: 'Invalid purchase category'
+        });
+      }
+      categoryId = categoryRecord.id;
+    }
 
     const updates: string[] = [];
     const values: any[] = [];
+    let paramIndex = 1;
 
     if (amount !== undefined) {
-      updates.push('amount = ?');
+      updates.push(`amount = $${paramIndex++}`);
       values.push(amount);
     }
     if (description !== undefined) {
-      updates.push('description = ?');
+      updates.push(`description = $${paramIndex++}`);
       values.push(description);
     }
-    if (category !== undefined) {
-      updates.push('category = ?');
-      values.push(category);
-    }
-    if (payment_method !== undefined) {
-      updates.push('payment_method = ?');
-      values.push(payment_method);
+    if (category) {
+      updates.push(`category_id = $${paramIndex++}`);
+      values.push(categoryId);
     }
     if (date !== undefined) {
-      updates.push('date = ?');
+      updates.push(`date = $${paramIndex++}`);
       values.push(date);
-    }
-    if (receipt_path !== undefined) {
-      updates.push('receipt_path = ?');
-      values.push(receipt_path);
     }
 
     if (updates.length === 0) {
@@ -326,22 +317,20 @@ router.put('/:id', [
 
     values.push(purchaseId);
 
-    // Update purchase record
-    await dbAll(
-      `UPDATE purchases SET ${updates.join(', ')}, updated_at = CURRENT_TIMESTAMP WHERE id = $1`,
+    await dbRun(
+      `UPDATE purchases SET ${updates.join(', ')}, updated_at = NOW() WHERE id = $${paramIndex++}`,
       values
     );
 
-    // Get updated record
-    const [updatedRecords] = await dbAll(
-      'SELECT * FROM purchases WHERE id = ?',
+    const updatedRecord = await dbGet(
+      'SELECT * FROM purchases WHERE id = $1',
       [purchaseId]
-    ) as any[];
+    );
 
     res.json({
       success: true,
       message: 'Purchase record updated successfully',
-      data: { purchase: updatedRecords[0] }
+      data: { purchase: updatedRecord }
     });
   } catch (error) {
     console.error('Update purchase error:', error);
@@ -365,30 +354,17 @@ router.delete('/:id', async (req, res) => {
       });
     }
 
-    // Check if purchase record exists and belongs to user
-    const existingRecord = await dbGet(
-      'SELECT id FROM purchases WHERE id = ? AND user_id = $2',
+    const result = await dbRun(
+      'DELETE FROM purchases WHERE id = $1 AND business_id = $2',
       [purchaseId, userId]
     );
 
-    if (!existingRecord) {
+    if (result.changes === 0) {
       return res.status(404).json({
         success: false,
         message: 'Purchase record not found'
       });
     }
-
-    // Delete related transactions
-    await dbRun(
-      'DELETE FROM transactions WHERE reference_id = ? AND reference_table = ? AND user_id = $3',
-      [purchaseId, 'purchases', userId]
-    );
-
-    // Delete purchase record
-    await dbRun(
-      'DELETE FROM purchases WHERE id = ? AND user_id = $2',
-      [purchaseId, userId]
-    );
 
     res.json({
       success: true,
@@ -408,8 +384,7 @@ router.get('/stats/summary', async (req, res) => {
   try {
     const userId = req.user!.userId;
 
-    // Get total purchases, monthly purchases, and category breakdown
-    const [stats] = await dbAll(
+    const stats = await dbGet(
       `SELECT 
         COUNT(*) as total_records,
         SUM(amount) as total_purchases,
@@ -417,56 +392,43 @@ router.get('/stats/summary', async (req, res) => {
         MIN(date) as earliest_date,
         MAX(date) as latest_date
        FROM purchases 
-       WHERE user_id = $1`,
+       WHERE business_id = $1`,
       [userId]
-    ) as any[];
+    );
 
-    // Get monthly purchases for current year
-    const [monthlyStats] = await dbAll(
+    const monthlyStats = await dbAll(
       `SELECT 
-        MONTH(date) as month,
-        YEAR(date) as year,
+        to_char(date, 'MM') as month,
+        to_char(date, 'YYYY') as year,
         SUM(amount) as monthly_purchases,
         COUNT(*) as monthly_count
        FROM purchases 
-       WHERE user_id = ? AND YEAR(date) = YEAR(CURDATE())
-       GROUP BY YEAR(date), MONTH(date)
+       WHERE business_id = $1 AND to_char(date, 'YYYY') = to_char(CURRENT_DATE, 'YYYY')
+       GROUP BY to_char(date, 'YYYY'), to_char(date, 'MM')
        ORDER BY month`,
       [userId]
-    ) as any[];
+    );
 
-    // Get category breakdown
-    const [categoryStats] = await dbAll(
+    const categoryStats = await dbAll(
       `SELECT 
-        category,
+        c.name as category,
         COUNT(*) as count,
-        SUM(amount) as total_amount,
-        AVG(amount) as average_amount
-       FROM purchases 
-       WHERE user_id = ? GROUP BY category
+        SUM(p.amount) as total_amount,
+        AVG(p.amount) as average_amount
+       FROM purchases p
+       JOIN categories c ON p.category_id = c.id
+       WHERE p.business_id = $1 
+       GROUP BY c.name
        ORDER BY total_amount DESC`,
       [userId]
-    ) as any[];
-
-    // Get payment method breakdown
-    const [paymentStats] = await dbAll(
-      `SELECT 
-        payment_method,
-        COUNT(*) as count,
-        SUM(amount) as total_amount
-       FROM purchases 
-       WHERE user_id = ? GROUP BY payment_method
-       ORDER BY total_amount DESC`,
-      [userId]
-    ) as any[];
+    );
 
     res.json({
       success: true,
       data: {
-        summary: stats[0],
+        summary: stats,
         monthly: monthlyStats,
-        by_category: categoryStats,
-        by_payment_method: paymentStats
+        by_category: categoryStats
       }
     });
   } catch (error) {

@@ -36,7 +36,7 @@ router.post('/register', [
         }
         const passwordHash = await bcryptjs_1.default.hash(password, 12);
         const result = await (0, database_1.dbRun)('INSERT INTO users (username, email, password_hash, full_name, business_name) VALUES ($1, $2, $3, $4, $5) RETURNING id', [username, email, passwordHash, full_name, business_name || null]);
-        const userId = result.rows?.[0]?.id;
+        const userId = result.lastID;
         const defaultCategories = [
             { name: 'Salary', type: 'income', color: '#10B981', icon: 'dollar-sign' },
             { name: 'Business', type: 'income', color: '#3B82F6', icon: 'briefcase' },
@@ -51,9 +51,9 @@ router.post('/register', [
             { name: 'Service', type: 'sale', color: '#2563EB', icon: 'service' }
         ];
         for (const category of defaultCategories) {
-            await (0, database_1.dbRun)('INSERT INTO categories (user_id, name, type, color, icon) VALUES ($1, $2, $3, $4, $5)', [userId, category.name, category.type, category.color, category.icon]);
+            await (0, database_1.dbRun)('INSERT INTO categories (user_id, name, type, color, icon) VALUES ($1, $2, $3, $4, $5) RETURNING id', [userId, category.name, category.type, category.color, category.icon]);
         }
-        await (0, database_1.dbRun)('INSERT INTO accounts (user_id, account_type, account_name, balance) VALUES ($1, $2, $3, $4)', [userId, 'cash', 'Cash', 0]);
+        await (0, database_1.dbRun)('INSERT INTO accounts (user_id, account_type, account_name, balance) VALUES ($1, $2, $3, $4) RETURNING id', [userId, 'cash', 'Cash', 0]);
         const user = await (0, database_1.dbGet)('SELECT id, username, email, full_name, business_name, user_type, business_id, created_at FROM users WHERE id = $1', [userId]);
         const token = (0, jwt_1.generateToken)(user.id, user.username, user.email, user.user_type, user.business_id);
         res.status(201).json({
@@ -87,7 +87,7 @@ router.post('/login', [
             });
         }
         const { login, password } = req.body;
-        const user = await (0, database_1.dbGet)('SELECT * FROM users WHERE (username = $1 OR email = $2) AND is_active = true', [login, login]);
+        const user = await (0, database_1.dbGet)('SELECT * FROM users WHERE (username = $1 OR email = $2) AND is_active = 1', [login, login]);
         if (!user) {
             return res.status(401).json({
                 success: false,
@@ -173,17 +173,16 @@ router.put('/profile', [
         }
         const updates = [];
         const values = [];
-        let paramIndex = 1;
         if (email) {
-            updates.push(`email = $${paramIndex++}`);
+            updates.push('email = ?');
             values.push(email);
         }
         if (full_name) {
-            updates.push(`full_name = $${paramIndex++}`);
+            updates.push('full_name = ?');
             values.push(full_name);
         }
         if (business_name !== undefined) {
-            updates.push(`business_name = $${paramIndex++}`);
+            updates.push('business_name = ?');
             values.push(business_name);
         }
         if (updates.length === 0) {
@@ -192,7 +191,9 @@ router.put('/profile', [
                 message: 'No fields to update'
             });
         }
-        await (0, database_1.dbRun)(`UPDATE users SET ${updates.join(', ')} WHERE id = $${paramIndex}`, [...values, userId]);
+        updates.push('updated_at = NOW()');
+        values.push(userId);
+        await (0, database_1.dbRun)(`UPDATE users SET ${updates.join(', ')} WHERE id = $1`, values);
         const user = await (0, database_1.dbGet)('SELECT id, username, email, full_name, business_name, user_type, business_id, created_at FROM users WHERE id = $1', [userId]);
         res.json({
             success: true,
@@ -224,7 +225,7 @@ router.post('/employee/login', [
             });
         }
         const { email, password } = req.body;
-        const employee = await (0, database_1.dbGet)('SELECT * FROM employees WHERE email = $1 AND status = $2', [email, 'active']);
+        const employee = await (0, database_1.dbGet)('SELECT * FROM employees WHERE email = $1 AND status = "active"', [email]);
         if (!employee) {
             return res.status(401).json({
                 success: false,

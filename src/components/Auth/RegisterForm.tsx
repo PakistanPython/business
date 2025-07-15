@@ -72,13 +72,7 @@ export const RegisterForm: React.FC = () => {
     setIsLoading(true);
     try {
       const { confirmPassword, ...userData } = formData;
-      const success = await register({
-        username: userData.username,
-        email: userData.email,
-        password: userData.password,
-        full_name: userData.full_name,
-        business_name: userData.business_name,
-      });
+      const success = await register(userData);
       if (success) {
         navigate('/dashboard', { replace: true });
       }

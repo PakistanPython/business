@@ -31,26 +31,26 @@ router.get('/summary', async (req, res) => {
         const incomeTotal = await (0, database_1.dbGet)('SELECT COALESCE(SUM(amount), 0) as total FROM income WHERE user_id = $1', [userId]);
         const expenseTotal = await (0, database_1.dbGet)('SELECT COALESCE(SUM(amount), 0) as total FROM expenses WHERE user_id = $1', [userId]);
         const purchaseTotal = await (0, database_1.dbGet)('SELECT COALESCE(SUM(amount), 0) as total FROM purchases WHERE user_id = $1', [userId]);
-        const salesTotal = await (0, database_1.dbGet)('SELECT COALESCE(SUM(selling_price), 0) as revenue, COALESCE(SUM(profit), 0) as profit FROM sales WHERE user_id = ? AND status = "completed"', [userId]);
+        const salesTotal = await (0, database_1.dbGet)('SELECT COALESCE(SUM(selling_price), 0) as revenue, COALESCE(SUM(profit), 0) as profit FROM sales WHERE user_id = $1 AND status = "completed"', [userId]);
         const purchaseCount = await (0, database_1.dbGet)('SELECT COUNT(*) as count FROM purchases WHERE user_id = $1', [userId]);
-        const salesCount = await (0, database_1.dbGet)('SELECT COUNT(*) as count FROM sales WHERE user_id = ? AND status = "completed"', [userId]);
+        const salesCount = await (0, database_1.dbGet)('SELECT COUNT(*) as count FROM sales WHERE user_id = $1 AND status = "completed"', [userId]);
         const accountsBalance = await (0, database_1.dbGet)('SELECT COALESCE(SUM(balance), 0) as total FROM accounts WHERE user_id = $1', [userId]);
-        const activeLoans = await (0, database_1.dbGet)('SELECT COALESCE(SUM(current_balance), 0) as total FROM loans WHERE user_id = ? AND status = "active"', [userId]);
+        const activeLoans = await (0, database_1.dbGet)('SELECT COALESCE(SUM(current_balance), 0) as total FROM loans WHERE user_id = $1 AND status = "active"', [userId]);
         const charityRequired = await (0, database_1.dbGet)('SELECT COALESCE(SUM(amount_required), 0) as total FROM charity WHERE user_id = $1', [userId]);
         const charityPaid = await (0, database_1.dbGet)('SELECT COALESCE(SUM(amount_paid), 0) as total FROM charity WHERE user_id = $1', [userId]);
         const charityRemaining = await (0, database_1.dbGet)('SELECT COALESCE(SUM(amount_remaining), 0) as total FROM charity WHERE user_id = $1', [userId]);
-        summary.total_income = parseFloat(incomeTotal?.total || 0);
-        summary.total_expenses = parseFloat(expenseTotal?.total || 0);
-        summary.total_purchases = parseFloat(purchaseTotal?.total || 0);
-        summary.total_sales_revenue = parseFloat(salesTotal?.revenue || 0);
-        summary.total_sales_profit = parseFloat(salesTotal?.profit || 0);
-        summary.total_purchases_count = parseInt(purchaseCount?.count || 0);
-        summary.total_sales_count = parseInt(salesCount?.count || 0);
-        summary.total_accounts_balance = parseFloat(accountsBalance?.total || 0);
-        summary.total_active_loans = parseFloat(activeLoans?.total || 0);
-        summary.total_charity_required = parseFloat(charityRequired?.total || 0);
-        summary.total_charity_paid = parseFloat(charityPaid?.total || 0);
-        summary.total_charity_remaining = parseFloat(charityRemaining?.total || 0);
+        summary.total_income = parseFloat(incomeTotal.total || 0);
+        summary.total_expenses = parseFloat(expenseTotal.total || 0);
+        summary.total_purchases = parseFloat(purchaseTotal.total || 0);
+        summary.total_sales_revenue = parseFloat(salesTotal.revenue || 0);
+        summary.total_sales_profit = parseFloat(salesTotal.profit || 0);
+        summary.total_purchases_count = parseInt(purchaseCount.count || 0);
+        summary.total_sales_count = parseInt(salesCount.count || 0);
+        summary.total_accounts_balance = parseFloat(accountsBalance.total || 0);
+        summary.total_active_loans = parseFloat(activeLoans.total || 0);
+        summary.total_charity_required = parseFloat(charityRequired.total || 0);
+        summary.total_charity_paid = parseFloat(charityPaid.total || 0);
+        summary.total_charity_remaining = parseFloat(charityRemaining.total || 0);
         summary.net_worth = summary.total_income - summary.total_expenses;
         summary.available_cash = summary.total_accounts_balance - summary.total_active_loans;
         const monthlyData = await (0, database_1.dbAll)(`
@@ -72,19 +72,19 @@ router.get('/summary', async (req, res) => {
       LEFT JOIN (
         SELECT strftime('%m', date) as month, SUM(amount) as monthly_income
         FROM income 
-        WHERE user_id = ? AND strftime('%Y', date) = strftime('%Y', 'now')
+        WHERE user_id = $13 AND strftime('%Y', date) = strftime('%Y', 'now')
         GROUP BY strftime('%m', date)
       ) i ON printf('%02d', m.month_num) = i.month
       LEFT JOIN (
         SELECT strftime('%m', date) as month, SUM(amount) as monthly_expenses
         FROM expenses 
-        WHERE user_id = ? AND strftime('%Y', date) = strftime('%Y', 'now')
+        WHERE user_id = $14 AND strftime('%Y', date) = strftime('%Y', 'now')
         GROUP BY strftime('%m', date)
       ) e ON printf('%02d', m.month_num) = e.month
       LEFT JOIN (
         SELECT strftime('%m', payment_date) as month, SUM(amount_paid) as monthly_charity
         FROM charity 
-        WHERE user_id = ? AND payment_date IS NOT NULL AND strftime('%Y', payment_date) = strftime('%Y', 'now')
+        WHERE user_id = $15 AND payment_date IS NOT NULL AND strftime('%Y', payment_date) = strftime('%Y', 'now')
         GROUP BY strftime('%m', payment_date)
       ) c ON printf('%02d', m.month_num) = c.month
       ORDER BY m.month_num
@@ -94,7 +94,8 @@ router.get('/summary', async (req, res) => {
         id, transaction_type, amount, description, date, created_at,
         reference_table, reference_id
       FROM transactions 
-      WHERE user_id = ? ORDER BY created_at DESC 
+      WHERE user_id = $1 
+      ORDER BY created_at DESC 
       LIMIT 10
     `, [userId]);
         const topExpenseCategories = await (0, database_1.dbAll)(`
@@ -104,7 +105,8 @@ router.get('/summary', async (req, res) => {
         COUNT(*) as transaction_count,
         ROUND((SUM(amount) / (SELECT SUM(amount) FROM expenses WHERE user_id = $2)) * 100, 2) as percentage
       FROM expenses 
-      WHERE user_id = ? GROUP BY category 
+      WHERE user_id = $3 
+      GROUP BY category 
       ORDER BY total_amount DESC 
       LIMIT 5
     `, [userId, userId]);
@@ -125,13 +127,13 @@ router.get('/summary', async (req, res) => {
       LEFT JOIN (
         SELECT strftime('%Y-%m', date) as month, SUM(amount) as income_amount
         FROM income 
-        WHERE user_id = ? 
+        WHERE user_id = $16 
         GROUP BY strftime('%Y-%m', date)
       ) i ON strftime('%Y-%m', m.month_date) = i.month
       LEFT JOIN (
         SELECT strftime('%Y-%m', date) as month, SUM(amount) as expense_amount
         FROM expenses 
-        WHERE user_id = ? 
+        WHERE user_id = $17 
         GROUP BY strftime('%Y-%m', date)
       ) e ON strftime('%Y-%m', m.month_date) = e.month
       ORDER BY m.month_date
@@ -144,7 +146,8 @@ router.get('/summary', async (req, res) => {
         SUM(amount_paid) as total_paid,
         SUM(amount_remaining) as total_remaining
       FROM charity 
-      WHERE user_id = ? GROUP BY status
+      WHERE user_id = $1 
+      GROUP BY status
     `, [userId]);
         res.json({
             success: true,
@@ -233,7 +236,7 @@ router.get('/analytics', [
         category,
         SUM(charity_required) as charity_generated
       FROM income 
-      WHERE user_id = ? ${dateFilter}
+      WHERE user_id = $1 ${dateFilter}
       GROUP BY period, category
       ORDER BY period, total_amount DESC
     `, [userId]);
@@ -245,7 +248,7 @@ router.get('/analytics', [
         AVG(amount) as average_amount,
         category
       FROM expenses 
-      WHERE user_id = ? ${dateFilter}
+      WHERE user_id = $2 ${dateFilter}
       GROUP BY period, category
       ORDER BY period, total_amount DESC
     `, [userId]);
@@ -263,14 +266,14 @@ router.get('/analytics', [
       FROM (
         SELECT ${groupBy} as period, SUM(amount) as income, 0 as expenses
         FROM income 
-        WHERE user_id = ? ${dateFilter}
+        WHERE user_id = $3 ${dateFilter}
         GROUP BY period
         
         UNION ALL
         
         SELECT ${groupBy} as period, 0 as income, SUM(amount) as expenses
         FROM expenses 
-        WHERE user_id = ? ${dateFilter}
+        WHERE user_id = $4 ${dateFilter}
         GROUP BY period
       )
       GROUP BY period
@@ -314,16 +317,16 @@ router.get('/metrics', async (req, res) => {
             burn_rate: 0,
             charity_compliance: 0
         };
-        const revenue30d = await (0, database_1.dbGet)('SELECT COALESCE(SUM(amount), 0) as total FROM income WHERE user_id = ? AND date >= date("now", "-30 days")', [userId]);
-        const revenue90d = await (0, database_1.dbGet)('SELECT COALESCE(SUM(amount), 0) as total FROM income WHERE user_id = ? AND date >= date("now", "-90 days")', [userId]);
-        const expenses30d = await (0, database_1.dbGet)('SELECT COALESCE(SUM(amount), 0) as total FROM expenses WHERE user_id = ? AND date >= date("now", "-30 days")', [userId]);
-        const expenses90d = await (0, database_1.dbGet)('SELECT COALESCE(SUM(amount), 0) as total FROM expenses WHERE user_id = ? AND date >= date("now", "-90 days")', [userId]);
-        const avgIncome30d = await (0, database_1.dbGet)('SELECT COALESCE(AVG(amount), 0) as avg FROM income WHERE user_id = ? AND date >= date("now", "-30 days")', [userId]);
-        const avgExpense30d = await (0, database_1.dbGet)('SELECT COALESCE(AVG(amount), 0) as avg FROM expenses WHERE user_id = ? AND date >= date("now", "-30 days")', [userId]);
-        const charityPaid30d = await (0, database_1.dbGet)('SELECT COALESCE(SUM(amount_paid), 0) as total FROM charity WHERE user_id = ? AND payment_date >= date("now", "-30 days")', [userId]);
-        const charityPending = await (0, database_1.dbGet)('SELECT COALESCE(SUM(amount_remaining), 0) as total FROM charity WHERE user_id = ? AND status != "paid"', [userId]);
+        const revenue30d = await (0, database_1.dbGet)('SELECT COALESCE(SUM(amount), 0) as total FROM income WHERE user_id = $1 AND date >= date("now", "-30 days")', [userId]);
+        const revenue90d = await (0, database_1.dbGet)('SELECT COALESCE(SUM(amount), 0) as total FROM income WHERE user_id = $1 AND date >= date("now", "-90 days")', [userId]);
+        const expenses30d = await (0, database_1.dbGet)('SELECT COALESCE(SUM(amount), 0) as total FROM expenses WHERE user_id = $1 AND date >= date("now", "-30 days")', [userId]);
+        const expenses90d = await (0, database_1.dbGet)('SELECT COALESCE(SUM(amount), 0) as total FROM expenses WHERE user_id = $1 AND date >= date("now", "-90 days")', [userId]);
+        const avgIncome30d = await (0, database_1.dbGet)('SELECT COALESCE(AVG(amount), 0) as avg FROM income WHERE user_id = $1 AND date >= date("now", "-30 days")', [userId]);
+        const avgExpense30d = await (0, database_1.dbGet)('SELECT COALESCE(AVG(amount), 0) as avg FROM expenses WHERE user_id = $1 AND date >= date("now", "-30 days")', [userId]);
+        const charityPaid30d = await (0, database_1.dbGet)('SELECT COALESCE(SUM(amount_paid), 0) as total FROM charity WHERE user_id = $1 AND payment_date >= date("now", "-30 days")', [userId]);
+        const charityPending = await (0, database_1.dbGet)('SELECT COALESCE(SUM(amount_remaining), 0) as total FROM charity WHERE user_id = $1 AND status != "paid"', [userId]);
         const totalAccounts = await (0, database_1.dbGet)('SELECT COUNT(*) as count FROM accounts WHERE user_id = $1', [userId]);
-        const activeLoans = await (0, database_1.dbGet)('SELECT COUNT(*) as count FROM loans WHERE user_id = ? AND status = "active"', [userId]);
+        const activeLoans = await (0, database_1.dbGet)('SELECT COUNT(*) as count FROM loans WHERE user_id = $1 AND status = "active"', [userId]);
         metrics.revenue_30d = parseFloat(revenue30d?.total || 0);
         metrics.revenue_90d = parseFloat(revenue90d?.total || 0);
         metrics.expenses_30d = parseFloat(expenses30d?.total || 0);
@@ -345,10 +348,10 @@ router.get('/metrics', async (req, res) => {
         COALESCE(SUM(CASE WHEN type = 'expense' THEN amount ELSE 0 END), 0) as expenses
       FROM (
         SELECT 'income' as type, amount FROM income 
-        WHERE user_id = ? AND strftime('%Y-%m', date) = strftime('%Y-%m', 'now')
+        WHERE user_id = $1 AND strftime('%Y-%m', date) = strftime('%Y-%m', 'now')
         UNION ALL
         SELECT 'expense' as type, amount FROM expenses 
-        WHERE user_id = ? AND strftime('%Y-%m', date) = strftime('%Y-%m', 'now')
+        WHERE user_id = $2 AND strftime('%Y-%m', date) = strftime('%Y-%m', 'now')
       )
     `, [userId, userId]);
         const previousMonth = await (0, database_1.dbGet)(`
@@ -357,10 +360,10 @@ router.get('/metrics', async (req, res) => {
         COALESCE(SUM(CASE WHEN type = 'expense' THEN amount ELSE 0 END), 0) as expenses
       FROM (
         SELECT 'income' as type, amount FROM income 
-        WHERE user_id = ? AND strftime('%Y-%m', date) = strftime('%Y-%m', date('now', '-1 month'))
+        WHERE user_id = $1 AND strftime('%Y-%m', date) = strftime('%Y-%m', date('now', '-1 month'))
         UNION ALL
         SELECT 'expense' as type, amount FROM expenses 
-        WHERE user_id = ? AND strftime('%Y-%m', date) = strftime('%Y-%m', date('now', '-1 month'))
+        WHERE user_id = $2 AND strftime('%Y-%m', date) = strftime('%Y-%m', date('now', '-1 month'))
       )
     `, [userId, userId]);
         const incomeGrowthRate = (previousMonth?.income || 0) > 0 ?

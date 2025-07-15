@@ -39,27 +39,28 @@ router.get('/', [
     const sortOrder = req.query.sort_order as string || 'desc';
 
     // Build WHERE clause
-    let whereClause = 'WHERE user_id = ?';
-    const whereParams = [userId];
+    let whereClause = 'WHERE e.business_id = $1';
+    const whereParams: any[] = [userId];
+    let paramIndex = 2;
 
     if (category) {
-      whereClause += ' AND category = ?';
+      whereClause += ` AND c.name = $${paramIndex++}`;
       whereParams.push(category);
     }
 
     if (startDate) {
-      whereClause += ' AND date >= ?';
+      whereClause += ` AND e.date >= $${paramIndex++}`;
       whereParams.push(startDate);
     }
 
     if (endDate) {
-      whereClause += ' AND date <= ?';
+      whereClause += ` AND e.date <= $${paramIndex++}`;
       whereParams.push(endDate);
     }
 
     // Get total count
     const countResult = await dbGet(
-      `SELECT COUNT(*) as total FROM expenses ${whereClause}`,
+      `SELECT COUNT(*) as total FROM expenses e JOIN categories c ON e.category_id = c.id ${whereClause}`,
       whereParams
     );
     const total = countResult.total;
@@ -67,12 +68,13 @@ router.get('/', [
     // Get expense records
     const expenseRecords = await dbAll(
       `SELECT 
-        id, amount, description, category, payment_method, date, 
-        receipt_path, created_at, updated_at
-       FROM expenses 
+        e.id, e.amount, e.description, c.name as category, e.date, 
+        e.created_at, e.updated_at
+       FROM expenses e
+       JOIN categories c ON e.category_id = c.id
        ${whereClause} 
        ORDER BY ${sortBy} ${sortOrder.toUpperCase()}
-       LIMIT ? OFFSET $2`,
+       LIMIT $${paramIndex++} OFFSET $${paramIndex++}`,
       [...whereParams, limit, offset]
     );
 
@@ -82,7 +84,7 @@ router.get('/', [
     const hasPrev = page > 1;
 
     res.json({
-      success : true,
+      success: true,
       data: {
         expenses: expenseRecords,
         pagination: {
@@ -119,10 +121,11 @@ router.get('/:id', async (req, res) => {
 
     const expense = await dbGet(
       `SELECT 
-        id, amount, description, category, payment_method, date, 
-        receipt_path, created_at, updated_at
-       FROM expenses 
-       WHERE id = ? AND user_id = $2`,
+        e.id, e.amount, e.description, c.name as category, e.date, 
+        e.created_at, e.updated_at
+       FROM expenses e
+       JOIN categories c ON e.category_id = c.id
+       WHERE e.id = $1 AND e.business_id = $2`,
       [expenseId, userId]
     );
 
@@ -159,21 +162,10 @@ router.post('/', [
   body('category')
     .trim()
     .notEmpty()
-    .isLength({ max: 50 })
-    .withMessage('Category is required and cannot exceed 50 characters'),
-  body('payment_method')
-    .optional()
-    .trim()
-    .isLength({ max: 50 })
-    .withMessage('Payment method cannot exceed 50 characters'),
+    .withMessage('Category is required'),
   body('date')
     .isISO8601()
-    .withMessage('Date must be valid ISO date'),
-  body('receipt_path')
-    .optional()
-    .trim()
-    .isLength({ max: 255 })
-    .withMessage('Receipt path cannot exceed 255 characters')
+    .withMessage('Date must be valid ISO date')
 ], async (req, res) => {
   try {
     const errors = validationResult(req);
@@ -186,26 +178,29 @@ router.post('/', [
     }
 
     const userId = req.user!.userId;
-    const { amount, description = null, category, payment_method = 'Cash', date, receipt_path = null } = req.body;
+    const { amount, description = null, category, date } = req.body;
 
-    // Insert expense record
+    const categoryRecord = await dbGet(
+      'SELECT id FROM categories WHERE name = $1 AND business_id = $2 AND type = \'expense\'',
+      [category, userId]
+    );
+    if (!categoryRecord) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid expense category'
+      });
+    }
+
     const expenseResult = await dbRun(
-      'INSERT INTO expenses (user_id, amount, description, category, payment_method, date, receipt_path) VALUES ($1, $2, $3, $4, $5, $6, $7)',
-      [userId, amount, description, category, payment_method, date, receipt_path]
+      'INSERT INTO expenses (business_id, amount, description, category_id, date) VALUES ($1, $2, $3, $4, $5) RETURNING id',
+      [userId, amount, description, categoryRecord.id, date]
     );
 
-    const expenseId = expenseResult.rows?.[0]?.id;
+    const expenseId = expenseResult.lastID;
 
-    // Get the created expense record
     const expenseRecord = await dbGet(
       'SELECT * FROM expenses WHERE id = $1',
       [expenseId]
-    );
-
-    // Record transaction for audit trail
-    await dbRun(
-      'INSERT INTO transactions (user_id, transaction_type, reference_id, reference_table, amount, description, date) VALUES ($1, $2, $3, $4, $5, $6, $7)',
-      [userId, 'expense', expenseId, 'expenses', amount, `Expense: ${description || category}`, date]
     );
 
     res.status(201).json({
@@ -237,22 +232,11 @@ router.put('/:id', [
     .optional()
     .trim()
     .notEmpty()
-    .isLength({ max: 50 })
-    .withMessage('Category cannot be empty and cannot exceed 50 characters'),
-  body('payment_method')
-    .optional()
-    .trim()
-    .isLength({ max: 50 })
-    .withMessage('Payment method cannot exceed 50 characters'),
+    .withMessage('Category cannot be empty'),
   body('date')
     .optional()
     .isISO8601()
-    .withMessage('Date must be valid ISO date'),
-  body('receipt_path')
-    .optional()
-    .trim()
-    .isLength({ max: 255 })
-    .withMessage('Receipt path cannot exceed 255 characters')
+    .withMessage('Date must be valid ISO date')
 ], async (req, res) => {
   try {
     const errors = validationResult(req);
@@ -274,9 +258,8 @@ router.put('/:id', [
       });
     }
 
-    // Check if expense record exists and belongs to user
     const existingRecord = await dbGet(
-      'SELECT id FROM expenses WHERE id = ? AND user_id = $2',
+      'SELECT id, category_id FROM expenses WHERE id = $1 AND business_id = $2',
       [expenseId, userId]
     );
 
@@ -287,34 +270,42 @@ router.put('/:id', [
       });
     }
 
-    const { amount, description, category, payment_method, date, receipt_path } = req.body;
+    const { amount, description, category, date } = req.body;
+
+    let categoryId = existingRecord.category_id;
+    if (category) {
+      const categoryRecord = await dbGet(
+        'SELECT id FROM categories WHERE name = $1 AND business_id = $2 AND type = \'expense\'',
+        [category, userId]
+      );
+      if (!categoryRecord) {
+        return res.status(400).json({
+          success: false,
+          message: 'Invalid expense category'
+        });
+      }
+      categoryId = categoryRecord.id;
+    }
 
     const updates: string[] = [];
     const values: any[] = [];
+    let paramIndex = 1;
 
     if (amount !== undefined) {
-      updates.push('amount = ?');
+      updates.push(`amount = $${paramIndex++}`);
       values.push(amount);
     }
     if (description !== undefined) {
-      updates.push('description = ?');
+      updates.push(`description = $${paramIndex++}`);
       values.push(description);
     }
-    if (category !== undefined) {
-      updates.push('category = ?');
-      values.push(category);
-    }
-    if (payment_method !== undefined) {
-      updates.push('payment_method = ?');
-      values.push(payment_method);
+    if (category) {
+      updates.push(`category_id = $${paramIndex++}`);
+      values.push(categoryId);
     }
     if (date !== undefined) {
-      updates.push('date = ?');
+      updates.push(`date = $${paramIndex++}`);
       values.push(date);
-    }
-    if (receipt_path !== undefined) {
-      updates.push('receipt_path = ?');
-      values.push(receipt_path);
     }
 
     if (updates.length === 0) {
@@ -324,16 +315,13 @@ router.put('/:id', [
       });
     }
 
-    updates.push('updated_at = CURRENT_TIMESTAMP');
     values.push(expenseId);
 
-    // Update expense record
     await dbRun(
-      `UPDATE expenses SET ${updates.join(', ')} WHERE id = ?`,
+      `UPDATE expenses SET ${updates.join(', ')}, updated_at = NOW() WHERE id = $${paramIndex++}`,
       values
     );
 
-    // Get updated record
     const updatedRecord = await dbGet(
       'SELECT * FROM expenses WHERE id = $1',
       [expenseId]
@@ -366,30 +354,17 @@ router.delete('/:id', async (req, res) => {
       });
     }
 
-    // Check if expense record exists and belongs to user
-    const existingRecord = await dbGet(
-      'SELECT id FROM expenses WHERE id = ? AND user_id = $2',
+    const result = await dbRun(
+      'DELETE FROM expenses WHERE id = $1 AND business_id = $2',
       [expenseId, userId]
     );
 
-    if (!existingRecord) {
+    if (result.changes === 0) {
       return res.status(404).json({
         success: false,
         message: 'Expense record not found'
       });
     }
-
-    // Delete related transactions
-    await dbRun(
-      'DELETE FROM transactions WHERE reference_id = ? AND reference_table = ? AND user_id = $3',
-      [expenseId, 'expenses', userId]
-    );
-
-    // Delete expense record
-    await dbRun(
-      'DELETE FROM expenses WHERE id = ? AND user_id = $2',
-      [expenseId, userId]
-    );
 
     res.json({
       success: true,
@@ -409,7 +384,6 @@ router.get('/stats/summary', async (req, res) => {
   try {
     const userId = req.user!.userId;
 
-    // Get total expenses, monthly expenses, and category breakdown
     const stats = await dbGet(
       `SELECT 
         COUNT(*) as total_records,
@@ -418,45 +392,33 @@ router.get('/stats/summary', async (req, res) => {
         MIN(date) as earliest_date,
         MAX(date) as latest_date
        FROM expenses 
-       WHERE user_id = $1`,
+       WHERE business_id = $1`,
       [userId]
     );
 
-    // Get monthly expenses for current year
     const monthlyStats = await dbAll(
       `SELECT 
-        strftime('%m', date) as month,
-        strftime('%Y', date) as year,
+        to_char(date, 'MM') as month,
+        to_char(date, 'YYYY') as year,
         SUM(amount) as monthly_expenses,
         COUNT(*) as monthly_count
        FROM expenses 
-       WHERE user_id = ? AND strftime('%Y', date) = strftime('%Y', 'now')
-       GROUP BY strftime('%Y', date), strftime('%m', date)
+       WHERE business_id = $1 AND to_char(date, 'YYYY') = to_char(CURRENT_DATE, 'YYYY')
+       GROUP BY to_char(date, 'YYYY'), to_char(date, 'MM')
        ORDER BY month`,
       [userId]
     );
 
-    // Get category breakdown
     const categoryStats = await dbAll(
       `SELECT 
-        category,
+        c.name as category,
         COUNT(*) as count,
-        SUM(amount) as total_amount,
-        AVG(amount) as average_amount
-       FROM expenses 
-       WHERE user_id = ? GROUP BY category
-       ORDER BY total_amount DESC`,
-      [userId]
-    );
-
-    // Get payment method breakdown
-    const paymentStats = await dbAll(
-      `SELECT 
-        payment_method,
-        COUNT(*) as count,
-        SUM(amount) as total_amount
-       FROM expenses 
-       WHERE user_id = ? GROUP BY payment_method
+        SUM(e.amount) as total_amount,
+        AVG(e.amount) as average_amount
+       FROM expenses e
+       JOIN categories c ON e.category_id = c.id
+       WHERE e.business_id = $1 
+       GROUP BY c.name
        ORDER BY total_amount DESC`,
       [userId]
     );
@@ -466,8 +428,7 @@ router.get('/stats/summary', async (req, res) => {
       data: {
         summary: stats,
         monthly: monthlyStats,
-        by_category: categoryStats,
-        by_payment_method: paymentStats
+        by_category: categoryStats
       }
     });
   } catch (error) {

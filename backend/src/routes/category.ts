@@ -25,11 +25,12 @@ router.get('/', [
     const userId = req.user!.userId;
     const type = req.query.type as string;
 
-    let whereClause = 'WHERE user_id = ?';
-    const whereParams = [userId];
+    let whereClause = 'WHERE business_id = $1';
+    const whereParams: any[] = [userId];
+    let paramIndex = 2;
 
     if (type) {
-      whereClause += ' AND type = ?';
+      whereClause += ` AND type = $${paramIndex++}`;
       whereParams.push(type);
     }
 
@@ -37,7 +38,7 @@ router.get('/', [
     console.log('Category API - whereParams:', whereParams);
 
     const categories = await dbAll(
-      `SELECT id, name, type, color, icon, created_at 
+      `SELECT id, name, type, created_at 
        FROM categories 
        ${whereClause} 
        ORDER BY type, name`,
@@ -85,7 +86,7 @@ router.get('/:id', async (req, res) => {
     }
 
     const category = await dbGet(
-      'SELECT id, name, type, color, icon, created_at FROM categories WHERE id = ? AND user_id = $2',
+      'SELECT id, name, type, created_at FROM categories WHERE id = $1 AND business_id = $2',
       [categoryId, userId]
     );
 
@@ -144,7 +145,7 @@ router.post('/', [
 
     // Check for duplicate category name and type for the user
     const existingCategory = await dbGet(
-      'SELECT id FROM categories WHERE user_id = ? AND name = ? AND type = $3',
+      'SELECT id FROM categories WHERE business_id = $1 AND name = $2 AND type = $3',
       [userId, name, type]
     );
 
@@ -157,12 +158,15 @@ router.post('/', [
 
     // Insert category record
     const result = await dbRun(
-      'INSERT INTO categories (user_id, name, type, color, icon) VALUES ($1, $2, $3, $4, $5) RETURNING id', [userId, name, type, color, icon]);
-    const categoryId = result.rows?.[0]?.id;
+      'INSERT INTO categories (business_id, name, type) VALUES ($1, $2, $3)',
+      [userId, name, type]
+    );
+
+    const categoryId = result.lastID;
 
     // Get the created category record
     const newCategory = await dbGet(
-      'SELECT * FROM categories WHERE id = $1',
+      'SELECT * FROM categories WHERE id = ?',
       [categoryId]
     );
 
@@ -220,7 +224,7 @@ router.put('/:id', [
 
     // Check if category exists and belongs to user
     const existingCategory = await dbGet(
-      'SELECT id, name, type FROM categories WHERE id = ? AND user_id = $2',
+      'SELECT id, name, type FROM categories WHERE id = $1 AND business_id = $2',
       [categoryId, userId]
     );
 
@@ -235,7 +239,7 @@ router.put('/:id', [
     // Check for duplicate category name if changing name
     if (name && name !== existingCategory.name) {
       const duplicateCategory = await dbGet(
-        'SELECT id FROM categories WHERE user_id = ? AND name = ? AND type = ? AND id != $4',
+        'SELECT id FROM categories WHERE business_id = $1 AND name = $2 AND type = $3 AND id != $4',
         [userId, name, existingCategory.type, categoryId]
       );
 
@@ -274,7 +278,7 @@ router.put('/:id', [
 
     // Update category record
     await dbRun(
-      `UPDATE categories SET ${updates.join(', ')} WHERE id = ?`,
+      `UPDATE categories SET ${updates.join(', ')} WHERE id = $1`,
       values
     );
 
@@ -313,7 +317,7 @@ router.delete('/:id', async (req, res) => {
 
     // Check if category exists and belongs to user
     const category = await dbGet(
-      'SELECT id, name, type FROM categories WHERE id = ? AND user_id = $2',
+      'SELECT id, name, type FROM categories WHERE id = $1 AND business_id = $2',
       [categoryId, userId]
     );
 
@@ -326,18 +330,18 @@ router.delete('/:id', async (req, res) => {
 
     // Check if category is being used in income or expenses
     const incomeUsage = await dbGet(
-      'SELECT COUNT(*) as count FROM income WHERE user_id = ? AND category = $2',
-      [userId, category.name]
+      'SELECT COUNT(*) as count FROM income WHERE business_id = $1 AND category_id = $2',
+      [userId, category.id]
     );
 
     const expenseUsage = await dbGet(
-      'SELECT COUNT(*) as count FROM expenses WHERE user_id = ? AND category = $2',
-      [userId, category.name]
+      'SELECT COUNT(*) as count FROM expenses WHERE business_id = $1 AND category_id = $2',
+      [userId, category.id]
     );
 
     const purchaseUsage = await dbGet(
-      'SELECT COUNT(*) as count FROM purchases WHERE user_id = ? AND category = $2',
-      [userId, category.name]
+      'SELECT COUNT(*) as count FROM purchases WHERE business_id = $1 AND category_id = $2',
+      [userId, category.id]
     );
 
     if (incomeUsage.count > 0 || expenseUsage.count > 0 || purchaseUsage.count > 0) {
@@ -354,7 +358,7 @@ router.delete('/:id', async (req, res) => {
 
     // Delete category record
     await dbRun(
-      'DELETE FROM categories WHERE id = ? AND user_id = $2',
+      'DELETE FROM categories WHERE id = $1 AND business_id = $2',
       [categoryId, userId]
     );
 
@@ -386,7 +390,7 @@ router.get('/:id/stats', async (req, res) => {
 
     // Get category info
     const category = await dbGet(
-      'SELECT id, name, type FROM categories WHERE id = ? AND user_id = $2',
+      'SELECT id, name, type FROM categories WHERE id = $1 AND business_id = $2',
       [categoryId, userId]
     );
 
@@ -410,8 +414,8 @@ router.get('/:id/stats', async (req, res) => {
           MIN(date) as earliest_date,
           MAX(date) as latest_date
          FROM income 
-         WHERE user_id = ? AND category = $2`,
-        [userId, category.name]
+         WHERE business_id = $1 AND category_id = $2`,
+        [userId, category.id]
       );
     } else {
       usageStats = await dbGet(
@@ -424,8 +428,8 @@ router.get('/:id/stats', async (req, res) => {
           MIN(date) as earliest_date,
           MAX(date) as latest_date
          FROM expenses 
-         WHERE user_id = ? AND category = $4`,
-        [userId, category.name]
+         WHERE business_id = $1 AND category_id = $2`,
+        [userId, category.id]
       );
     }
 
@@ -433,14 +437,14 @@ router.get('/:id/stats', async (req, res) => {
     const table = category.type === 'income' ? 'income' : 'expenses';
     const monthlyStats = await dbAll(
       `SELECT 
-        strftime('%m', date) as month,
+        to_char(date, 'MM') as month,
         SUM(amount) as monthly_amount,
         COUNT(*) as monthly_count
        FROM ${table} 
-       WHERE user_id = ? AND category = ? AND strftime('%Y', date) = strftime('%Y', 'now')
-       GROUP BY strftime('%m', date)
-       ORDER BY strftime('%m', date)`,
-      [userId, category.name]
+       WHERE business_id = $1 AND category_id = $2 AND to_char(date, 'YYYY') = to_char(CURRENT_DATE, 'YYYY')
+       GROUP BY to_char(date, 'MM')
+       ORDER BY to_char(date, 'MM')`,
+      [userId, category.id]
     );
 
     res.json({
@@ -483,35 +487,38 @@ router.get('/usage/summary', async (req, res) => {
            'income' as type,
            COUNT(*) as transaction_count,
            SUM(amount) as total_amount
-         FROM income 
-         WHERE user_id = ?
-         GROUP BY category
+         FROM income i
+         JOIN categories c ON i.category_id = c.id
+         WHERE i.business_id = $1
+         GROUP BY c.name
          
          UNION ALL
          
          SELECT 
-           category,
+           c.name as category,
            'expense' as type,
            COUNT(*) as transaction_count,
-           SUM(amount) as total_amount
-         FROM expenses 
-         WHERE user_id = ?
-         GROUP BY category
+           SUM(e.amount) as total_amount
+         FROM expenses e
+         JOIN categories c ON e.category_id = c.id
+         WHERE e.business_id = $1
+         GROUP BY c.name
 
          UNION ALL
 
          SELECT
-           category,
+           c.name as category,
            'purchase' as type,
            COUNT(*) as transaction_count,
-           SUM(amount) as total_amount
-         FROM purchases
-         WHERE user_id = ?
-         GROUP BY category
+           SUM(p.amount) as total_amount
+         FROM purchases p
+         JOIN categories c ON p.category_id = c.id
+         WHERE p.business_id = $1
+         GROUP BY c.name
        ) usage ON c.name = usage.category AND c.type = usage.type
-       WHERE c.user_id = ?
+       WHERE c.business_id = $2
        ORDER BY c.type, usage.total_amount DESC, c.name`,
-      [userId, userId, userId, userId]
+      [userId, userId]
     );
 
     res.json({

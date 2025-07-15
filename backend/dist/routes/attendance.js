@@ -41,7 +41,7 @@ const calculateEarlyDepartureMinutes = (clockOutTime, expectedEndTime) => {
 const determineAttendanceStatus = async (employeeId, businessId, clockInTime, clockOutTime, totalHours, lateMinutes) => {
     const rule = await (0, database_1.dbGet)(`
     SELECT * FROM attendance_rules 
-    WHERE business_id = ? AND is_active = 1
+    WHERE business_id = AND is_active = 1
     ORDER BY created_at DESC LIMIT 1
   `, [businessId]);
     if (!rule) {
@@ -65,7 +65,7 @@ const determineAttendanceStatus = async (employeeId, businessId, clockInTime, cl
 const calculateOvertime = async (businessId, totalHours, isWeekend, isHoliday) => {
     const rule = await (0, database_1.dbGet)(`
     SELECT * FROM attendance_rules 
-    WHERE business_id = ? AND is_active = 1
+    WHERE business_id = AND is_active = 1
     ORDER BY created_at DESC LIMIT 1
   `, [businessId]);
     if (!rule)
@@ -78,7 +78,7 @@ const calculateOvertime = async (businessId, totalHours, isWeekend, isHoliday) =
 };
 router.get('/', async (req, res) => {
     try {
-        const userType = req.user?.userType;
+        const userType = req.user.userType;
         let businessId;
         const { employee_id, date_from, date_to, status, page = 1, limit = 50, month, year } = req.query;
         if (userType === 'employee') {
@@ -97,7 +97,7 @@ router.get('/', async (req, res) => {
         e.position
       FROM attendance a
       JOIN employees e ON a.employee_id = e.id
-      WHERE a.business_id = ? `;
+      WHERE a.business_id = `;
         const params = [businessId];
         if (userType === 'employee') {
             const actualEmployeeId = req.user?.userId;
@@ -113,11 +113,11 @@ router.get('/', async (req, res) => {
             params.push(date_from, date_to);
         }
         else if (month && year) {
-            query += ' AND strftime("%m", a.date) = ? AND strftime("%Y", a.date) = ?';
+            query += ' AND strftime("%m", a.date) = ? AND strftime("%Y", a.date) = $1';
             params.push(month.padStart(2, '0'), year);
         }
         if (status && status !== 'all') {
-            query += ' AND a.status = ?';
+            query += ' AND a.status = $2';
             params.push(status);
         }
         query += ' ORDER BY a.date DESC, a.clock_in_time DESC';
@@ -129,27 +129,27 @@ router.get('/', async (req, res) => {
       SELECT COUNT(*) as total
       FROM attendance a
       JOIN employees e ON a.employee_id = e.id
-      WHERE a.business_id = ? `;
+      WHERE a.business_id = `;
         const countParams = [businessId];
         if (userType === 'employee') {
-            const actualEmployeeId = req.user?.userId;
-            countQuery += ' AND a.employee_id = ?';
+            const actualEmployeeId = req.user.userId;
+            countQuery += ' AND a.employee_id = $4';
             countParams.push(actualEmployeeId);
         }
         else if (employee_id) {
-            countQuery += ' AND a.employee_id = ?';
+            countQuery += ' AND a.employee_id = $5';
             countParams.push(employee_id);
         }
         if (date_from && date_to) {
-            countQuery += ' AND a.date BETWEEN ? AND ?';
+            countQuery += ' AND a.date BETWEEN ? AND $7';
             countParams.push(date_from, date_to);
         }
         else if (month && year) {
-            countQuery += ' AND strftime("%m", a.date) = ? AND strftime("%Y", a.date) = ?';
+            countQuery += ' AND strftime("%m", a.date) = ? AND strftime("%Y", a.date) = $1';
             countParams.push(month.padStart(2, '0'), year);
         }
         if (status && status !== 'all') {
-            countQuery += ' AND a.status = ?';
+            countQuery += ' AND a.status = $2';
             countParams.push(status);
         }
         const { total } = await (0, database_1.dbGet)(countQuery, countParams);
@@ -170,16 +170,16 @@ router.get('/', async (req, res) => {
 });
 router.get('/today', async (req, res) => {
     try {
-        const userType = req.user?.userType;
+        const userType = req.user.userType;
         let businessId;
         let actualEmployeeId;
         const { employee_id } = req.query;
         if (userType === 'employee') {
-            actualEmployeeId = req.user?.userId;
-            businessId = req.user?.businessId;
+            actualEmployeeId = req.user.userId;
+            businessId = req.user.businessId;
         }
         else {
-            businessId = req.user?.userId;
+            businessId = req.user.userId;
             actualEmployeeId = employee_id;
         }
         if (!actualEmployeeId) {
@@ -194,7 +194,7 @@ router.get('/today', async (req, res) => {
         e.employee_code
       FROM attendance a
       JOIN employees e ON a.employee_id = e.id
-      WHERE a.employee_id = ? AND a.business_id = ? AND a.date = ? `, [actualEmployeeId, businessId, today]);
+      WHERE a.employee_id = AND a.business_id = AND a.date = `, [actualEmployeeId, businessId, today]);
         res.json(attendance || null);
     }
     catch (error) {
@@ -204,13 +204,13 @@ router.get('/today', async (req, res) => {
 });
 router.post('/clock-in', async (req, res) => {
     try {
-        const userType = req.user?.userType;
-        let businessId = req.user?.userId;
+        const userType = req.user.userType;
+        let businessId = req.user.userId;
         const { employee_id, entry_method = 'manual', notes, location_latitude, location_longitude } = req.body;
         let actualEmployeeId = employee_id;
         if (userType === 'employee') {
-            actualEmployeeId = req.user?.userId;
-            businessId = req.user?.businessId;
+            actualEmployeeId = req.user.userId;
+            businessId = req.user.businessId;
             const employee = await (0, database_1.dbGet)('SELECT id FROM employees WHERE id = $1', [actualEmployeeId]);
             if (!employee) {
                 return res.status(404).json({ error: 'Employee record not found' });
@@ -224,14 +224,14 @@ router.post('/clock-in', async (req, res) => {
         const currentDate = new Date();
         const dayOfWeek = currentDate.getDay();
         const isWeekend = dayOfWeek === 0 || dayOfWeek === 6;
-        const existingAttendance = await (0, database_1.dbGet)('SELECT * FROM attendance WHERE employee_id = ? AND business_id = ? AND date = $3', [actualEmployeeId, businessId, today]);
+        const existingAttendance = await (0, database_1.dbGet)('SELECT * FROM attendance WHERE employee_id = AND business_id = AND date = $3', [actualEmployeeId, businessId, today]);
         if (existingAttendance) {
             return res.status(400).json({ error: 'Already clocked in today' });
         }
         const workSchedule = await (0, database_1.dbGet)(`
       SELECT * FROM employee_work_schedules 
-      WHERE employee_id = ? AND business_id = ? AND is_active = 1
-        AND effective_from <= ? AND (effective_to IS NULL OR effective_to >= $4)
+      WHERE employee_id = AND business_id = AND is_active = 1
+        AND effective_from <= AND (effective_to IS NULL OR effective_to >= $4)
       ORDER BY effective_from DESC LIMIT 1
     `, [actualEmployeeId, businessId, today, today]);
         let expectedStartTime = '09:00:00';
@@ -271,7 +271,7 @@ router.post('/clock-in', async (req, res) => {
         e.employee_code
       FROM attendance a
       JOIN employees e ON a.employee_id = e.id
-      WHERE a.id = ? `, [result.rows?.[0]?.id]);
+      WHERE a.id = `, [result.lastID]);
         res.status(201).json(newAttendance);
     }
     catch (error) {
@@ -281,13 +281,13 @@ router.post('/clock-in', async (req, res) => {
 });
 router.post('/clock-out', async (req, res) => {
     try {
-        const userType = req.user?.userType;
-        let businessId = req.user?.userId;
+        const userType = req.user.userType;
+        let businessId = req.user.userId;
         const { employee_id, break_start_time, break_end_time, notes } = req.body;
         let actualEmployeeId = employee_id;
         if (userType === 'employee') {
-            actualEmployeeId = req.user?.userId;
-            businessId = req.user?.businessId;
+            actualEmployeeId = req.user.userId;
+            businessId = req.user.businessId;
             const employee = await (0, database_1.dbGet)('SELECT id FROM employees WHERE id = $1', [actualEmployeeId]);
             if (!employee) {
                 return res.status(404).json({ error: 'Employee record not found' });
@@ -301,7 +301,7 @@ router.post('/clock-out', async (req, res) => {
         const currentDate = new Date();
         const dayOfWeek = currentDate.getDay();
         const isWeekend = dayOfWeek === 0 || dayOfWeek === 6;
-        const attendance = await (0, database_1.dbGet)('SELECT * FROM attendance WHERE employee_id = ? AND business_id = ? AND date = $3', [actualEmployeeId, businessId, today]);
+        const attendance = await (0, database_1.dbGet)('SELECT * FROM attendance WHERE employee_id = AND business_id = AND date = $3', [actualEmployeeId, businessId, today]);
         if (!attendance) {
             return res.status(400).json({ error: 'No clock-in record found for today' });
         }
@@ -310,8 +310,8 @@ router.post('/clock-out', async (req, res) => {
         }
         const workSchedule = await (0, database_1.dbGet)(`
       SELECT * FROM employee_work_schedules 
-      WHERE employee_id = ? AND business_id = ? AND is_active = 1
-        AND effective_from <= ? AND (effective_to IS NULL OR effective_to >= $4)
+      WHERE employee_id = AND business_id = AND is_active = 1
+        AND effective_from <= AND (effective_to IS NULL OR effective_to >= $4)
       ORDER BY effective_from DESC LIMIT 1
     `, [actualEmployeeId, businessId, today, today]);
         let expectedEndTime = '17:00:00';
@@ -344,8 +344,8 @@ router.post('/clock-out', async (req, res) => {
         early_departure_minutes = $6,
         status = $7,
         notes = $8,
-        updated_at = CURRENT_TIMESTAMP
-      WHERE id = ? `, [currentTime, break_start_time, break_end_time, totalHours, overtimeHours,
+        updated_at = NOW()
+      WHERE id = `, [currentTime, break_start_time, break_end_time, totalHours, overtimeHours,
             earlyDepartureMinutes, finalStatus, notes, attendance.id]);
         const updatedAttendance = await (0, database_1.dbGet)(`
       SELECT 
@@ -355,7 +355,7 @@ router.post('/clock-out', async (req, res) => {
         e.employee_code
       FROM attendance a
       JOIN employees e ON a.employee_id = e.id
-      WHERE a.id = ? `, [attendance.id]);
+      WHERE a.id = `, [attendance.id]);
         res.json(updatedAttendance);
     }
     catch (error) {
@@ -365,16 +365,16 @@ router.post('/clock-out', async (req, res) => {
 });
 router.post('/', async (req, res) => {
     try {
-        const businessId = req.user?.userId;
+        const businessId = req.user.userId;
         const { employee_id, date, clock_in_time, clock_out_time, break_start_time, break_end_time, attendance_type = 'regular', entry_method = 'manual', status = 'present', notes } = req.body;
         if (!employee_id || !date) {
             return res.status(400).json({ error: 'Employee ID and date are required' });
         }
-        const employee = await (0, database_1.dbGet)('SELECT id FROM employees WHERE id = ? AND business_id = $2', [employee_id, businessId]);
+        const employee = await (0, database_1.dbGet)('SELECT id FROM employees WHERE id = AND business_id = $2', [employee_id, businessId]);
         if (!employee) {
             return res.status(404).json({ error: 'Employee not found' });
         }
-        const existingAttendance = await (0, database_1.dbGet)('SELECT id FROM attendance WHERE employee_id = ? AND date = $2', [employee_id, date]);
+        const existingAttendance = await (0, database_1.dbGet)('SELECT id FROM attendance WHERE employee_id = AND date = $2', [employee_id, date]);
         if (existingAttendance) {
             return res.status(400).json({ error: 'Attendance record already exists for this date' });
         }
@@ -387,8 +387,8 @@ router.post('/', async (req, res) => {
             totalHours = calculateWorkingHours(clock_in_time, clock_out_time, break_start_time, break_end_time);
             const workSchedule = await (0, database_1.dbGet)(`
         SELECT * FROM employee_work_schedules 
-        WHERE employee_id = ? AND business_id = ? AND is_active = 1
-          AND effective_from <= ? AND (effective_to IS NULL OR effective_to >= $4)
+        WHERE employee_id = AND business_id = AND is_active = 1
+          AND effective_from <= AND (effective_to IS NULL OR effective_to >= $4)
         ORDER BY effective_from DESC LIMIT 1
       `, [employee_id, businessId, date, date]);
             if (workSchedule) {
@@ -421,7 +421,7 @@ router.post('/', async (req, res) => {
         employee_id, business_id, date, clock_in_time, clock_out_time,
         break_start_time, break_end_time, total_hours, overtime_hours,
         late_minutes, early_departure_minutes, attendance_type, entry_method, status, notes
-      ) VALUES ($5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19)
+      ) VALUES ($5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19) RETURNING id
     `, [
             employee_id, businessId, date, clock_in_time, clock_out_time,
             break_start_time, break_end_time, totalHours, overtimeHours,
@@ -436,7 +436,7 @@ router.post('/', async (req, res) => {
         e.department
       FROM attendance a
       JOIN employees e ON a.employee_id = e.id
-      WHERE a.id = ? `, [result.rows?.[0]?.id]);
+      WHERE a.id = `, [result.lastID]);
         res.status(201).json(newAttendance);
     }
     catch (error) {
@@ -447,9 +447,9 @@ router.post('/', async (req, res) => {
 router.put('/:id', async (req, res) => {
     try {
         const { id } = req.params;
-        const businessId = req.user?.userId;
+        const businessId = req.user.userId;
         const { date, clock_in_time, clock_out_time, break_start_time, break_end_time, attendance_type, status, notes } = req.body;
-        const existingAttendance = await (0, database_1.dbGet)('SELECT * FROM attendance WHERE id = ? AND business_id = $2', [id, businessId]);
+        const existingAttendance = await (0, database_1.dbGet)('SELECT * FROM attendance WHERE id = AND business_id = $2', [id, businessId]);
         if (!existingAttendance) {
             return res.status(404).json({ error: 'Attendance record not found' });
         }
@@ -465,8 +465,8 @@ router.put('/:id', async (req, res) => {
       UPDATE attendance SET
         date = $2, clock_in_time = $3, clock_out_time = $4, break_start_time = $5,
         break_end_time = $6, total_hours = $7, overtime_hours = $8,
-        attendance_type = $9, status = $10, notes = $11, updated_at = CURRENT_TIMESTAMP
-      WHERE id = ? AND business_id = ? `, [
+        attendance_type = $9, status = $10, notes = $11, updated_at = NOW()
+      WHERE id = AND business_id = `, [
             date || existingAttendance.date,
             finalClockIn,
             finalClockOut,
@@ -489,7 +489,7 @@ router.put('/:id', async (req, res) => {
         e.department
       FROM attendance a
       JOIN employees e ON a.employee_id = e.id
-      WHERE a.id = ? `, [id]);
+      WHERE a.id = `, [id]);
         res.json(updatedAttendance);
     }
     catch (error) {
@@ -500,12 +500,12 @@ router.put('/:id', async (req, res) => {
 router.delete('/:id', async (req, res) => {
     try {
         const { id } = req.params;
-        const businessId = req.user?.userId;
-        const attendance = await (0, database_1.dbGet)('SELECT id FROM attendance WHERE id = ? AND business_id = $2', [id, businessId]);
+        const businessId = req.user.userId;
+        const attendance = await (0, database_1.dbGet)('SELECT id FROM attendance WHERE id = AND business_id = $2', [id, businessId]);
         if (!attendance) {
             return res.status(404).json({ error: 'Attendance record not found' });
         }
-        await (0, database_1.dbRun)('DELETE FROM attendance WHERE id = ? AND business_id = $2', [id, businessId]);
+        await (0, database_1.dbRun)('DELETE FROM attendance WHERE id = AND business_id = $19', [id, businessId]);
         res.json({ message: 'Attendance record deleted successfully' });
     }
     catch (error) {
@@ -515,7 +515,7 @@ router.delete('/:id', async (req, res) => {
 });
 router.get('/stats/monthly', async (req, res) => {
     try {
-        const businessId = req.user?.userId;
+        const businessId = req.user.userId;
         const { month, year, employee_id } = req.query;
         const currentDate = new Date();
         const targetMonth = (month || (currentDate.getMonth() + 1).toString());
@@ -535,13 +535,11 @@ router.get('/stats/monthly', async (req, res) => {
         ROUND(SUM(a.overtime_hours), 2) as total_overtime_hours
       FROM employees e
       LEFT JOIN attendance a ON e.id = a.employee_id 
-        AND strftime('%m', a.date) = ? 
-        AND strftime('%Y', a.date) = ?
-      WHERE e.business_id = ? AND e.status = 'active'
+        AND strftime('%m', a.date) = AND strftime('%Y', a.date) = WHERE e.business_id = AND e.status = 'active'
     `;
         const params = [targetMonth.padStart(2, '0'), targetYear, businessId];
         if (employee_id) {
-            query += ' AND e.id = ?';
+            query += ' AND e.id = $23';
             params.push(employee_id);
         }
         query += ' GROUP BY e.id ORDER BY e.first_name, e.last_name';
@@ -559,14 +557,14 @@ router.get('/stats/monthly', async (req, res) => {
 });
 router.get('/stats/summary', async (req, res) => {
     try {
-        const userType = req.user?.userType;
+        const userType = req.user.userType;
         let businessId;
         const { date_from, date_to } = req.query;
         if (userType === 'employee') {
-            businessId = req.user?.businessId;
+            businessId = req.user.businessId;
         }
         else {
-            businessId = req.user?.userId;
+            businessId = req.user.userId;
         }
         const today = new Date().toISOString().split('T')[0];
         const defaultFrom = date_from || today;
@@ -581,16 +579,15 @@ router.get('/stats/summary', async (req, res) => {
         ROUND(AVG(a.total_hours), 2) as avg_working_hours,
         ROUND(SUM(a.overtime_hours), 2) as total_overtime_hours
       FROM attendance a
-      WHERE a.business_id = ? AND a.date BETWEEN ? AND ?
-    `;
+      WHERE a.business_id = AND a.date BETWEEN ? AND `;
         const params = [businessId, defaultFrom, defaultTo];
         if (userType === 'employee') {
-            const actualEmployeeId = req.user?.userId;
-            query += ' AND a.employee_id = ?';
+            const actualEmployeeId = req.user.userId;
+            query += ' AND a.employee_id = $31';
             params.push(actualEmployeeId);
         }
         const summary = await (0, database_1.dbGet)(query, params);
-        const { total_employees } = await (0, database_1.dbGet)('SELECT COUNT(*) as total_employees FROM employees WHERE business_id = ? AND status = "active"', [businessId]);
+        const { total_employees } = await (0, database_1.dbGet)('SELECT COUNT(*) as total_employees FROM employees WHERE business_id = AND status = "active"', [businessId]);
         res.json({
             ...summary,
             total_active_employees: total_employees,

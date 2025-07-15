@@ -39,27 +39,28 @@ router.get('/', [
     const sortOrder = req.query.sort_order as string || 'desc';
 
     // Build WHERE clause
-    let whereClause = 'WHERE user_id = ?';
-    const whereParams = [userId];
+    let whereClause = 'WHERE i.business_id = $1';
+    const whereParams: any[] = [userId];
+    let paramIndex = 2;
 
     if (category) {
-      whereClause += ' AND category = ?';
+      whereClause += ` AND c.name = $${paramIndex++}`;
       whereParams.push(category);
     }
 
     if (startDate) {
-      whereClause += ' AND date >= ?';
+      whereClause += ` AND i.date >= $${paramIndex++}`;
       whereParams.push(startDate);
     }
 
     if (endDate) {
-      whereClause += ' AND date <= ?';
+      whereClause += ` AND i.date <= $${paramIndex++}`;
       whereParams.push(endDate);
     }
 
     // Get total count
     const countResult: { total: number } = await dbGet(
-      `SELECT COUNT(*) as total FROM income ${whereClause}`,
+      `SELECT COUNT(*) as total FROM income i JOIN categories c ON i.category_id = c.id ${whereClause}`,
       whereParams
     );
     const total = countResult.total;
@@ -67,12 +68,13 @@ router.get('/', [
     // Get income records
     const incomeRecords = await dbAll(
       `SELECT 
-        id, amount, description, category, source, date, 
-        charity_required, created_at, updated_at
-       FROM income 
+        i.id, i.amount, i.description, c.name as category, i.date, 
+        i.created_at, i.updated_at
+       FROM income i
+       JOIN categories c ON i.category_id = c.id
        ${whereClause} 
        ORDER BY ${sortBy} ${sortOrder.toUpperCase()}
-       LIMIT ? OFFSET $2`,
+       LIMIT $${paramIndex++} OFFSET $${paramIndex++}`,
       [...whereParams, limit, offset]
     );
 
@@ -82,7 +84,7 @@ router.get('/', [
     const hasPrev = page > 1;
 
     res.json({
-      success : true,
+      success: true,
       data: {
         income: incomeRecords,
         pagination: {
@@ -119,10 +121,11 @@ router.get('/:id', async (req, res) => {
 
     const incomeRecord = await dbGet(
       `SELECT 
-        id, amount, description, category, source, date, 
-        charity_required, created_at, updated_at
-       FROM income 
-       WHERE id = ? AND user_id = $2`,
+        i.id, i.amount, i.description, c.name as category, i.date, 
+        i.created_at, i.updated_at
+       FROM income i
+       JOIN categories c ON i.category_id = c.id
+       WHERE i.id = $1 AND i.business_id = $2`,
       [incomeId, userId]
     );
 
@@ -157,15 +160,8 @@ router.post('/', [
     .isLength({ max: 500 })
     .withMessage('Description cannot exceed 500 characters'),
   body('category')
-    .optional()
-    .trim()
-    .isLength({ max: 50 })
-    .withMessage('Category cannot exceed 50 characters'),
-  body('source')
-    .optional()
-    .trim()
-    .isLength({ max: 100 })
-    .withMessage('Source cannot exceed 100 characters'),
+    .notEmpty()
+    .withMessage('Category is required'),
   body('date')
     .isISO8601()
     .withMessage('Date must be valid ISO date')
@@ -181,50 +177,45 @@ router.post('/', [
     }
 
     const userId = req.user!.userId;
-    const { amount, description, category = 'General', source, date } = req.body;
+    const { amount, description, category, date } = req.body;
 
     try {
-      await dbRun('BEGIN TRANSACTION');
+      await dbRun('BEGIN');
 
-      // Insert income record (charity_required is auto-calculated by the database)
+      const categoryRecord = await dbGet(
+        'SELECT id FROM categories WHERE name = $1 AND business_id = $2 AND type = \'income\'',
+        [category, userId]
+      );
+
+      if (!categoryRecord) {
+        return res.status(400).json({
+          success: false,
+          message: 'Invalid income category'
+        });
+      }
+
       const incomeResult = await dbRun(
-        'INSERT INTO income (user_id, amount, description, category, source, date) VALUES ($1, $2, $3, $4, $5, $6)',
-        [userId, amount, description, category, source, date]
+        'INSERT INTO income (business_id, amount, description, category_id, date) VALUES ($1, $2, $3, $4, $5) RETURNING id',
+        [userId, amount, description, categoryRecord.id, date]
       );
 
-      const incomeId = incomeResult.rows?.[0]?.id;
+      const incomeId = incomeResult.lastID;
 
-      // Get the created income record with calculated charity_required
-      const incomeRecord = await dbGet(
-        'SELECT * FROM income WHERE id = $1',
-        [incomeId]
-      );
-
-      // Create charity record with auto-calculated 2.5% amount
-      const charityAmount = parseFloat(incomeRecord.charity_required);
+      const charityAmount = amount * 0.025;
       await dbRun(
-        'INSERT INTO charity (user_id, income_id, amount_required, description) VALUES ($1, $2, $3, $4)',
-        [userId, incomeId, charityAmount, `Charity for income: ${description || category}`]
+        'INSERT INTO charity (business_id, amount, date) VALUES ($1, $2, $3)',
+        [userId, charityAmount, date]
       );
 
-      // Record transaction for audit trail
-      await dbRun(
-        'INSERT INTO transactions (user_id, transaction_type, reference_id, reference_table, amount, description, date) VALUES ($1, $2, $3, $4, $5, $6, $7)',
-        [userId, 'income', incomeId, 'income', amount, `Income: ${description || category}`, date]
-      );
-
-      // Commit transaction
       await dbRun('COMMIT');
+
+      const newIncome = await dbGet('SELECT * FROM income WHERE id = $1', [incomeId]);
 
       res.status(201).json({
         success: true,
         message: 'Income record created successfully',
         data: {
-          income: incomeRecord,
-          charity_created: {
-            amount_required: charityAmount,
-            status: 'pending'
-          }
+          income: newIncome
         }
       });
     } catch (error) {
@@ -252,15 +243,7 @@ router.put('/:id', [
     .isLength({ max: 500 })
     .withMessage('Description cannot exceed 500 characters'),
   body('category')
-    .optional()
-    .trim()
-    .isLength({ max: 50 })
-    .withMessage('Category cannot exceed 50 characters'),
-  body('source')
-    .optional()
-    .trim()
-    .isLength({ max: 100 })
-    .withMessage('Source cannot exceed 100 characters'),
+    .optional(),
   body('date')
     .optional()
     .isISO8601()
@@ -286,9 +269,8 @@ router.put('/:id', [
       });
     }
 
-    // Check if income record exists and belongs to user
     const existingRecord = await dbGet(
-      'SELECT id, amount FROM income WHERE id = ? AND user_id = $2',
+      'SELECT id, amount, category_id FROM income WHERE id = $1 AND business_id = $2',
       [incomeId, userId]
     );
 
@@ -299,30 +281,41 @@ router.put('/:id', [
       });
     }
 
-    const { amount, description, category, source, date } = req.body;
-    const oldAmount = existingRecord.amount;
+    const { amount, description, category, date } = req.body;
+
+    let categoryId = existingRecord.category_id;
+    if (category) {
+      const categoryRecord = await dbGet(
+        'SELECT id FROM categories WHERE name = $1 AND business_id = $2 AND type = \'income\'',
+        [category, userId]
+      );
+      if (!categoryRecord) {
+        return res.status(400).json({
+          success: false,
+          message: 'Invalid income category'
+        });
+      }
+      categoryId = categoryRecord.id;
+    }
 
     const updates: string[] = [];
     const values: any[] = [];
+    let paramIndex = 1;
 
     if (amount !== undefined) {
-      updates.push('amount = ?');
+      updates.push(`amount = $${paramIndex++}`);
       values.push(amount);
     }
     if (description !== undefined) {
-      updates.push('description = ?');
+      updates.push(`description = $${paramIndex++}`);
       values.push(description);
     }
-    if (category !== undefined) {
-      updates.push('category = ?');
-      values.push(category);
-    }
-    if (source !== undefined) {
-      updates.push('source = ?');
-      values.push(source);
+    if (category) {
+      updates.push(`category_id = $${paramIndex++}`);
+      values.push(categoryId);
     }
     if (date !== undefined) {
-      updates.push('date = ?');
+      updates.push(`date = $${paramIndex++}`);
       values.push(date);
     }
 
@@ -335,39 +328,21 @@ router.put('/:id', [
 
     values.push(incomeId);
 
-    try {
-      await dbRun('BEGIN TRANSACTION');
+    await dbRun(
+      `UPDATE income SET ${updates.join(', ')}, updated_at = NOW() WHERE id = $${paramIndex++}`,
+      values
+    );
 
-      // Update income record
-      await dbRun(
-        `UPDATE income SET ${updates.join(', ')}, updated_at = CURRENT_TIMESTAMP WHERE id = $1`,
-        values
-      );
+    const updatedRecord = await dbGet(
+      'SELECT * FROM income WHERE id = $1',
+      [incomeId]
+    );
 
-      // If amount changed, update related charity record
-      if (amount !== undefined && amount !== oldAmount) {
-        // The charity_required is a generated column, so it updates automatically.
-        // We might need to trigger an update on the charity table if its schema doesn't auto-update.
-        // For now, we assume the generated column handles it.
-      }
-
-      // Get updated record
-      const updatedRecord = await dbGet(
-        'SELECT * FROM income WHERE id = $1',
-        [incomeId]
-      );
-
-      await dbRun('COMMIT');
-
-      res.json({
-        success: true,
-        message: 'Income record updated successfully',
-        data: { income: updatedRecord }
-      });
-    } catch (error) {
-      await dbRun('ROLLBACK');
-      throw error;
-    }
+    res.json({
+      success: true,
+      message: 'Income record updated successfully',
+      data: { income: updatedRecord }
+    });
   } catch (error) {
     console.error('Update income error:', error);
     res.status(500).json({
@@ -390,9 +365,8 @@ router.delete('/:id', async (req, res) => {
       });
     }
 
-    // Check if income record exists and belongs to user
     const existingRecord = await dbGet(
-      'SELECT id FROM income WHERE id = ? AND user_id = $2',
+      'SELECT id, amount FROM income WHERE id = $1 AND business_id = $2',
       [incomeId, userId]
     );
 
@@ -403,49 +377,34 @@ router.delete('/:id', async (req, res) => {
       });
     }
 
-    try {
-      await dbRun('BEGIN TRANSACTION');
+    await dbRun('BEGIN');
 
-      // Foreign key constraints with ON DELETE CASCADE should handle deletions.
-      // Explicitly deleting for clarity and safety.
+    await dbRun(
+      'DELETE FROM charity WHERE amount = $1 AND business_id = $2',
+      [existingRecord.amount * 0.025, userId]
+    );
 
-      // Delete related charity records
-      await dbRun(
-        'DELETE FROM charity WHERE income_id = ? AND user_id = $2',
-        [incomeId, userId]
-      );
+    const result = await dbRun(
+      'DELETE FROM income WHERE id = $1 AND business_id = $2',
+      [incomeId, userId]
+    );
 
-      // Delete related transactions
-      await dbRun(
-        'DELETE FROM transactions WHERE reference_id = ? AND reference_table = ? AND user_id = $3',
-        [incomeId, 'income', userId]
-      );
-
-      // Delete income record
-      const result = await dbRun(
-        'DELETE FROM income WHERE id = ? AND user_id = $2',
-        [incomeId, userId]
-      );
-
-      if (result.rowCount === 0) {
-        await dbRun('ROLLBACK');
-        return res.status(404).json({
-          success: false,
-          message: 'Income record not found or already deleted'
-        });
-      }
-
-      await dbRun('COMMIT');
-
-      res.json({
-        success: true,
-        message: 'Income record deleted successfully'
-      });
-    } catch (error) {
+    if (result.changes === 0) {
       await dbRun('ROLLBACK');
-      throw error;
+      return res.status(404).json({
+        success: false,
+        message: 'Income record not found or already deleted'
+      });
     }
+
+    await dbRun('COMMIT');
+
+    res.json({
+      success: true,
+      message: 'Income record deleted successfully'
+    });
   } catch (error) {
+    await dbRun('ROLLBACK');
     console.error('Delete income error:', error);
     res.status(500).json({
       success: false,
@@ -459,43 +418,42 @@ router.get('/stats/summary', async (req, res) => {
   try {
     const userId = req.user!.userId;
 
-    // Get total income, monthly income, and category breakdown
     const stats = await dbGet(
       `SELECT 
         COUNT(*) as total_records,
         SUM(amount) as total_income,
         AVG(amount) as average_income,
-        SUM(charity_required) as total_charity_required,
+        SUM(amount * 0.025) as total_charity_required,
         MIN(date) as earliest_date,
         MAX(date) as latest_date
        FROM income 
-       WHERE user_id = $1`,
+       WHERE business_id = $1`,
       [userId]
     );
 
-    // Get monthly income for current year
     const monthlyStats = await dbAll(
       `SELECT 
-        strftime('%m', date) as month,
-        strftime('%Y', date) as year,
+        to_char(date, 'MM') as month,
+        to_char(date, 'YYYY') as year,
         SUM(amount) as monthly_income,
         COUNT(*) as monthly_count
        FROM income 
-       WHERE user_id = ? AND strftime('%Y', date) = strftime('%Y', 'now')
+       WHERE business_id = $1 AND to_char(date, 'YYYY') = to_char(CURRENT_DATE, 'YYYY')
        GROUP BY year, month
        ORDER BY month`,
       [userId]
     );
 
-    // Get category breakdown
     const categoryStats = await dbAll(
       `SELECT 
-        category,
+        c.name as category,
         COUNT(*) as count,
-        SUM(amount) as total_amount,
-        AVG(amount) as average_amount
-       FROM income 
-       WHERE user_id = ? GROUP BY category
+        SUM(i.amount) as total_amount,
+        AVG(i.amount) as average_amount
+       FROM income i
+       JOIN categories c ON i.category_id = c.id
+       WHERE i.business_id = $1 
+       GROUP BY c.name
        ORDER BY total_amount DESC`,
       [userId]
     );

@@ -63,7 +63,7 @@ export const requireRole = (allowedRoles: string[]) => {
         return;
       }
 
-      if (!allowedRoles.includes(req.user.userType)) {
+      if (!allowedRoles.includes(req.user!.userType)) {
         res.status(403).json({
           success: false,
           message: 'Insufficient permissions'
@@ -104,9 +104,9 @@ export const checkBusinessAccess = (req: Request, res: Response, next: NextFunct
     const requestedBusinessId = req.params.businessId || req.body.business_id || req.query.business_id;
     
     // Business owners can access their own business data
-    if (req.user.userType === 'business_owner') {
+    if (req.user!.userType === 'business_owner') {
       // For business owners, their userId is their business ID
-      if (requestedBusinessId && parseInt(requestedBusinessId) !== req.user.userId) {
+      if (requestedBusinessId && parseInt(requestedBusinessId) !== req.user!.userId) {
         res.status(403).json({
           success: false,
           message: 'Access denied to this business'
@@ -116,8 +116,8 @@ export const checkBusinessAccess = (req: Request, res: Response, next: NextFunct
     }
     
     // Employees can only access their own business data
-    if (req.user.userType === 'employee') {
-      if (requestedBusinessId && req.user.businessId && parseInt(requestedBusinessId) !== req.user.businessId) {
+    if (req.user!.userType === 'employee') {
+      if (requestedBusinessId && req.user!.businessId! && parseInt(requestedBusinessId) !== req.user!.businessId!) {
         res.status(403).json({
           success: false,
           message: 'Access denied to this business'

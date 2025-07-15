@@ -13,7 +13,7 @@ const runMigrations = async () => {
         process.exit(1);
     }
     finally {
-        database_1.db.end();
+        database_1.pool.end();
     }
 };
 runMigrations();

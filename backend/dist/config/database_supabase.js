@@ -9,7 +9,9 @@ const dotenv_1 = __importDefault(require("dotenv"));
 dotenv_1.default.config();
 exports.pool = new pg_1.Pool({
     connectionString: process.env.DATABASE_URL || process.env.POSTGRES_URL,
-    ssl: process.env.NODE_ENV === 'production' ? true : { rejectUnauthorized: false },
+    ssl: {
+        rejectUnauthorized: false
+    },
     max: 20,
     idleTimeoutMillis: 30000,
     connectionTimeoutMillis: 2000,
@@ -20,11 +22,10 @@ const testConnection = async () => {
         await client.query('SELECT 1');
         client.release();
         console.log('✅ Supabase database connected successfully');
-        console.log('💾 Database: PostgreSQL/Supabase');
     }
     catch (err) {
         console.error('❌ Supabase connection failed:', err);
-        console.log('⚠️ Continuing without database connection for development');
+        process.exit(1);
     }
 };
 exports.testConnection = testConnection;

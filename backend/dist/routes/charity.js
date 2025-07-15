@@ -60,7 +60,7 @@ router.get('/', [
        LEFT JOIN income i ON c.income_id = i.id
        ${whereClause} 
        ORDER BY c.${sortBy} ${sortOrder.toUpperCase()}
-       LIMIT ? OFFSET ?`, [...whereParams, limit, offset]);
+       LIMIT $1 OFFSET $2`, [...whereParams, limit, offset]);
         const totalPages = Math.ceil(total / limit);
         const hasNext = page < totalPages;
         const hasPrev = page > 1;
@@ -103,7 +103,7 @@ router.get('/:id', async (req, res) => {
         i.amount as income_amount, i.description as income_description, i.date as income_date
        FROM charity c 
        LEFT JOIN income i ON c.income_id = i.id
-       WHERE c.id = ? AND c.user_id = $2`, [charityId, userId]);
+       WHERE c.id = $1 AND c.user_id = $2`, [charityId, userId]);
         if (!charityRecord) {
             return res.status(404).json({
                 success: false,
@@ -157,7 +157,7 @@ router.post('/payment', [
         const { charity_id, payment_amount, payment_date, recipient, description } = req.body;
         try {
             await (0, database_1.dbRun)('BEGIN TRANSACTION');
-            const charity = await (0, database_1.dbGet)('SELECT id, amount_required, amount_paid, amount_remaining, status FROM charity WHERE id = ? AND user_id = $2', [charity_id, userId]);
+            const charity = await (0, database_1.dbGet)('SELECT id, amount_required, amount_paid, amount_remaining, status FROM charity WHERE id = $1 AND user_id = $2', [charity_id, userId]);
             if (!charity) {
                 await (0, database_1.dbRun)('ROLLBACK');
                 return res.status(404).json({
@@ -187,9 +187,9 @@ router.post('/payment', [
           payment_date = $3,
           recipient = COALESCE($4, recipient),
           description = COALESCE($5, description),
-          updated_at = CURRENT_TIMESTAMP 
+          updated_at = NOW() 
          WHERE id = $6`, [newAmountPaid, newStatus, payment_date, recipient, description, charity_id]);
-            await (0, database_1.dbRun)('INSERT INTO transactions (user_id, transaction_type, reference_id, reference_table, amount, description, date) VALUES (?, ?, ?, ?, ?, ?, ?)', [userId, 'charity', charity_id, 'charity', payment_amount, `Charity payment: ${description || 'Charity contribution'}`, payment_date]);
+            await (0, database_1.dbRun)('INSERT INTO transactions (user_id, transaction_type, reference_id, reference_table, amount, description, date) VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING id', [userId, 'charity', charity_id, 'charity', payment_amount, `Charity payment: ${description || 'Charity contribution'}`, payment_date]);
             const updatedRecord = await (0, database_1.dbGet)(`SELECT 
           c.id, c.income_id, c.amount_required, c.amount_paid, c.amount_remaining,
           c.status, c.payment_date, c.description, c.recipient, c.created_at, c.updated_at,
@@ -252,8 +252,8 @@ router.post('/', [
         const userId = req.user.userId;
         const { amount_required, description, recipient } = req.body;
         const result = await (0, database_1.dbRun)('INSERT INTO charity (user_id, amount_required, description, recipient) VALUES ($1, $2, $3, $4) RETURNING id', [userId, amount_required, description, recipient]);
-        const charityId = result.rows?.[0]?.id;
-        const newCharity = await (0, database_1.dbGet)('SELECT * FROM charity WHERE id = $1', [charityId]);
+        const charityId = result.lastID;
+        const newCharity = await (0, database_1.dbGet)('SELECT * FROM charity WHERE id = $5', [charityId]);
         res.status(201).json({
             success: true,
             message: 'Manual charity record created successfully',
@@ -297,7 +297,7 @@ router.put('/:id', [
                 message: 'Invalid charity ID'
             });
         }
-        const existingRecord = await (0, database_1.dbGet)('SELECT id FROM charity WHERE id = ? AND user_id = $2', [charityId, userId]);
+        const existingRecord = await (0, database_1.dbGet)('SELECT id FROM charity WHERE id = $1 AND user_id = $2', [charityId, userId]);
         if (!existingRecord) {
             return res.status(404).json({
                 success: false,
@@ -308,11 +308,11 @@ router.put('/:id', [
         const updates = [];
         const values = [];
         if (description !== undefined) {
-            updates.push('description = ?');
+            updates.push('description = $6');
             values.push(description);
         }
         if (recipient !== undefined) {
-            updates.push('recipient = ?');
+            updates.push('recipient = $7');
             values.push(recipient);
         }
         if (updates.length === 0) {
@@ -322,7 +322,7 @@ router.put('/:id', [
             });
         }
         values.push(charityId);
-        await (0, database_1.dbRun)(`UPDATE charity SET ${updates.join(', ')}, updated_at = CURRENT_TIMESTAMP WHERE id = $1`, values);
+        await (0, database_1.dbRun)(`UPDATE charity SET ${updates.join(', ')}, updated_at = NOW() WHERE id = $1`, values);
         const updatedRecord = await (0, database_1.dbGet)(`SELECT 
         c.id, c.income_id, c.amount_required, c.amount_paid, c.amount_remaining,
         c.status, c.payment_date, c.description, c.recipient, c.created_at, c.updated_at,
@@ -354,7 +354,7 @@ router.delete('/:id', async (req, res) => {
                 message: 'Invalid charity ID'
             });
         }
-        const charity = await (0, database_1.dbGet)('SELECT id, income_id FROM charity WHERE id = ? AND user_id = $2', [charityId, userId]);
+        const charity = await (0, database_1.dbGet)('SELECT id, income_id FROM charity WHERE id = $1 AND user_id = $2', [charityId, userId]);
         if (!charity) {
             return res.status(404).json({
                 success: false,
@@ -369,8 +369,8 @@ router.delete('/:id', async (req, res) => {
         }
         try {
             await (0, database_1.dbRun)('BEGIN TRANSACTION');
-            await (0, database_1.dbRun)('DELETE FROM transactions WHERE reference_id = ? AND reference_table = ? AND user_id = $3', [charityId, 'charity', userId]);
-            await (0, database_1.dbRun)('DELETE FROM charity WHERE id = ? AND user_id = $2', [charityId, userId]);
+            await (0, database_1.dbRun)('DELETE FROM transactions WHERE reference_id = $1 AND reference_table = $2 AND user_id = $3', [charityId, 'charity', userId]);
+            await (0, database_1.dbRun)('DELETE FROM charity WHERE id = $4 AND user_id = $5', [charityId, userId]);
             await (0, database_1.dbRun)('COMMIT');
             res.json({
                 success: true,
@@ -402,14 +402,14 @@ router.get('/stats/summary', async (req, res) => {
         SUM(CASE WHEN status = 'partial' THEN 1 ELSE 0 END) as partial_count,
         SUM(CASE WHEN status = 'paid' THEN 1 ELSE 0 END) as paid_count
        FROM charity 
-       WHERE user_id = ?`, [userId]);
+       WHERE user_id = $1`, [userId]);
         const monthlyStats = await (0, database_1.dbAll)(`SELECT 
         strftime('%m', payment_date) as month,
         strftime('%Y', payment_date) as year,
         SUM(amount_paid) as monthly_payments,
         COUNT(*) as monthly_count
        FROM charity 
-       WHERE user_id = ? AND payment_date IS NOT NULL AND strftime('%Y', payment_date) = strftime('%Y', 'now')
+       WHERE user_id = $1 AND payment_date IS NOT NULL AND strftime('%Y', payment_date) = strftime('%Y', 'now')
        GROUP BY strftime('%Y', payment_date), strftime('%m', payment_date)
        ORDER BY month`, [userId]);
         const recentActivities = await (0, database_1.dbAll)(`SELECT 
@@ -418,7 +418,8 @@ router.get('/stats/summary', async (req, res) => {
         i.description as income_description
        FROM charity c
        LEFT JOIN income i ON c.income_id = i.id
-       WHERE c.user_id = ? ORDER BY c.updated_at DESC
+       WHERE c.user_id = $1
+       ORDER BY c.updated_at DESC
        LIMIT 10`, [userId]);
         res.json({
             success: true,

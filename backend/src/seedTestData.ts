@@ -123,7 +123,7 @@ export const seedTestData = async () => {
           business_id, customer_name, customer_email, customer_phone, customer_address,
           invoice_number, invoice_date, due_date, amount, balance_amount, status,
           payment_terms, description, notes
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14) RETURNING id
       `, [
         invoice.business_id, invoice.customer_name, invoice.customer_email, 
         invoice.customer_phone, invoice.customer_address, invoice.invoice_number,
@@ -138,7 +138,7 @@ export const seedTestData = async () => {
         INSERT INTO payment_records (
           business_id, record_type, record_id, payment_date, amount,
           payment_method, reference_number, notes
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING id
       `, [
         payment.business_id, payment.record_type, payment.record_id,
         payment.payment_date, payment.amount, payment.payment_method,

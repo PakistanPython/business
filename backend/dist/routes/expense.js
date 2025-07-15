@@ -58,7 +58,7 @@ router.get('/', [
        FROM expenses 
        ${whereClause} 
        ORDER BY ${sortBy} ${sortOrder.toUpperCase()}
-       LIMIT ? OFFSET $2`, [...whereParams, limit, offset]);
+       LIMIT $1 OFFSET $2`, [...whereParams, limit, offset]);
         const totalPages = Math.ceil(total / limit);
         const hasNext = page < totalPages;
         const hasPrev = page > 1;
@@ -99,7 +99,7 @@ router.get('/:id', async (req, res) => {
         id, amount, description, category, payment_method, date, 
         receipt_path, created_at, updated_at
        FROM expenses 
-       WHERE id = ? AND user_id = $2`, [expenseId, userId]);
+       WHERE id = $1 AND user_id = $2`, [expenseId, userId]);
         if (!expense) {
             return res.status(404).json({
                 success: false,
@@ -158,10 +158,10 @@ router.post('/', [
         }
         const userId = req.user.userId;
         const { amount, description = null, category, payment_method = 'Cash', date, receipt_path = null } = req.body;
-        const expenseResult = await (0, database_1.dbRun)('INSERT INTO expenses (user_id, amount, description, category, payment_method, date, receipt_path) VALUES ($1, $2, $3, $4, $5, $6, $7)', [userId, amount, description, category, payment_method, date, receipt_path]);
-        const expenseId = expenseResult.rows?.[0]?.id;
-        const expenseRecord = await (0, database_1.dbGet)('SELECT * FROM expenses WHERE id = $1', [expenseId]);
-        await (0, database_1.dbRun)('INSERT INTO transactions (user_id, transaction_type, reference_id, reference_table, amount, description, date) VALUES ($1, $2, $3, $4, $5, $6, $7)', [userId, 'expense', expenseId, 'expenses', amount, `Expense: ${description || category}`, date]);
+        const expenseResult = await (0, database_1.dbRun)('INSERT INTO expenses (user_id, amount, description, category, payment_method, date, receipt_path) VALUES (?, ?, ?, ?, ?, ?, ?)', [userId, amount, description, category, payment_method, date, receipt_path]);
+        const expenseId = expenseResult.lastID;
+        const expenseRecord = await (0, database_1.dbGet)('SELECT * FROM expenses WHERE id = ?', [expenseId]);
+        await (0, database_1.dbRun)('INSERT INTO transactions (user_id, transaction_type, reference_id, reference_table, amount, description, date) VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING id', [userId, 'expense', expenseId, 'expenses', amount, `Expense: ${description || category}`, date]);
         res.status(201).json({
             success: true,
             message: 'Expense record created successfully',
@@ -224,7 +224,7 @@ router.put('/:id', [
                 message: 'Invalid expense ID'
             });
         }
-        const existingRecord = await (0, database_1.dbGet)('SELECT id FROM expenses WHERE id = ? AND user_id = $2', [expenseId, userId]);
+        const existingRecord = await (0, database_1.dbGet)('SELECT id FROM expenses WHERE id = $1 AND user_id = $2', [expenseId, userId]);
         if (!existingRecord) {
             return res.status(404).json({
                 success: false,
@@ -235,27 +235,27 @@ router.put('/:id', [
         const updates = [];
         const values = [];
         if (amount !== undefined) {
-            updates.push('amount = ?');
+            updates.push('amount = $1');
             values.push(amount);
         }
         if (description !== undefined) {
-            updates.push('description = ?');
+            updates.push('description = $2');
             values.push(description);
         }
         if (category !== undefined) {
-            updates.push('category = ?');
+            updates.push('category = $3');
             values.push(category);
         }
         if (payment_method !== undefined) {
-            updates.push('payment_method = ?');
+            updates.push('payment_method = $4');
             values.push(payment_method);
         }
         if (date !== undefined) {
-            updates.push('date = ?');
+            updates.push('date = $5');
             values.push(date);
         }
         if (receipt_path !== undefined) {
-            updates.push('receipt_path = ?');
+            updates.push('receipt_path = $6');
             values.push(receipt_path);
         }
         if (updates.length === 0) {
@@ -264,9 +264,9 @@ router.put('/:id', [
                 message: 'No valid fields to update'
             });
         }
-        updates.push('updated_at = CURRENT_TIMESTAMP');
+        updates.push('updated_at = NOW()');
         values.push(expenseId);
-        await (0, database_1.dbRun)(`UPDATE expenses SET ${updates.join(', ')} WHERE id = ?`, values);
+        await (0, database_1.dbRun)(`UPDATE expenses SET ${updates.join(', ')} WHERE id = $1`, values);
         const updatedRecord = await (0, database_1.dbGet)('SELECT * FROM expenses WHERE id = $1', [expenseId]);
         res.json({
             success: true,
@@ -292,15 +292,15 @@ router.delete('/:id', async (req, res) => {
                 message: 'Invalid expense ID'
             });
         }
-        const existingRecord = await (0, database_1.dbGet)('SELECT id FROM expenses WHERE id = ? AND user_id = $2', [expenseId, userId]);
+        const existingRecord = await (0, database_1.dbGet)('SELECT id FROM expenses WHERE id = $1 AND user_id = $2', [expenseId, userId]);
         if (!existingRecord) {
             return res.status(404).json({
                 success: false,
                 message: 'Expense record not found'
             });
         }
-        await (0, database_1.dbRun)('DELETE FROM transactions WHERE reference_id = ? AND reference_table = ? AND user_id = $3', [expenseId, 'expenses', userId]);
-        await (0, database_1.dbRun)('DELETE FROM expenses WHERE id = ? AND user_id = $2', [expenseId, userId]);
+        await (0, database_1.dbRun)('DELETE FROM transactions WHERE reference_id = $2 AND reference_table = $3 AND user_id = $4', [expenseId, 'expenses', userId]);
+        await (0, database_1.dbRun)('DELETE FROM expenses WHERE id = $5 AND user_id = $6', [expenseId, userId]);
         res.json({
             success: true,
             message: 'Expense record deleted successfully'
@@ -331,7 +331,7 @@ router.get('/stats/summary', async (req, res) => {
         SUM(amount) as monthly_expenses,
         COUNT(*) as monthly_count
        FROM expenses 
-       WHERE user_id = ? AND strftime('%Y', date) = strftime('%Y', 'now')
+       WHERE user_id = $1 AND strftime('%Y', date) = strftime('%Y', 'now')
        GROUP BY strftime('%Y', date), strftime('%m', date)
        ORDER BY month`, [userId]);
         const categoryStats = await (0, database_1.dbAll)(`SELECT 
@@ -340,14 +340,16 @@ router.get('/stats/summary', async (req, res) => {
         SUM(amount) as total_amount,
         AVG(amount) as average_amount
        FROM expenses 
-       WHERE user_id = ? GROUP BY category
+       WHERE user_id = $1 
+       GROUP BY category
        ORDER BY total_amount DESC`, [userId]);
         const paymentStats = await (0, database_1.dbAll)(`SELECT 
         payment_method,
         COUNT(*) as count,
         SUM(amount) as total_amount
        FROM expenses 
-       WHERE user_id = ? GROUP BY payment_method
+       WHERE user_id = $2 
+       GROUP BY payment_method
        ORDER BY total_amount DESC`, [userId]);
         res.json({
             success: true,

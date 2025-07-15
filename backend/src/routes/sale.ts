@@ -1,7 +1,7 @@
 import express from 'express';
 import { dbGet, dbAll, dbRun } from '../config/database';
 import { authenticateToken } from '../middleware/auth';
-import { validateSale } from '../middleware/validation';
+import { body, validationResult } from 'express-validator';
 
 const router = express.Router();
 
@@ -12,13 +12,10 @@ router.get('/', authenticateToken, async (req, res) => {
     
     const rows = await dbAll(`
       SELECT 
-        s.*, 
-        p.description as purchase_description,
-        p.category as purchase_category,
-        p.date as purchase_date
+        s.*
       FROM sales s
-      LEFT JOIN purchases p ON s.purchase_id = p.id
-      WHERE s.user_id = ? ORDER BY s.date DESC, s.created_at DESC
+      WHERE s.business_id = $1
+      ORDER BY s.date DESC, s.created_at DESC
     `, [userId]);
 
     res.json({
@@ -40,18 +37,14 @@ router.get('/', authenticateToken, async (req, res) => {
 // Get sales summary for dashboard
 router.get('/summary', authenticateToken, async (req, res) => {
   try {
-    const userId = req.user?.userId;
+    const userId = req.user!.userId;
     
     const summary = await dbGet(`
       SELECT 
         COUNT(*) as total_sales,
-        COALESCE(SUM(selling_price), 0) as total_revenue,
-        COALESCE(SUM(profit), 0) as total_profit,
-        COALESCE(AVG(profit_percentage), 0) as avg_profit_percentage,
-        COALESCE(SUM(CASE WHEN date >= date('now', '-30 days') THEN selling_price ELSE 0 END), 0) as monthly_revenue,
-        COALESCE(SUM(CASE WHEN date >= date('now', '-30 days') THEN profit ELSE 0 END), 0) as monthly_profit
+        COALESCE(SUM(amount), 0) as total_revenue
       FROM sales 
-      WHERE user_id = ? AND status = 'completed'
+      WHERE business_id = $1
     `, [userId]);
 
     res.json({
@@ -75,13 +68,10 @@ router.get('/:id', authenticateToken, async (req, res) => {
 
     const sale = await dbGet(`
       SELECT 
-        s.*, 
-        p.description as purchase_description,
-        p.category as purchase_category,
-        p.date as purchase_date
+        s.*
       FROM sales s
-      LEFT JOIN purchases p ON s.purchase_id = p.id
-      WHERE s.id = ? AND s.user_id = ? `, [saleId, userId]);
+      WHERE s.id = $1 AND s.business_id = $2
+    `, [saleId, userId]);
 
     if (!sale) {
       return res.status(404).json({
@@ -104,47 +94,40 @@ router.get('/:id', authenticateToken, async (req, res) => {
 });
 
 // Create new sale
-router.post('/', authenticateToken, validateSale, async (req, res) => {
+router.post('/', authenticateToken, [
+    body('amount').isFloat({ gt: 0 }),
+    body('description').optional().isString(),
+    body('customer_name').optional().isString(),
+    body('date').isISO8601().toDate(),
+], async (req, res) => {
   try {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+      return res.status(400).json({ errors: errors.array() });
+    }
+
     const userId = req.user?.userId;
     const {
-      purchase_id,
       amount,
-      selling_price,
       description,
       customer_name,
-      customer_contact,
-      payment_method,
       date,
-      status = 'completed',
-      notes
     } = req.body;
 
     const result = await dbRun(`
       INSERT INTO sales 
-      (user_id, purchase_id, amount, selling_price, description, customer_name, customer_contact, payment_method, date, status, notes)
-      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
-    `, [userId, purchase_id || null, amount, selling_price, description, customer_name, customer_contact, payment_method, date, status, notes]);
+      (business_id, amount, description, customer_name, date)
+      VALUES ($1, $2, $3, $4, $5) RETURNING id
+    `, [userId, amount, description, customer_name, date]);
 
-    const saleId = result.rows?.[0]?.id;
+    const saleId = result.lastID;
 
-    // Create transaction record
-    await dbRun(`
-      INSERT INTO transactions 
-      (user_id, transaction_type, reference_id, reference_table, amount, description, date)
-      VALUES ($12, 'sale', ?, 'sales', ?, ?, ?)
-    `, [userId, saleId, selling_price, description || 'Sale transaction', date]);
-
-    // Get the created sale with purchase details
     const sale = await dbGet(`
       SELECT 
-        s.*, 
-        p.description as purchase_description,
-        p.category as purchase_category,
-        p.date as purchase_date
+        s.*
       FROM sales s
-      LEFT JOIN purchases p ON s.purchase_id = p.id
-      WHERE s.id = ? `, [saleId]);
+      WHERE s.id = $1
+    `, [saleId]);
 
     res.status(201).json({
       success: true,
@@ -161,26 +144,29 @@ router.post('/', authenticateToken, validateSale, async (req, res) => {
 });
 
 // Update sale
-router.put('/:id', authenticateToken, validateSale, async (req, res) => {
+router.put('/:id', authenticateToken, [
+    body('amount').optional().isFloat({ gt: 0 }),
+    body('description').optional().isString(),
+    body('customer_name').optional().isString(),
+    body('date').optional().isISO8601().toDate(),
+], async (req, res) => {
   try {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+      return res.status(400).json({ errors: errors.array() });
+    }
+
     const userId = req.user?.userId;
     const saleId = req.params.id;
     const {
-      purchase_id,
       amount,
-      selling_price,
       description,
       customer_name,
-      customer_contact,
-      payment_method,
       date,
-      status,
-      notes
     } = req.body;
 
-    // Check if sale exists and belongs to user
     const existing = await dbGet(
-      'SELECT id FROM sales WHERE id = ? AND user_id = $2',
+      'SELECT id FROM sales WHERE id = $1 AND business_id = $2',
       [saleId, userId]
     );
 
@@ -191,29 +177,46 @@ router.put('/:id', authenticateToken, validateSale, async (req, res) => {
       });
     }
 
+    const updates: string[] = [];
+    const values: any[] = [];
+    let paramIndex = 1;
+
+    if (amount) {
+        updates.push(`amount = $${paramIndex++}`);
+        values.push(amount);
+    }
+    if (description) {
+        updates.push(`description = $${paramIndex++}`);
+        values.push(description);
+    }
+    if (customer_name) {
+        updates.push(`customer_name = $${paramIndex++}`);
+        values.push(customer_name);
+    }
+    if (date) {
+        updates.push(`date = $${paramIndex++}`);
+        values.push(date);
+    }
+
+    if (updates.length === 0) {
+        return res.status(400).json({ message: 'No fields to update' });
+    }
+
+    updates.push(`updated_at = NOW()`);
+    values.push(saleId, userId);
+
     await dbRun(`
       UPDATE sales 
-      SET purchase_id = $1, amount = $2, selling_price = $3, description = $4, 
-          customer_name = $5, customer_contact = $6, payment_method = $7, 
-          date = $8, status = $9, notes = $10, updated_at = CURRENT_TIMESTAMP
-      WHERE id = ? AND user_id = ? `, [purchase_id || null, amount, selling_price, description, customer_name, customer_contact, payment_method, date, status, notes, saleId, userId]);
+      SET ${updates.join(', ')}
+      WHERE id = $${paramIndex++} AND business_id = $${paramIndex++}
+    `, values);
 
-    // Update transaction record
-    await dbRun(`
-      UPDATE transactions 
-      SET amount = $13, description = $14, date = ? WHERE reference_id = ? AND reference_table = 'sales' AND user_id = ?
-    `, [selling_price, description || 'Sale transaction', date, saleId, userId]);
-
-    // Get updated sale with purchase details
     const sale = await dbGet(`
       SELECT 
-        s.*, 
-        p.description as purchase_description,
-        p.category as purchase_category,
-        p.date as purchase_date
+        s.*
       FROM sales s
-      LEFT JOIN purchases p ON s.purchase_id = p.id
-      WHERE s.id = ? `, [saleId]);
+      WHERE s.id = $1
+    `, [saleId]);
 
     res.json({
       success: true,
@@ -235,9 +238,8 @@ router.delete('/:id', authenticateToken, async (req, res) => {
     const userId = req.user?.userId;
     const saleId = req.params.id;
 
-    // Check if sale exists and belongs to user
     const existing = await dbGet(
-      'SELECT id FROM sales WHERE id = ? AND user_id = $2',
+      'SELECT id FROM sales WHERE id = $1 AND business_id = $2',
       [saleId, userId]
     );
 
@@ -248,15 +250,8 @@ router.delete('/:id', authenticateToken, async (req, res) => {
       });
     }
 
-    // Delete transaction record first
-    await dbRun(`
-      DELETE FROM transactions 
-      WHERE reference_id = ? AND reference_table = 'sales' AND user_id = ?
-    `, [saleId, userId]);
-
-    // Delete sale
     await dbRun(
-      'DELETE FROM sales WHERE id = ? AND user_id = $2',
+      'DELETE FROM sales WHERE id = $1 AND business_id = $2',
       [saleId, userId]
     );
 
@@ -281,8 +276,7 @@ router.get('/available/purchases', authenticateToken, async (req, res) => {
     const rows = await dbAll(`
       SELECT p.*
       FROM purchases p
-      LEFT JOIN sales s ON p.id = s.purchase_id
-      WHERE p.user_id = ? AND s.purchase_id IS NULL
+      WHERE p.business_id = $1
       ORDER BY p.date DESC, p.created_at DESC
     `, [userId]);
 

@@ -6,6 +6,7 @@ import compression from 'compression';
 import rateLimit from 'express-rate-limit';
 import dotenv from 'dotenv';
 import path from 'path';
+dotenv.config({ path: path.resolve(__dirname, '../.env') });
 import { testConnection } from './config/database';
 
 // Routes
@@ -24,8 +25,6 @@ import attendanceRoutes from './routes/attendance';
 import payrollRoutes from './routes/payroll';
 import accountsReceivableRoutes from './routes/accounts_receivable';
 import accountsPayableRoutes from './routes/accounts_payable';
-
-dotenv.config({ path: path.resolve(__dirname, '../../.env') });
 
 const app = express();
 const PORT = process.env.PORT || 5000;
@@ -92,7 +91,7 @@ app.get('/', (req, res) => {
     message: 'My Business API Server is running!',
     version: '1.0.0',
     environment: process.env.NODE_ENV || 'development',
-    database: 'PostgreSQL'
+    database: 'SQLite'
   });
 });
 
@@ -135,7 +134,7 @@ const startServer = async () => {
     app.listen(PORT, () => {
       console.log(`🚀 Server running on http://localhost:${PORT}`);
       console.log(`📊 Environment: ${process.env.NODE_ENV || 'development'}`);
-      console.log(`💾 Database: PostgreSQL`);
+      console.log(`💾 Database: SQLite`);
       console.log(`🌐 CORS Origin: ${corsOrigin}`);
     });
   } catch (error) {

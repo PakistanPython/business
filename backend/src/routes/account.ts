@@ -15,10 +15,11 @@ router.get('/', async (req, res) => {
 
     const accounts = await dbAll(
       `SELECT 
-        id, account_type, account_name, balance, bank_name, account_number, 
+        id, account_type, account_name, balance, 
         created_at, updated_at
        FROM accounts 
-       WHERE user_id = ? ORDER BY account_type, account_name`,
+       WHERE business_id = $1 
+       ORDER BY account_type, account_name`,
       [userId]
     );
 
@@ -67,10 +68,10 @@ router.get('/:id', async (req, res) => {
 
     const account = await dbGet(
       `SELECT 
-        id, account_type, account_name, balance, bank_name, account_number, 
+        id, account_type, account_name, balance, 
         created_at, updated_at
        FROM accounts 
-       WHERE id = ? AND user_id = $2`,
+       WHERE id = $1 AND business_id = $2`,
       [accountId, userId]
     );
 
@@ -107,17 +108,7 @@ router.post('/', [
   body('balance')
     .optional()
     .isFloat({ min: 0 })
-    .withMessage('Balance must be a non-negative number'),
-  body('bank_name')
-    .optional()
-    .trim()
-    .isLength({ max: 100 })
-    .withMessage('Bank name cannot exceed 100 characters'),
-  body('account_number')
-    .optional()
-    .trim()
-    .isLength({ max: 50 })
-    .withMessage('Account number cannot exceed 50 characters')
+    .withMessage('Balance must be a non-negative number')
 ], async (req, res) => {
   try {
     const errors = validationResult(req);
@@ -130,11 +121,11 @@ router.post('/', [
     }
 
     const userId = req.user!.userId;
-    const { account_type, account_name, balance = 0, bank_name, account_number } = req.body;
+    const { account_type, account_name, balance = 0 } = req.body;
 
     // Check for duplicate account name for the user
     const existingAccount = await dbGet(
-      'SELECT id FROM accounts WHERE user_id = ? AND account_name = $2',
+      'SELECT id FROM accounts WHERE business_id = $1 AND account_name = $2',
       [userId, account_name]
     );
 
@@ -147,8 +138,11 @@ router.post('/', [
 
     // Insert account record
     const result = await dbRun(
-      'INSERT INTO accounts (user_id, account_type, account_name, balance, bank_name, account_number) VALUES ($1, $2, $3, $4, $5, $6) RETURNING id', [userId, account_type, account_name, balance, bank_name, account_number]);
-    const accountId = result.rows?.[0]?.id;
+      'INSERT INTO accounts (business_id, account_type, account_name, balance) VALUES ($1, $2, $3, $4) RETURNING id',
+      [userId, account_type, account_name, balance]
+    );
+
+    const accountId = result.lastID;
 
     // Get the created account record
     const newAccount = await dbGet(
@@ -181,17 +175,7 @@ router.put('/:id', [
   body('balance')
     .optional()
     .isFloat({ min: 0 })
-    .withMessage('Balance must be a non-negative number'),
-  body('bank_name')
-    .optional()
-    .trim()
-    .isLength({ max: 100 })
-    .withMessage('Bank name cannot exceed 100 characters'),
-  body('account_number')
-    .optional()
-    .trim()
-    .isLength({ max: 50 })
-    .withMessage('Account number cannot exceed 50 characters')
+    .withMessage('Balance must be a non-negative number')
 ], async (req, res) => {
   try {
     const errors = validationResult(req);
@@ -215,7 +199,7 @@ router.put('/:id', [
 
     // Check if account exists and belongs to user
     const existingAccount = await dbGet(
-      'SELECT id FROM accounts WHERE id = ? AND user_id = $2',
+      'SELECT id FROM accounts WHERE id = $1 AND business_id = $2',
       [accountId, userId]
     );
 
@@ -226,12 +210,12 @@ router.put('/:id', [
       });
     }
 
-    const { account_name, balance, bank_name, account_number } = req.body;
+    const { account_name, balance } = req.body;
 
     // Check for duplicate account name if changing name
     if (account_name) {
       const duplicateAccount = await dbGet(
-        'SELECT id FROM accounts WHERE user_id = ? AND account_name = ? AND id != $3',
+        'SELECT id FROM accounts WHERE business_id = $1 AND account_name = $2 AND id != $3',
         [userId, account_name, accountId]
       );
 
@@ -245,22 +229,15 @@ router.put('/:id', [
 
     const updates: string[] = [];
     const values: any[] = [];
+    let paramIndex = 1;
 
     if (account_name !== undefined) {
-      updates.push('account_name = ?');
+      updates.push(`account_name = $${paramIndex++}`);
       values.push(account_name);
     }
     if (balance !== undefined) {
-      updates.push('balance = ?');
+      updates.push(`balance = $${paramIndex++}`);
       values.push(balance);
-    }
-    if (bank_name !== undefined) {
-      updates.push('bank_name = ?');
-      values.push(bank_name);
-    }
-    if (account_number !== undefined) {
-      updates.push('account_number = ?');
-      values.push(account_number);
     }
 
     if (updates.length === 0) {
@@ -274,13 +251,13 @@ router.put('/:id', [
 
     // Update account record
     await dbRun(
-      `UPDATE accounts SET ${updates.join(', ')}, updated_at = CURRENT_TIMESTAMP WHERE id = $1`,
+      `UPDATE accounts SET ${updates.join(', ')}, updated_at = NOW() WHERE id = $${paramIndex++}`,
       values
     );
 
     // Get updated record
     const updatedAccount = await dbGet(
-      'SELECT * FROM accounts WHERE id = ?',
+      'SELECT * FROM accounts WHERE id = $1',
       [accountId]
     );
 
@@ -313,7 +290,7 @@ router.delete('/:id', async (req, res) => {
 
     // Check if account exists and belongs to user
     const account = await dbGet(
-      'SELECT id, balance FROM accounts WHERE id = ? AND user_id = $2',
+      'SELECT id, balance FROM accounts WHERE id = $1 AND business_id = $2',
       [accountId, userId]
     );
 
@@ -332,32 +309,16 @@ router.delete('/:id', async (req, res) => {
       });
     }
 
-    // In a real transaction, you'd use db.serialize, but for simplicity here:
-    try {
-      await dbRun('BEGIN TRANSACTION');
-      
-      // Delete related transactions
-      await dbRun(
-        'DELETE FROM transactions WHERE account_id = ? AND user_id = $2',
-        [accountId, userId]
-      );
+    // Delete account record
+    await dbRun(
+      'DELETE FROM accounts WHERE id = $1 AND business_id = $2',
+      [accountId, userId]
+    );
 
-      // Delete account record
-      await dbRun(
-        'DELETE FROM accounts WHERE id = ? AND user_id = $2',
-        [accountId, userId]
-      );
-
-      await dbRun('COMMIT');
-
-      res.json({
-        success: true,
-        message: 'Account deleted successfully'
-      });
-    } catch (error) {
-      await dbRun('ROLLBACK');
-      throw error;
-    }
+    res.json({
+      success: true,
+      message: 'Account deleted successfully'
+    });
   } catch (error) {
     console.error('Delete account error:', error);
     res.status(500).json({
@@ -407,13 +368,11 @@ router.post('/transfer', [
       });
     }
 
-    // In a real transaction, you'd use db.serialize, but for simplicity here:
     try {
-      await dbRun('BEGIN TRANSACTION');
+      await dbRun('BEGIN');
 
-      // Check both accounts exist and belong to user
       const accounts = await dbAll(
-        'SELECT id, account_name, balance FROM accounts WHERE id IN ($1, $2) AND user_id = $3',
+        'SELECT id, account_name, balance FROM accounts WHERE id IN ($1, $2) AND business_id = $3',
         [from_account_id, to_account_id, userId]
       );
 
@@ -428,7 +387,6 @@ router.post('/transfer', [
       const fromAccount = accounts.find((acc: any) => acc.id === from_account_id);
       const toAccount = accounts.find((acc: any) => acc.id === to_account_id);
 
-      // Check sufficient balance
       if (parseFloat(fromAccount.balance) < parseFloat(amount)) {
         await dbRun('ROLLBACK');
         return res.status(400).json({
@@ -437,33 +395,16 @@ router.post('/transfer', [
         });
       }
 
-      // Update account balances
       await dbRun(
-        'UPDATE accounts SET balance = balance - $1, updated_at = CURRENT_TIMESTAMP WHERE id = $2',
+        'UPDATE accounts SET balance = balance - $1, updated_at = NOW() WHERE id = $2',
         [amount, from_account_id]
       );
 
       await dbRun(
-        'UPDATE accounts SET balance = balance + $1, updated_at = CURRENT_TIMESTAMP WHERE id = $2',
+        'UPDATE accounts SET balance = balance + $1, updated_at = NOW() WHERE id = $2',
         [amount, to_account_id]
       );
 
-      // Record transactions for both accounts
-      const transferDescription = description || `Transfer from ${fromAccount.account_name} to ${toAccount.account_name}`;
-
-      // Debit transaction
-      await dbRun(
-        'INSERT INTO transactions (user_id, transaction_type, amount, description, account_id, date) VALUES ($1, $2, $3, $4, $5, $6)',
-        [userId, 'transfer', -amount, `${transferDescription} (Debit)`, from_account_id, date]
-      );
-
-      // Credit transaction
-      await dbRun(
-        'INSERT INTO transactions (user_id, transaction_type, amount, description, account_id, date) VALUES ($1, $2, $3, $4, $5, $6)',
-        [userId, 'transfer', amount, `${transferDescription} (Credit)`, to_account_id, date]
-      );
-
-      // Get updated account balances
       const updatedAccounts = await dbAll(
         'SELECT id, account_name, balance FROM accounts WHERE id IN ($1, $2)',
         [from_account_id, to_account_id]
@@ -479,7 +420,7 @@ router.post('/transfer', [
             from_account: updatedAccounts.find((acc: any) => acc.id === from_account_id),
             to_account: updatedAccounts.find((acc: any) => acc.id === to_account_id),
             amount,
-            description: transferDescription,
+            description,
             date
           }
         }

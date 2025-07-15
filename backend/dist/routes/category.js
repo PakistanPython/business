@@ -69,7 +69,7 @@ router.get('/:id', async (req, res) => {
                 message: 'Invalid category ID'
             });
         }
-        const category = await (0, database_1.dbGet)('SELECT id, name, type, color, icon, created_at FROM categories WHERE id = ? AND user_id = $2', [categoryId, userId]);
+        const category = await (0, database_1.dbGet)('SELECT id, name, type, color, icon, created_at FROM categories WHERE id = $1 AND user_id = $2', [categoryId, userId]);
         if (!category) {
             return res.status(404).json({
                 success: false,
@@ -119,16 +119,16 @@ router.post('/', [
         }
         const userId = req.user.userId;
         const { name, type, color = '#3B82F6', icon = 'circle' } = req.body;
-        const existingCategory = await (0, database_1.dbGet)('SELECT id FROM categories WHERE user_id = ? AND name = ? AND type = $3', [userId, name, type]);
+        const existingCategory = await (0, database_1.dbGet)('SELECT id FROM categories WHERE user_id = $1 AND name = $2 AND type = $3', [userId, name, type]);
         if (existingCategory) {
             return res.status(409).json({
                 success: false,
                 message: 'Category with this name and type already exists'
             });
         }
-        const result = await (0, database_1.dbRun)('INSERT INTO categories (user_id, name, type, color, icon) VALUES ($1, $2, $3, $4, $5) RETURNING id', [userId, name, type, color, icon]);
-        const categoryId = result.rows?.[0]?.id;
-        const newCategory = await (0, database_1.dbGet)('SELECT * FROM categories WHERE id = $1', [categoryId]);
+        const result = await (0, database_1.dbRun)('INSERT INTO categories (user_id, name, type, color, icon) VALUES (?, ?, ?, ?, ?)', [userId, name, type, color, icon]);
+        const categoryId = result.lastID;
+        const newCategory = await (0, database_1.dbGet)('SELECT * FROM categories WHERE id = ?', [categoryId]);
         res.status(201).json({
             success: true,
             message: 'Category created successfully',
@@ -177,7 +177,7 @@ router.put('/:id', [
                 message: 'Invalid category ID'
             });
         }
-        const existingCategory = await (0, database_1.dbGet)('SELECT id, name, type FROM categories WHERE id = ? AND user_id = $2', [categoryId, userId]);
+        const existingCategory = await (0, database_1.dbGet)('SELECT id, name, type FROM categories WHERE id = $1 AND user_id = $2', [categoryId, userId]);
         if (!existingCategory) {
             return res.status(404).json({
                 success: false,
@@ -186,7 +186,7 @@ router.put('/:id', [
         }
         const { name, color, icon } = req.body;
         if (name && name !== existingCategory.name) {
-            const duplicateCategory = await (0, database_1.dbGet)('SELECT id FROM categories WHERE user_id = ? AND name = ? AND type = ? AND id != $4', [userId, name, existingCategory.type, categoryId]);
+            const duplicateCategory = await (0, database_1.dbGet)('SELECT id FROM categories WHERE user_id = $1 AND name = $2 AND type = $3 AND id != $4', [userId, name, existingCategory.type, categoryId]);
             if (duplicateCategory) {
                 return res.status(409).json({
                     success: false,
@@ -215,7 +215,7 @@ router.put('/:id', [
             });
         }
         values.push(categoryId);
-        await (0, database_1.dbRun)(`UPDATE categories SET ${updates.join(', ')} WHERE id = ?`, values);
+        await (0, database_1.dbRun)(`UPDATE categories SET ${updates.join(', ')} WHERE id = $1`, values);
         const updatedCategory = await (0, database_1.dbGet)('SELECT * FROM categories WHERE id = $1', [categoryId]);
         res.json({
             success: true,
@@ -241,16 +241,16 @@ router.delete('/:id', async (req, res) => {
                 message: 'Invalid category ID'
             });
         }
-        const category = await (0, database_1.dbGet)('SELECT id, name, type FROM categories WHERE id = ? AND user_id = $2', [categoryId, userId]);
+        const category = await (0, database_1.dbGet)('SELECT id, name, type FROM categories WHERE id = $1 AND user_id = $2', [categoryId, userId]);
         if (!category) {
             return res.status(404).json({
                 success: false,
                 message: 'Category not found'
             });
         }
-        const incomeUsage = await (0, database_1.dbGet)('SELECT COUNT(*) as count FROM income WHERE user_id = ? AND category = $2', [userId, category.name]);
-        const expenseUsage = await (0, database_1.dbGet)('SELECT COUNT(*) as count FROM expenses WHERE user_id = ? AND category = $2', [userId, category.name]);
-        const purchaseUsage = await (0, database_1.dbGet)('SELECT COUNT(*) as count FROM purchases WHERE user_id = ? AND category = $2', [userId, category.name]);
+        const incomeUsage = await (0, database_1.dbGet)('SELECT COUNT(*) as count FROM income WHERE user_id = $1 AND category = $2', [userId, category.name]);
+        const expenseUsage = await (0, database_1.dbGet)('SELECT COUNT(*) as count FROM expenses WHERE user_id = $1 AND category = $2', [userId, category.name]);
+        const purchaseUsage = await (0, database_1.dbGet)('SELECT COUNT(*) as count FROM purchases WHERE user_id = $1 AND category = $2', [userId, category.name]);
         if (incomeUsage.count > 0 || expenseUsage.count > 0 || purchaseUsage.count > 0) {
             return res.status(400).json({
                 success: false,
@@ -262,7 +262,7 @@ router.delete('/:id', async (req, res) => {
                 }
             });
         }
-        await (0, database_1.dbRun)('DELETE FROM categories WHERE id = ? AND user_id = $2', [categoryId, userId]);
+        await (0, database_1.dbRun)('DELETE FROM categories WHERE id = $1 AND user_id = $2', [categoryId, userId]);
         res.json({
             success: true,
             message: 'Category deleted successfully'
@@ -286,7 +286,7 @@ router.get('/:id/stats', async (req, res) => {
                 message: 'Invalid category ID'
             });
         }
-        const category = await (0, database_1.dbGet)('SELECT id, name, type FROM categories WHERE id = ? AND user_id = $2', [categoryId, userId]);
+        const category = await (0, database_1.dbGet)('SELECT id, name, type FROM categories WHERE id = $1 AND user_id = $2', [categoryId, userId]);
         if (!category) {
             return res.status(404).json({
                 success: false,
@@ -304,7 +304,7 @@ router.get('/:id/stats', async (req, res) => {
           MIN(date) as earliest_date,
           MAX(date) as latest_date
          FROM income 
-         WHERE user_id = ? AND category = $2`, [userId, category.name]);
+         WHERE user_id = $1 AND category = $2`, [userId, category.name]);
         }
         else {
             usageStats = await (0, database_1.dbGet)(`SELECT 
@@ -316,7 +316,7 @@ router.get('/:id/stats', async (req, res) => {
           MIN(date) as earliest_date,
           MAX(date) as latest_date
          FROM expenses 
-         WHERE user_id = ? AND category = $4`, [userId, category.name]);
+         WHERE user_id = $3 AND category = $4`, [userId, category.name]);
         }
         const table = category.type === 'income' ? 'income' : 'expenses';
         const monthlyStats = await (0, database_1.dbAll)(`SELECT 
@@ -324,7 +324,7 @@ router.get('/:id/stats', async (req, res) => {
         SUM(amount) as monthly_amount,
         COUNT(*) as monthly_count
        FROM ${table} 
-       WHERE user_id = ? AND category = ? AND strftime('%Y', date) = strftime('%Y', 'now')
+       WHERE user_id = $1 AND category = $2 AND strftime('%Y', date) = strftime('%Y', 'now')
        GROUP BY strftime('%m', date)
        ORDER BY strftime('%m', date)`, [userId, category.name]);
         res.json({
@@ -364,7 +364,7 @@ router.get('/usage/summary', async (req, res) => {
            COUNT(*) as transaction_count,
            SUM(amount) as total_amount
          FROM income 
-         WHERE user_id = ?
+         WHERE user_id = $1
          GROUP BY category
          
          UNION ALL
@@ -375,7 +375,7 @@ router.get('/usage/summary', async (req, res) => {
            COUNT(*) as transaction_count,
            SUM(amount) as total_amount
          FROM expenses 
-         WHERE user_id = ?
+         WHERE user_id = $1
          GROUP BY category
 
          UNION ALL
@@ -386,10 +386,10 @@ router.get('/usage/summary', async (req, res) => {
            COUNT(*) as transaction_count,
            SUM(amount) as total_amount
          FROM purchases
-         WHERE user_id = ?
+         WHERE user_id = $1
          GROUP BY category
        ) usage ON c.name = usage.category AND c.type = usage.type
-       WHERE c.user_id = ?
+       WHERE c.user_id = $2
        ORDER BY c.type, usage.total_amount DESC, c.name`, [userId, userId, userId, userId]);
         res.json({
             success: true,

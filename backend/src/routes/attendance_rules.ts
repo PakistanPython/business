@@ -15,7 +15,8 @@ router.get('/', async (req: Request, res: Response) => {
 
     const rules = await dbAll(`
       SELECT * FROM attendance_rules 
-      WHERE business_id = ? ORDER BY is_active DESC, created_at DESC
+      WHERE business_id = $2
+      ORDER BY is_active DESC, created_at DESC
     `, [businessId]);
 
     res.json(rules);
@@ -32,7 +33,7 @@ router.get('/active', async (req: Request, res: Response) => {
 
     const activeRule = await dbGet(`
       SELECT * FROM attendance_rules 
-      WHERE business_id = ? AND is_active = 1
+      WHERE business_id = $2 AND is_active = 1
       ORDER BY created_at DESC
       LIMIT 1
     `, [businessId]);
@@ -83,7 +84,7 @@ router.post('/', async (req: Request, res: Response) => {
         half_day_threshold, overtime_threshold, overtime_rate, min_working_hours,
         max_working_hours, auto_clock_out, auto_clock_out_time, weekend_overtime,
         holiday_overtime, is_active
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15) RETURNING id
     `, [
       businessId, rule_name,
       late_grace_period || 15,
@@ -103,7 +104,7 @@ router.post('/', async (req: Request, res: Response) => {
 
     const newRule = await dbGet(
       'SELECT * FROM attendance_rules WHERE id = $1',
-      [result.rows?.[0]?.id]
+      [result.lastID]
     );
 
     res.status(201).json(newRule);
@@ -138,7 +139,7 @@ router.put('/:id', async (req: Request, res: Response) => {
 
     // Check if rule exists and belongs to this business
     const existingRule = await dbGet(
-      'SELECT * FROM attendance_rules WHERE id = ? AND business_id = $2',
+      'SELECT * FROM attendance_rules WHERE id = $1 AND business_id = $2',
       [id, businessId]
     );
 
@@ -149,7 +150,7 @@ router.put('/:id', async (req: Request, res: Response) => {
     // If setting this rule as active, deactivate others
     if (is_active && !existingRule.is_active) {
       await dbRun(
-        'UPDATE attendance_rules SET is_active = 0 WHERE business_id = ? AND id != $2',
+        'UPDATE attendance_rules SET is_active = 0 WHERE business_id = $1 AND id != $2',
         [businessId, id]
       );
     }
@@ -157,11 +158,11 @@ router.put('/:id', async (req: Request, res: Response) => {
     // Update attendance rule
     await dbRun(`
       UPDATE attendance_rules SET
-        rule_name = ?, late_grace_period = ?, late_penalty_type = ?, late_penalty_amount = ?,
-        half_day_threshold = ?, overtime_threshold = ?, overtime_rate = ?, min_working_hours = ?,
-        max_working_hours = ?, auto_clock_out = ?, auto_clock_out_time = ?, weekend_overtime = ?,
-        holiday_overtime = ?, is_active = ?, updated_at = CURRENT_TIMESTAMP
-      WHERE id = ? AND business_id = ?
+        rule_name = $1, late_grace_period = $2, late_penalty_type = $3, late_penalty_amount = $4,
+        half_day_threshold = $5, overtime_threshold = $6, overtime_rate = $7, min_working_hours = $8,
+        max_working_hours = $9, auto_clock_out = $10, auto_clock_out_time = $11, weekend_overtime = $12,
+        holiday_overtime = $13, is_active = $14, updated_at = NOW()
+      WHERE id = $15 AND business_id = $16
     `, [
       rule_name || existingRule.rule_name,
       late_grace_period || existingRule.late_grace_period,
@@ -202,7 +203,7 @@ router.delete('/:id', async (req: Request, res: Response) => {
 
     // Check if rule exists and belongs to this business
     const rule = await dbGet(
-      'SELECT is_active FROM attendance_rules WHERE id = ? AND business_id = $2',
+      'SELECT is_active FROM attendance_rules WHERE id = $1 AND business_id = $2',
       [id, businessId]
     );
 
@@ -216,7 +217,7 @@ router.delete('/:id', async (req: Request, res: Response) => {
     }
 
     // Delete attendance rule
-    await dbRun('DELETE FROM attendance_rules WHERE id = ? AND business_id = $2', [id, businessId]);
+    await dbRun('DELETE FROM attendance_rules WHERE id = $1 AND business_id = $2', [id, businessId]);
 
     res.json({ message: 'Attendance rule deleted successfully' });
   } catch (error) {
@@ -233,7 +234,7 @@ router.post('/:id/activate', async (req: Request, res: Response) => {
 
     // Check if rule exists and belongs to this business
     const rule = await dbGet(
-      'SELECT * FROM attendance_rules WHERE id = ? AND business_id = $2',
+      'SELECT * FROM attendance_rules WHERE id = $1 AND business_id = $2',
       [id, businessId]
     );
 
@@ -249,7 +250,7 @@ router.post('/:id/activate', async (req: Request, res: Response) => {
 
     // Activate this rule
     await dbRun(
-      'UPDATE attendance_rules SET is_active = 1, updated_at = CURRENT_TIMESTAMP WHERE id = $1',
+      'UPDATE attendance_rules SET is_active = 1, updated_at = NOW() WHERE id = $1',
       [id]
     );
 

@@ -81,7 +81,7 @@ router.get('/:id', async (req, res) => {
         interest_rate, monthly_payment, start_date, due_date, status, 
         created_at, updated_at
        FROM loans 
-       WHERE id = ? AND user_id = $2`, [loanId, userId]);
+       WHERE id = AND user_id = $2`, [loanId, userId]);
         if (!loan) {
             return res.status(404).json({
                 success: false,
@@ -147,10 +147,10 @@ router.post('/', [
         const result = await (0, database_1.dbRun)(`INSERT INTO loans 
        (user_id, loan_type, lender_name, principal_amount, current_balance, 
         interest_rate, monthly_payment, start_date, due_date) 
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`, [userId, loan_type, lender_name, principal_amount, current_balance,
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) RETURNING id`, [userId, loan_type, lender_name, principal_amount, current_balance,
             interest_rate, monthly_payment, start_date, due_date]);
-        const loanId = result.rows?.[0]?.id;
-        const newLoan = await (0, database_1.dbGet)('SELECT * FROM loans WHERE id = ?', [loanId]);
+        const loanId = result.lastID;
+        const newLoan = await (0, database_1.dbGet)('SELECT * FROM loans WHERE id = $1', [loanId]);
         res.status(201).json({
             success: true,
             message: 'Loan record created successfully',
@@ -210,7 +210,7 @@ router.put('/:id', [
                 message: 'Invalid loan ID'
             });
         }
-        const existingLoan = await (0, database_1.dbGet)('SELECT id FROM loans WHERE id = ? AND user_id = $2', [loanId, userId]);
+        const existingLoan = await (0, database_1.dbGet)('SELECT id FROM loans WHERE id = AND user_id = $2', [loanId, userId]);
         if (!existingLoan) {
             return res.status(404).json({
                 success: false,
@@ -251,8 +251,8 @@ router.put('/:id', [
             });
         }
         values.push(loanId);
-        await (0, database_1.dbRun)(`UPDATE loans SET ${updates.join(', ')}, updated_at = CURRENT_TIMESTAMP WHERE id = $1`, values);
-        const updatedLoan = await (0, database_1.dbGet)('SELECT * FROM loans WHERE id = ?', [loanId]);
+        await (0, database_1.dbRun)(`UPDATE loans SET ${updates.join(', ')}, updated_at = NOW() WHERE id = $1`, values);
+        const updatedLoan = await (0, database_1.dbGet)('SELECT * FROM loans WHERE id = $1', [loanId]);
         res.json({
             success: true,
             message: 'Loan updated successfully',
@@ -300,7 +300,7 @@ router.post('/:id/payment', [
         }
         try {
             await (0, database_1.dbRun)('BEGIN TRANSACTION');
-            const loan = await (0, database_1.dbGet)('SELECT id, lender_name, current_balance, status FROM loans WHERE id = ? AND user_id = $2', [loanId, userId]);
+            const loan = await (0, database_1.dbGet)('SELECT id, lender_name, current_balance, status FROM loans WHERE id = AND user_id = $2', [loanId, userId]);
             if (!loan) {
                 await (0, database_1.dbRun)('ROLLBACK');
                 return res.status(404).json({
@@ -324,8 +324,8 @@ router.post('/:id/payment', [
             }
             const newBalance = parseFloat(loan.current_balance) - parseFloat(amount);
             const newStatus = newBalance <= 0 ? 'paid' : 'active';
-            await (0, database_1.dbRun)('UPDATE loans SET current_balance = $1, status = $2, updated_at = CURRENT_TIMESTAMP WHERE id = $3', [newBalance, newStatus, loanId]);
-            await (0, database_1.dbRun)('INSERT INTO transactions (user_id, transaction_type, reference_id, reference_table, amount, description, date) VALUES ($1, $2, $3, $4, $5, $6, $7)', [userId, 'loan_payment', loanId, 'loans', amount, description || `Loan payment to ${loan.lender_name}`, payment_date]);
+            await (0, database_1.dbRun)('UPDATE loans SET current_balance = $2, status = $3, updated_at = NOW() WHERE id = $4', [newBalance, newStatus, loanId]);
+            await (0, database_1.dbRun)('INSERT INTO transactions (user_id, transaction_type, reference_id, reference_table, amount, description, date) VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING id', [userId, 'loan_payment', loanId, 'loans', amount, description || `Loan payment to ${loan.lender_name}`, payment_date]);
             const updatedLoan = await (0, database_1.dbGet)('SELECT * FROM loans WHERE id = $1', [loanId]);
             await (0, database_1.dbRun)('COMMIT');
             res.json({
@@ -366,7 +366,7 @@ router.delete('/:id', async (req, res) => {
                 message: 'Invalid loan ID'
             });
         }
-        const existingLoan = await (0, database_1.dbGet)('SELECT id, status FROM loans WHERE id = ? AND user_id = $2', [loanId, userId]);
+        const existingLoan = await (0, database_1.dbGet)('SELECT id, status FROM loans WHERE id = AND user_id = $2', [loanId, userId]);
         if (!existingLoan) {
             return res.status(404).json({
                 success: false,
@@ -375,8 +375,8 @@ router.delete('/:id', async (req, res) => {
         }
         try {
             await (0, database_1.dbRun)('BEGIN TRANSACTION');
-            await (0, database_1.dbRun)('DELETE FROM transactions WHERE reference_id = ? AND reference_table = ? AND user_id = $3', [loanId, 'loans', userId]);
-            await (0, database_1.dbRun)('DELETE FROM loans WHERE id = ? AND user_id = $2', [loanId, userId]);
+            await (0, database_1.dbRun)('DELETE FROM transactions WHERE reference_id = AND reference_table = AND user_id = $3', [loanId, 'loans', userId]);
+            await (0, database_1.dbRun)('DELETE FROM loans WHERE id = AND user_id = $5', [loanId, userId]);
             await (0, database_1.dbRun)('COMMIT');
             res.json({
                 success: true,
@@ -415,14 +415,14 @@ router.get('/stats/summary', async (req, res) => {
         SUM(principal_amount) as total_principal,
         SUM(current_balance) as total_balance
        FROM loans 
-       WHERE user_id = ? GROUP BY loan_type
+       WHERE user_id = GROUP BY loan_type
        ORDER BY total_balance DESC`, [userId]);
         const recentPayments = await (0, database_1.dbAll)(`SELECT 
         t.amount, t.description, t.date, t.created_at,
         l.lender_name, l.loan_type
        FROM transactions t
        JOIN loans l ON t.reference_id = l.id
-       WHERE t.user_id = ? AND t.transaction_type = 'loan_payment'
+       WHERE t.user_id = AND t.transaction_type = 'loan_payment'
        ORDER BY t.created_at DESC
        LIMIT 10`, [userId]);
         res.json({
