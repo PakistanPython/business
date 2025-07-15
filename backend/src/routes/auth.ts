@@ -124,7 +124,7 @@ router.post('/login', [
 
     // Find user by username or email
     const user = await dbGet(
-      'SELECT * FROM users WHERE (username = $1 OR email = $2) AND is_active = 1',
+      'SELECT * FROM users WHERE (username = $1 OR email = $2) AND is_active = true',
       [login, login]
     );
 

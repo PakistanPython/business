@@ -87,7 +87,7 @@ router.post('/login', [
             });
         }
         const { login, password } = req.body;
-        const user = await (0, database_1.dbGet)('SELECT * FROM users WHERE (username = $1 OR email = $2) AND is_active = 1', [login, login]);
+        const user = await (0, database_1.dbGet)('SELECT * FROM users WHERE (username = $1 OR email = $2) AND is_active = true', [login, login]);
         if (!user) {
             return res.status(401).json({
                 success: false,

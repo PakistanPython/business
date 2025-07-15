@@ -5,6 +5,7 @@ import morgan from 'morgan';
 import compression from 'compression';
 import rateLimit from 'express-rate-limit';
 import dotenv from 'dotenv';
+import path from 'path';
 import { testConnection } from './config/database';
 
 // Routes
@@ -24,7 +25,7 @@ import payrollRoutes from './routes/payroll';
 import accountsReceivableRoutes from './routes/accounts_receivable';
 import accountsPayableRoutes from './routes/accounts_payable';
 
-dotenv.config();
+dotenv.config({ path: path.resolve(__dirname, '../../.env') });
 
 const app = express();
 const PORT = process.env.PORT || 5000;

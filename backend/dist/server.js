@@ -10,6 +10,7 @@ const morgan_1 = __importDefault(require("morgan"));
 const compression_1 = __importDefault(require("compression"));
 const express_rate_limit_1 = __importDefault(require("express-rate-limit"));
 const dotenv_1 = __importDefault(require("dotenv"));
+const path_1 = __importDefault(require("path"));
 const database_1 = require("./config/database");
 const auth_1 = __importDefault(require("./routes/auth"));
 const dashboard_1 = __importDefault(require("./routes/dashboard"));
@@ -26,7 +27,7 @@ const attendance_1 = __importDefault(require("./routes/attendance"));
 const payroll_1 = __importDefault(require("./routes/payroll"));
 const accounts_receivable_1 = __importDefault(require("./routes/accounts_receivable"));
 const accounts_payable_1 = __importDefault(require("./routes/accounts_payable"));
-dotenv_1.default.config();
+dotenv_1.default.config({ path: path_1.default.resolve(__dirname, '../../.env') });
 const app = (0, express_1.default)();
 const PORT = process.env.PORT || 5000;
 const limiter = (0, express_rate_limit_1.default)({
