@@ -47,7 +47,6 @@ export const AccountsReceivablePage: React.FC = () => {
     customer_email: '',
     customer_phone: '',
     customer_address: '',
-    invoice_date: new Date().toISOString().split('T')[0],
     due_date: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0], // 30 days from now
     amount: 0,
     payment_terms: 'Net 30',
@@ -116,7 +115,7 @@ export const AccountsReceivablePage: React.FC = () => {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     
-    if (!formData.customer_name || !formData.invoice_date || !formData.due_date || !formData.amount) {
+    if (!formData.customer_name || !formData.due_date || !formData.amount) {
       toast.error('Please fill in all required fields');
       return;
     }
@@ -170,7 +169,6 @@ export const AccountsReceivablePage: React.FC = () => {
       customer_email: account.customer_email || '',
       customer_phone: account.customer_phone || '',
       customer_address: account.customer_address || '',
-      invoice_date: account.invoice_date,
       due_date: account.due_date,
       amount: account.amount,
       payment_terms: account.payment_terms || '',
@@ -223,7 +221,6 @@ export const AccountsReceivablePage: React.FC = () => {
       customer_email: '',
       customer_phone: '',
       customer_address: '',
-      invoice_date: new Date().toISOString().split('T')[0],
       due_date: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
       amount: 0,
       payment_terms: 'Net 30',
@@ -333,7 +330,7 @@ export const AccountsReceivablePage: React.FC = () => {
               <AlertTriangle className="h-4 w-4 text-red-600" />
             </CardHeader>
             <CardContent>
-              <div className="text-2xl font-bold text-red-900">{formatCurrency(stats.overdue_amount)}</div>
+              <div className="text-2xl font-bold text-red-900">{formatCurrency(stats.overdue_amount || 0)}</div>
               <p className="text-xs text-red-600 mt-1">{stats.overdue_invoices} overdue invoices</p>
             </CardContent>
           </Card>
@@ -344,7 +341,7 @@ export const AccountsReceivablePage: React.FC = () => {
               <CheckCircle className="h-4 w-4 text-green-600" />
             </CardHeader>
             <CardContent>
-              <div className="text-2xl font-bold text-green-900">{formatCurrency(stats.total_paid)}</div>
+              <div className="text-2xl font-bold text-green-900">{formatCurrency(stats.total_paid || 0)}</div>
               <p className="text-xs text-green-600 mt-1">{stats.paid_invoices} paid invoices</p>
             </CardContent>
           </Card>
@@ -356,7 +353,7 @@ export const AccountsReceivablePage: React.FC = () => {
             </CardHeader>
             <CardContent>
               <div className="text-2xl font-bold text-purple-900">
-                {formatCurrency(stats.total_amount - stats.total_paid - stats.overdue_amount)}
+                {formatCurrency((stats.total_amount || 0) - (stats.total_paid || 0) - (stats.overdue_amount || 0))}
               </div>
               <p className="text-xs text-purple-600 mt-1">{stats.pending_invoices} pending invoices</p>
             </CardContent>
@@ -410,7 +407,6 @@ export const AccountsReceivablePage: React.FC = () => {
                 <TableRow>
                   <TableHead>Invoice #</TableHead>
                   <TableHead>Customer</TableHead>
-                  <TableHead>Invoice Date</TableHead>
                   <TableHead>Due Date</TableHead>
                   <TableHead>Amount</TableHead>
                   <TableHead>Paid</TableHead>
@@ -429,7 +425,7 @@ export const AccountsReceivablePage: React.FC = () => {
                 ) : (
                   accounts.map((account) => (
                     <TableRow key={account.id} className={isOverdue(account.due_date, account.status) ? 'bg-red-50' : ''}>
-                      <TableCell className="font-medium">{account.invoice_number}</TableCell>
+                      <TableCell className="font-medium">{account.id}</TableCell>
                       <TableCell>
                         <div>
                           <div className="font-medium">{account.customer_name}</div>
@@ -438,7 +434,6 @@ export const AccountsReceivablePage: React.FC = () => {
                           )}
                         </div>
                       </TableCell>
-                      <TableCell>{new Date(account.invoice_date).toLocaleDateString()}</TableCell>
                       <TableCell className={isOverdue(account.due_date, account.status) ? 'text-red-600 font-medium' : ''}>
                         {new Date(account.due_date).toLocaleDateString()}
                       </TableCell>
@@ -590,18 +585,7 @@ export const AccountsReceivablePage: React.FC = () => {
                 />
               </div>
 
-              <div className="grid grid-cols-3 gap-4">
-                <div className="grid gap-2">
-                  <Label htmlFor="invoice_date">Invoice Date *</Label>
-                  <Input
-                    id="invoice_date"
-                    type="date"
-                    value={formData.invoice_date}
-                    onChange={(e) => setFormData({...formData, invoice_date: e.target.value})}
-                    required
-                  />
-                </div>
-
+              <div className="grid grid-cols-2 gap-4">
                 <div className="grid gap-2">
                   <Label htmlFor="due_date">Due Date *</Label>
                   <Input
@@ -670,7 +654,7 @@ export const AccountsReceivablePage: React.FC = () => {
           <DialogHeader>
             <DialogTitle>Record Payment</DialogTitle>
             <DialogDescription>
-              Record a payment for invoice {selectedAccount?.invoice_number}
+              Record a payment for invoice #{selectedAccount?.id}
               <br />
               <span className="font-medium">Outstanding Balance: {formatCurrency(selectedAccount?.balance_amount || 0)}</span>
             </DialogDescription>
@@ -758,7 +742,7 @@ export const AccountsReceivablePage: React.FC = () => {
           <DialogHeader>
             <DialogTitle>Invoice Details</DialogTitle>
             <DialogDescription>
-              Invoice #{selectedAccount?.invoice_number}
+              Invoice #{selectedAccount?.id}
             </DialogDescription>
           </DialogHeader>
           {selectedAccount && (
@@ -784,7 +768,6 @@ export const AccountsReceivablePage: React.FC = () => {
                 <div>
                   <h3 className="text-lg font-semibold mb-3">Invoice Information</h3>
                   <div className="space-y-2">
-                    <div><strong>Invoice Date:</strong> {new Date(selectedAccount.invoice_date).toLocaleDateString()}</div>
                     <div><strong>Due Date:</strong> {new Date(selectedAccount.due_date).toLocaleDateString()}</div>
                     <div><strong>Payment Terms:</strong> {selectedAccount.payment_terms || 'N/A'}</div>
                     <div><strong>Status:</strong> {getStatusBadge(selectedAccount.status)}</div>

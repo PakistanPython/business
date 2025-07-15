@@ -140,8 +140,6 @@ export interface AccountsReceivable {
   customer_email?: string;
   customer_phone?: string;
   customer_address?: string;
-  invoice_number: string;
-  invoice_date: string;
   due_date: string;
   amount: number;
   paid_amount: number;
@@ -383,8 +381,6 @@ export interface AccountsReceivableForm {
   customer_email?: string;
   customer_phone?: string;
   customer_address?: string;
-  invoice_number?: string;
-  invoice_date: string;
   due_date: string;
   amount: number;
   payment_terms?: string;

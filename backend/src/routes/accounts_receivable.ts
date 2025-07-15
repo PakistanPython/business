@@ -23,14 +23,21 @@ router.get('/', async (req: Request, res: Response) => {
     } = req.query;
 
     let query = `
-      SELECT * FROM accounts_receivable 
-      WHERE business_id = $1`;
+      SELECT 
+        ar.*,
+        CASE WHEN ar.received = true THEN ar.amount ELSE 0 END as paid_amount,
+        CASE WHEN ar.received = true THEN 0 ELSE ar.amount END as balance_amount
+      FROM accounts_receivable ar
+      WHERE ar.business_id = $1`;
     const params: any[] = [businessId];
     let paramIndex = 2;
 
     if (status && status !== 'all') {
-      query += ` AND status = $${paramIndex++}`;
-      params.push(status as string);
+      if (status === 'paid') {
+        query += ` AND ar.received = true`;
+      } else if (status === 'pending') {
+        query += ` AND ar.received = false`;
+      }
     }
 
     if (customer_name) {
@@ -59,14 +66,17 @@ router.get('/', async (req: Request, res: Response) => {
     // Get total count for pagination
     let countQuery = `
       SELECT COUNT(*) as total
-      FROM accounts_receivable 
-      WHERE business_id = $1`;
+      FROM accounts_receivable ar
+      WHERE ar.business_id = $1`;
     const countParams : any[] = [businessId];
     let countParamIndex = 2;
 
     if (status && status !== 'all') {
-      countQuery += ` AND status = $${countParamIndex++}`;
-      countParams.push(status as string);
+      if (status === 'paid') {
+        countQuery += ` AND ar.received = true`;
+      } else if (status === 'pending') {
+        countQuery += ` AND ar.received = false`;
+      }
     }
 
     if (customer_name) {
@@ -251,12 +261,14 @@ router.get('/stats/summary', async (req: Request, res: Response) => {
     const summary = await dbGet(`
       SELECT
         COUNT(*) as total_invoices,
-        SUM(amount) as total_receivable,
-        SUM(CASE WHEN received = true THEN amount ELSE 0 END) as total_received,
+        SUM(amount) as total_amount,
+        SUM(CASE WHEN received = true THEN amount ELSE 0 END) as total_paid,
         SUM(CASE WHEN received = false THEN amount ELSE 0 END) as total_outstanding,
         AVG(amount) as average_invoice_amount,
         COUNT(CASE WHEN due_date < NOW() AND received = false THEN 1 END) as overdue_invoices,
-        SUM(CASE WHEN due_date < NOW() AND received = false THEN amount ELSE 0 END) as total_overdue
+        SUM(CASE WHEN due_date < NOW() AND received = false THEN amount ELSE 0 END) as overdue_amount,
+        COUNT(CASE WHEN received = true THEN 1 END) as paid_invoices,
+        COUNT(CASE WHEN received = false THEN 1 END) as pending_invoices
       FROM accounts_receivable
       WHERE business_id = $1
     `, [businessId]);
