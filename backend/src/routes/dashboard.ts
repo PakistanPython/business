@@ -113,7 +113,7 @@ router.get('/summary', async (req, res) => {
         c.name as category,
         SUM(e.amount) as total_amount,
         COUNT(*) as transaction_count,
-        ROUND((SUM(e.amount) / (SELECT SUM(amount) FROM expenses WHERE business_id = $1)) * 100, 2) as percentage
+        ROUND(CAST((SUM(e.amount) / (SELECT SUM(amount) FROM expenses WHERE business_id = $1)) * 100 AS numeric), 2) as percentage
       FROM expenses e
       JOIN categories c ON e.category_id = c.id
       WHERE e.business_id = $2 
@@ -125,11 +125,11 @@ router.get('/summary', async (req, res) => {
     // Get income vs expenses trend (last 6 months)
     const trendData = await dbAll(`
       WITH RECURSIVE months(month_date) AS (
-        SELECT date('now', 'start of month', '-5 months')
+        SELECT DATE_TRUNC('month', NOW() - INTERVAL '5 months')
         UNION ALL
-        SELECT date(month_date, '+1 month')
+        SELECT month_date + INTERVAL '1 month'
         FROM months
-        WHERE month_date < date('now', 'start of month')
+        WHERE month_date < DATE_TRUNC('month', NOW())
       )
       SELECT 
         to_char(m.month_date, 'YYYY-MM') as month,
@@ -217,25 +217,25 @@ router.get('/analytics', [
         case '12months': intervalMonths = 12; break;
         case '24months': intervalMonths = 24; break;
       }
-      dateFilter = `AND date >= date('now', '-${intervalMonths} months')`;
-      groupBy = `strftime('%Y-%m', date)`;
+      dateFilter = `AND date >= NOW() - INTERVAL '${intervalMonths} months'`;
+      groupBy = `to_char(date, 'YYYY-MM')`;
     } else {
       switch (period) {
         case 'week':
-          dateFilter = `AND strftime('%Y', date) = '${year}' AND strftime('%W', date) >= strftime('%W', date('now', '-12 weeks'))`;
-          groupBy = `strftime('%Y-W%W', date)`;
+          dateFilter = `AND to_char(date, 'YYYY') = '${year}' AND to_char(date, 'WW') >= to_char(NOW() - INTERVAL '12 weeks', 'WW')`;
+          groupBy = `to_char(date, 'YYYY-WW')`;
           break;
         case 'quarter':
-          dateFilter = `AND strftime('%Y', date) = '${year}'`;
-          groupBy = `strftime('%Y-Q', date) || ((cast(strftime('%m', date) as integer) - 1) / 3 + 1)`;
+          dateFilter = `AND to_char(date, 'YYYY') = '${year}'`;
+          groupBy = `to_char(date, 'YYYY-Q')`;
           break;
         case 'year':
-          dateFilter = `AND strftime('%Y', date) >= '${year - 4}'`;
-          groupBy = `strftime('%Y', date)`;
+          dateFilter = `AND to_char(date, 'YYYY') >= '${year - 4}'`;
+          groupBy = `to_char(date, 'YYYY')`;
           break;
         default: // month
-          dateFilter = `AND date >= date('now', '-12 months')`;
-          groupBy = `strftime('%Y-%m', date)`;
+          dateFilter = `AND date >= NOW() - INTERVAL '12 months'`;
+          groupBy = `to_char(date, 'YYYY-MM')`;
       }
     }
 
@@ -243,14 +243,14 @@ router.get('/analytics', [
     const incomeAnalytics = await dbAll(`
       SELECT 
         ${groupBy} as period,
-        SUM(amount) as total_amount,
+        SUM(i.amount) as total_amount,
         COUNT(*) as transaction_count,
-        AVG(amount) as average_amount,
-        category,
-        SUM(charity_required) as charity_generated
-      FROM income 
-      WHERE user_id = $1 ${dateFilter}
-      GROUP BY period, category
+        AVG(i.amount) as average_amount,
+        c.name as category
+      FROM income i
+      JOIN categories c ON i.category_id = c.id
+      WHERE i.business_id = $1 ${dateFilter}
+      GROUP BY period, c.name
       ORDER BY period, total_amount DESC
     `, [userId]);
 
@@ -258,13 +258,14 @@ router.get('/analytics', [
     const expenseAnalytics = await dbAll(`
       SELECT 
         ${groupBy} as period,
-        SUM(amount) as total_amount,
+        SUM(e.amount) as total_amount,
         COUNT(*) as transaction_count,
-        AVG(amount) as average_amount,
-        category
-      FROM expenses 
-      WHERE user_id = $2 ${dateFilter}
-      GROUP BY period, category
+        AVG(e.amount) as average_amount,
+        c.name as category
+      FROM expenses e
+      JOIN categories c ON e.category_id = c.id
+      WHERE e.business_id = $1 ${dateFilter}
+      GROUP BY period, c.name
       ORDER BY period, total_amount DESC
     `, [userId]);
 
@@ -277,20 +278,20 @@ router.get('/analytics', [
         (SUM(income) - SUM(expenses)) as profit,
         CASE 
           WHEN SUM(income) > 0 
-          THEN ROUND(((SUM(income) - SUM(expenses)) / SUM(income)) * 100, 2)
+          THEN ROUND(CAST(((SUM(income) - SUM(expenses)) / SUM(income)) * 100 AS numeric), 2)
           ELSE 0 
         END as profit_margin
       FROM (
         SELECT ${groupBy} as period, SUM(amount) as income, 0 as expenses
-        FROM income 
-        WHERE user_id = $3 ${dateFilter}
+        FROM income
+        WHERE business_id = $1 ${dateFilter}
         GROUP BY period
-        
+
         UNION ALL
-        
+
         SELECT ${groupBy} as period, 0 as income, SUM(amount) as expenses
-        FROM expenses 
-        WHERE user_id = $4 ${dateFilter}
+        FROM expenses
+        WHERE business_id = $2 ${dateFilter}
         GROUP BY period
       )
       GROUP BY period
@@ -340,24 +341,24 @@ router.get('/metrics', async (req, res) => {
     };
 
     // Get revenue metrics
-    const revenue30d = await dbGet('SELECT COALESCE(SUM(amount), 0) as total FROM income WHERE user_id = $1 AND date >= date("now", "-30 days")', [userId]);
-    const revenue90d = await dbGet('SELECT COALESCE(SUM(amount), 0) as total FROM income WHERE user_id = $1 AND date >= date("now", "-90 days")', [userId]);
+    const revenue30d = await dbGet('SELECT COALESCE(SUM(amount), 0) as total FROM income WHERE business_id = $1 AND date >= NOW() - INTERVAL \'30 days\'', [userId]);
+    const revenue90d = await dbGet('SELECT COALESCE(SUM(amount), 0) as total FROM income WHERE business_id = $1 AND date >= NOW() - INTERVAL \'90 days\'', [userId]);
     
     // Get expense metrics
-    const expenses30d = await dbGet('SELECT COALESCE(SUM(amount), 0) as total FROM expenses WHERE user_id = $1 AND date >= date("now", "-30 days")', [userId]);
-    const expenses90d = await dbGet('SELECT COALESCE(SUM(amount), 0) as total FROM expenses WHERE user_id = $1 AND date >= date("now", "-90 days")', [userId]);
+    const expenses30d = await dbGet('SELECT COALESCE(SUM(amount), 0) as total FROM expenses WHERE business_id = $1 AND date >= NOW() - INTERVAL \'30 days\'', [userId]);
+    const expenses90d = await dbGet('SELECT COALESCE(SUM(amount), 0) as total FROM expenses WHERE business_id = $1 AND date >= NOW() - INTERVAL \'90 days\'', [userId]);
     
     // Get average metrics
-    const avgIncome30d = await dbGet('SELECT COALESCE(AVG(amount), 0) as avg FROM income WHERE user_id = $1 AND date >= date("now", "-30 days")', [userId]);
-    const avgExpense30d = await dbGet('SELECT COALESCE(AVG(amount), 0) as avg FROM expenses WHERE user_id = $1 AND date >= date("now", "-30 days")', [userId]);
+    const avgIncome30d = await dbGet('SELECT COALESCE(AVG(amount), 0) as avg FROM income WHERE business_id = $1 AND date >= NOW() - INTERVAL \'30 days\'', [userId]);
+    const avgExpense30d = await dbGet('SELECT COALESCE(AVG(amount), 0) as avg FROM expenses WHERE business_id = $1 AND date >= NOW() - INTERVAL \'30 days\'', [userId]);
     
     // Get charity metrics
-    const charityPaid30d = await dbGet('SELECT COALESCE(SUM(amount_paid), 0) as total FROM charity WHERE user_id = $1 AND payment_date >= date("now", "-30 days")', [userId]);
-    const charityPending = await dbGet('SELECT COALESCE(SUM(amount_remaining), 0) as total FROM charity WHERE user_id = $1 AND status != "paid"', [userId]);
+    const charityPaid30d = await dbGet('SELECT COALESCE(SUM(amount_paid), 0) as total FROM charity WHERE business_id = $1 AND payment_date >= NOW() - INTERVAL \'30 days\'', [userId]);
+    const charityPending = await dbGet('SELECT COALESCE(SUM(amount_remaining), 0) as total FROM charity WHERE business_id = $1 AND status != "paid"', [userId]);
     
     // Get account metrics
-    const totalAccounts = await dbGet('SELECT COUNT(*) as count FROM accounts WHERE user_id = $1', [userId]);
-    const activeLoans = await dbGet('SELECT COUNT(*) as count FROM loans WHERE user_id = $1 AND status = "active"', [userId]);
+    const totalAccounts = await dbGet('SELECT COUNT(*) as count FROM accounts WHERE business_id = $1', [userId]);
+    const activeLoans = await dbGet('SELECT COUNT(*) as count FROM loans WHERE employee_id IN (SELECT id FROM employees WHERE business_id = $1) AND status = \'active\'', [userId]);
 
     metrics.revenue_30d = parseFloat(revenue30d?.total || 0);
     metrics.revenue_90d = parseFloat(revenue90d?.total || 0);
@@ -384,10 +385,10 @@ router.get('/metrics', async (req, res) => {
         COALESCE(SUM(CASE WHEN type = 'expense' THEN amount ELSE 0 END), 0) as expenses
       FROM (
         SELECT 'income' as type, amount FROM income 
-        WHERE user_id = $1 AND strftime('%Y-%m', date) = strftime('%Y-%m', 'now')
+        WHERE business_id = $1 AND to_char(date, 'YYYY-MM') = to_char(NOW(), 'YYYY-MM')
         UNION ALL
         SELECT 'expense' as type, amount FROM expenses 
-        WHERE user_id = $2 AND strftime('%Y-%m', date) = strftime('%Y-%m', 'now')
+        WHERE business_id = $2 AND to_char(date, 'YYYY-MM') = to_char(NOW(), 'YYYY-MM')
       )
     `, [userId, userId]);
 
@@ -397,10 +398,10 @@ router.get('/metrics', async (req, res) => {
         COALESCE(SUM(CASE WHEN type = 'expense' THEN amount ELSE 0 END), 0) as expenses
       FROM (
         SELECT 'income' as type, amount FROM income 
-        WHERE user_id = $1 AND strftime('%Y-%m', date) = strftime('%Y-%m', date('now', '-1 month'))
+        WHERE business_id = $1 AND to_char(date, 'YYYY-MM') = to_char(NOW() - INTERVAL '1 month', 'YYYY-MM')
         UNION ALL
         SELECT 'expense' as type, amount FROM expenses 
-        WHERE user_id = $2 AND strftime('%Y-%m', date) = strftime('%Y-%m', date('now', '-1 month'))
+        WHERE business_id = $2 AND to_char(date, 'YYYY-MM') = to_char(NOW() - INTERVAL '1 month', 'YYYY-MM')
       )
     `, [userId, userId]);
 

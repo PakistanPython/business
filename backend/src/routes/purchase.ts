@@ -43,11 +43,6 @@ router.get('/', [
     const whereParams: any[] = [userId];
     let paramIndex = 2;
 
-    if (category) {
-      whereClause += ` AND c.name = $${paramIndex++}`;
-      whereParams.push(category);
-    }
-
     if (startDate) {
       whereClause += ` AND p.date >= $${paramIndex++}`;
       whereParams.push(startDate);
@@ -60,7 +55,7 @@ router.get('/', [
 
     // Get total count
     const countResult = await dbGet(
-      `SELECT COUNT(*) as total FROM purchases p JOIN categories c ON p.category_id = c.id ${whereClause}`,
+      `SELECT COUNT(*) as total FROM purchases p ${whereClause}`,
       whereParams
     );
     const total = countResult.total;
@@ -68,10 +63,9 @@ router.get('/', [
     // Get purchase records
     const purchaseRecords = await dbAll(
       `SELECT 
-        p.id, p.amount, p.description, c.name as category, p.date, 
+        p.id, p.amount, p.description, p.date, 
         p.created_at, p.updated_at
        FROM purchases p
-       JOIN categories c ON p.category_id = c.id
        ${whereClause} 
        ORDER BY ${sortBy} ${sortOrder.toUpperCase()}
        LIMIT $${paramIndex++} OFFSET $${paramIndex++}`,
@@ -121,10 +115,9 @@ router.get('/:id', async (req, res) => {
 
     const purchaseRecord = await dbGet(
       `SELECT 
-        p.id, p.amount, p.description, c.name as category, p.date, 
+        p.id, p.amount, p.description, p.date, 
         p.created_at, p.updated_at
        FROM purchases p
-       JOIN categories c ON p.category_id = c.id
        WHERE p.id = $1 AND p.business_id = $2`,
       [purchaseId, userId]
     );
@@ -159,10 +152,6 @@ router.post('/', [
     .trim()
     .isLength({ max: 500 })
     .withMessage('Description cannot exceed 500 characters'),
-  body('category')
-    .trim()
-    .notEmpty()
-    .withMessage('Category is required'),
   body('date')
     .isISO8601()
     .withMessage('Date must be valid ISO date')
@@ -178,22 +167,11 @@ router.post('/', [
     }
 
     const userId = req.user!.userId;
-    const { amount, description = null, category, date } = req.body;
-
-    const categoryRecord = await dbGet(
-      'SELECT id FROM categories WHERE name = $1 AND business_id = $2 AND type = \'purchase\'',
-      [category, userId]
-    );
-    if (!categoryRecord) {
-      return res.status(400).json({
-        success: false,
-        message: 'Invalid purchase category'
-      });
-    }
+    const { amount, description = null, date } = req.body;
 
     const purchaseResult = await dbRun(
-      'INSERT INTO purchases (business_id, amount, description, category_id, date) VALUES ($1, $2, $3, $4, $5) RETURNING id',
-      [userId, amount, description, categoryRecord.id, date]
+      'INSERT INTO purchases (business_id, amount, description, date) VALUES ($1, $2, $3, $4) RETURNING id',
+      [userId, amount, description, date]
     );
 
     const purchaseId = purchaseResult.lastID;
@@ -228,11 +206,6 @@ router.put('/:id', [
     .trim()
     .isLength({ max: 500 })
     .withMessage('Description cannot exceed 500 characters'),
-  body('category')
-    .optional()
-    .trim()
-    .notEmpty()
-    .withMessage('Category cannot be empty'),
   body('date')
     .optional()
     .isISO8601()
@@ -270,22 +243,7 @@ router.put('/:id', [
       });
     }
 
-    const { amount, description, category, date } = req.body;
-
-    let categoryId = existingRecord.category_id;
-    if (category) {
-      const categoryRecord = await dbGet(
-        'SELECT id FROM categories WHERE name = $1 AND business_id = $2 AND type = \'purchase\'',
-        [category, userId]
-      );
-      if (!categoryRecord) {
-        return res.status(400).json({
-          success: false,
-          message: 'Invalid purchase category'
-        });
-      }
-      categoryId = categoryRecord.id;
-    }
+    const { amount, description, date } = req.body;
 
     const updates: string[] = [];
     const values: any[] = [];
@@ -298,10 +256,6 @@ router.put('/:id', [
     if (description !== undefined) {
       updates.push(`description = $${paramIndex++}`);
       values.push(description);
-    }
-    if (category) {
-      updates.push(`category_id = $${paramIndex++}`);
-      values.push(categoryId);
     }
     if (date !== undefined) {
       updates.push(`date = $${paramIndex++}`);
@@ -411,14 +365,13 @@ router.get('/stats/summary', async (req, res) => {
 
     const categoryStats = await dbAll(
       `SELECT 
-        c.name as category,
+        'default' as category,
         COUNT(*) as count,
         SUM(p.amount) as total_amount,
         AVG(p.amount) as average_amount
        FROM purchases p
-       JOIN categories c ON p.category_id = c.id
        WHERE p.business_id = $1 
-       GROUP BY c.name
+       GROUP BY category
        ORDER BY total_amount DESC`,
       [userId]
     );

@@ -11,9 +11,7 @@ const router = express.Router();
 router.post('/register', [
   body('username').isLength({ min: 3 }).withMessage('Username must be at least 3 characters'),
   body('email').isEmail().withMessage('Valid email is required'),
-  body('password').isLength({ min: 6 }).withMessage('Password must be at least 6 characters'),
-  body('full_name').notEmpty().withMessage('Full name is required'),
-  body('business_name').optional()
+  body('password').isLength({ min: 6 }).withMessage('Password must be at least 6 characters')
 ], async (req, res) => {
   try {
     const errors = validationResult(req);
@@ -25,7 +23,7 @@ router.post('/register', [
       });
     }
 
-    const { username, email, password, full_name, business_name } = req.body;
+    const { username, email, password } = req.body;
 
     // Check if user already exists
     const existingUser = await dbGet(
@@ -173,7 +171,7 @@ router.get('/profile', authenticateToken, async (req, res) => {
     const userId = req.user!.userId;
 
     const user = await dbGet(
-      'SELECT id, username, email, full_name, business_name, user_type, business_id, created_at FROM users WHERE id = $1',
+      'SELECT id, username, email, user_type, business_id, created_at FROM users WHERE id = $1',
       [userId]
     );
 
@@ -202,9 +200,7 @@ router.get('/profile', authenticateToken, async (req, res) => {
 // Update user profile (protected route)
 router.put('/profile', [
   authenticateToken,
-  body('email').optional().isEmail().withMessage('Valid email is required'),
-  body('full_name').optional().notEmpty().withMessage('Full name cannot be empty'),
-  body('business_name').optional()
+  body('email').optional().isEmail().withMessage('Valid email is required')
 ], async (req, res) => {
   try {
     const errors = validationResult(req);
@@ -217,7 +213,7 @@ router.put('/profile', [
     }
 
     const userId = req.user!.userId;
-    const { email, full_name, business_name } = req.body;
+    const { email } = req.body;
 
     // Check if email is already taken by another user
     if (email) {
@@ -242,14 +238,6 @@ router.put('/profile', [
       updates.push('email = ?');
       values.push(email);
     }
-    if (full_name) {
-      updates.push('full_name = ?');
-      values.push(full_name);
-    }
-    if (business_name !== undefined) {
-      updates.push('business_name = ?');
-      values.push(business_name);
-    }
 
     if (updates.length === 0) {
       return res.status(400).json({
@@ -268,7 +256,7 @@ router.put('/profile', [
 
     // Get updated user
     const user = await dbGet(
-      'SELECT id, username, email, full_name, business_name, user_type, business_id, created_at FROM users WHERE id = $1',
+      'SELECT id, username, email, user_type, business_id, created_at FROM users WHERE id = $1',
       [userId]
     );
 

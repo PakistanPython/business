@@ -243,4 +243,29 @@ router.delete('/:id', async (req: Request, res: Response) => {
   }
 });
 
+// GET /api/accounts-receivable/stats/summary - Get accounts receivable summary statistics
+router.get('/stats/summary', async (req: Request, res: Response) => {
+  try {
+    const businessId = req.user!.userId;
+
+    const summary = await dbGet(`
+      SELECT
+        COUNT(*) as total_invoices,
+        SUM(amount) as total_receivable,
+        SUM(CASE WHEN received = true THEN amount ELSE 0 END) as total_received,
+        SUM(CASE WHEN received = false THEN amount ELSE 0 END) as total_outstanding,
+        AVG(amount) as average_invoice_amount,
+        COUNT(CASE WHEN due_date < NOW() AND received = false THEN 1 END) as overdue_invoices,
+        SUM(CASE WHEN due_date < NOW() AND received = false THEN amount ELSE 0 END) as total_overdue
+      FROM accounts_receivable
+      WHERE business_id = $1
+    `, [businessId]);
+
+    res.json(summary);
+  } catch (error) {
+    console.error('Error fetching accounts receivable summary:', error);
+    res.status(500).json({ error: 'Failed to fetch accounts receivable summary' });
+  }
+});
+
 export default router;
