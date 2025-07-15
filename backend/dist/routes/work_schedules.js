@@ -4,13 +4,13 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
 };
 Object.defineProperty(exports, "__esModule", { value: true });
 const express_1 = __importDefault(require("express"));
-const database_sqlite_1 = require("../config/database_sqlite");
+const database_1 = require("../config/database");
 const auth_1 = require("../middleware/auth");
 const router = express_1.default.Router();
 router.use(auth_1.authenticateToken);
 router.get('/', async (req, res) => {
     try {
-        const businessId = req.user?.userId;
+        const businessId = req.user.userId;
         const { employee_id, is_active } = req.query;
         let query = `
       SELECT 
@@ -20,8 +20,7 @@ router.get('/', async (req, res) => {
         e.employee_code
       FROM employee_work_schedules ws
       JOIN employees e ON ws.employee_id = e.id
-      WHERE ws.business_id = ?
-    `;
+      WHERE ws.business_id = ? `;
         const params = [businessId];
         if (employee_id) {
             query += ' AND ws.employee_id = ?';
@@ -32,7 +31,7 @@ router.get('/', async (req, res) => {
             params.push(is_active === 'true' ? 1 : 0);
         }
         query += ' ORDER BY ws.effective_from DESC';
-        const schedules = await (0, database_sqlite_1.dbAll)(query, params);
+        const schedules = await (0, database_1.dbAll)(query, params);
         res.json(schedules);
     }
     catch (error) {
@@ -43,8 +42,8 @@ router.get('/', async (req, res) => {
 router.get('/:id', async (req, res) => {
     try {
         const { id } = req.params;
-        const businessId = req.user?.userId;
-        const schedule = await (0, database_sqlite_1.dbGet)(`
+        const businessId = req.user.userId;
+        const schedule = await (0, database_1.dbGet)(`
       SELECT 
         ws.*,
         e.first_name,
@@ -52,8 +51,7 @@ router.get('/:id', async (req, res) => {
         e.employee_code
       FROM employee_work_schedules ws
       JOIN employees e ON ws.employee_id = e.id
-      WHERE ws.id = ? AND ws.business_id = ?
-    `, [id, businessId]);
+      WHERE ws.id = ? AND ws.business_id = ? `, [id, businessId]);
         if (!schedule) {
             return res.status(404).json({ error: 'Work schedule not found' });
         }
@@ -73,14 +71,14 @@ router.post('/', async (req, res) => {
                 error: 'Employee ID, schedule name, and effective from date are required'
             });
         }
-        const employee = await (0, database_sqlite_1.dbGet)('SELECT id FROM employees WHERE id = ? AND business_id = ?', [employee_id, businessId]);
+        const employee = await (0, database_1.dbGet)('SELECT id FROM employees WHERE id = ? AND business_id = $2', [employee_id, businessId]);
         if (!employee) {
             return res.status(404).json({ error: 'Employee not found' });
         }
         if (req.body.is_active) {
-            await (0, database_sqlite_1.dbRun)('UPDATE employee_work_schedules SET is_active = 0 WHERE employee_id = ? AND business_id = ?', [employee_id, businessId]);
+            await (0, database_1.dbRun)('UPDATE employee_work_schedules SET is_active = 0 WHERE employee_id = ? AND business_id = $2', [employee_id, businessId]);
         }
-        const result = await (0, database_sqlite_1.dbRun)(`
+        const result = await (0, database_1.dbRun)(`
       INSERT INTO employee_work_schedules (
         employee_id, business_id, schedule_name, effective_from, effective_to,
         monday_start, monday_end, tuesday_start, tuesday_end,
@@ -96,7 +94,7 @@ router.post('/', async (req, res) => {
             sunday_start, sunday_end, break_duration || 60, weekly_hours || 40,
             req.body.is_active ? 1 : 0
         ]);
-        const newSchedule = await (0, database_sqlite_1.dbGet)(`
+        const newSchedule = await (0, database_1.dbGet)(`
       SELECT 
         ws.*,
         e.first_name,
@@ -105,7 +103,7 @@ router.post('/', async (req, res) => {
       FROM employee_work_schedules ws
       JOIN employees e ON ws.employee_id = e.id
       WHERE ws.id = ?
-    `, [result.lastID]);
+    `, [result.rows?.[0]?.id]);
         res.status(201).json(newSchedule);
     }
     catch (error) {
@@ -118,14 +116,14 @@ router.put('/:id', async (req, res) => {
         const { id } = req.params;
         const businessId = req.user?.userId;
         const { schedule_name, effective_from, effective_to, monday_start, monday_end, tuesday_start, tuesday_end, wednesday_start, wednesday_end, thursday_start, thursday_end, friday_start, friday_end, saturday_start, saturday_end, sunday_start, sunday_end, break_duration, weekly_hours, is_active } = req.body;
-        const existingSchedule = await (0, database_sqlite_1.dbGet)('SELECT * FROM employee_work_schedules WHERE id = ? AND business_id = ?', [id, businessId]);
+        const existingSchedule = await (0, database_1.dbGet)('SELECT * FROM employee_work_schedules WHERE id = ? AND business_id = $2', [id, businessId]);
         if (!existingSchedule) {
             return res.status(404).json({ error: 'Work schedule not found' });
         }
         if (is_active) {
-            await (0, database_sqlite_1.dbRun)('UPDATE employee_work_schedules SET is_active = 0 WHERE employee_id = ? AND business_id = ? AND id != ?', [existingSchedule.employee_id, businessId, id]);
+            await (0, database_1.dbRun)('UPDATE employee_work_schedules SET is_active = 0 WHERE employee_id = ? AND business_id = ? AND id != $3', [existingSchedule.employee_id, businessId, id]);
         }
-        await (0, database_sqlite_1.dbRun)(`
+        await (0, database_1.dbRun)(`
       UPDATE employee_work_schedules SET
         schedule_name = ?, effective_from = ?, effective_to = ?,
         monday_start = ?, monday_end = ?, tuesday_start = ?, tuesday_end = ?,
@@ -158,7 +156,7 @@ router.put('/:id', async (req, res) => {
             id,
             businessId
         ]);
-        const updatedSchedule = await (0, database_sqlite_1.dbGet)(`
+        const updatedSchedule = await (0, database_1.dbGet)(`
       SELECT 
         ws.*,
         e.first_name,
@@ -179,11 +177,11 @@ router.delete('/:id', async (req, res) => {
     try {
         const { id } = req.params;
         const businessId = req.user?.userId;
-        const schedule = await (0, database_sqlite_1.dbGet)('SELECT id FROM employee_work_schedules WHERE id = ? AND business_id = ?', [id, businessId]);
+        const schedule = await (0, database_1.dbGet)('SELECT id FROM employee_work_schedules WHERE id = ? AND business_id = $2', [id, businessId]);
         if (!schedule) {
             return res.status(404).json({ error: 'Work schedule not found' });
         }
-        await (0, database_sqlite_1.dbRun)('DELETE FROM employee_work_schedules WHERE id = ? AND business_id = ?', [id, businessId]);
+        await (0, database_1.dbRun)('DELETE FROM employee_work_schedules WHERE id = ? AND business_id = $2', [id, businessId]);
         res.json({ message: 'Work schedule deleted successfully' });
     }
     catch (error) {
@@ -196,7 +194,7 @@ router.get('/employee/:employeeId/current', async (req, res) => {
         const { employeeId } = req.params;
         const businessId = req.user?.userId;
         const currentDate = new Date().toISOString().split('T')[0];
-        const schedule = await (0, database_sqlite_1.dbGet)(`
+        const schedule = await (0, database_1.dbGet)(`
       SELECT 
         ws.*,
         e.first_name,
@@ -204,10 +202,8 @@ router.get('/employee/:employeeId/current', async (req, res) => {
         e.employee_code
       FROM employee_work_schedules ws
       JOIN employees e ON ws.employee_id = e.id
-      WHERE ws.employee_id = ? AND ws.business_id = ? 
-        AND ws.is_active = 1
-        AND ws.effective_from <= ?
-        AND (ws.effective_to IS NULL OR ws.effective_to >= ?)
+      WHERE ws.employee_id = ? AND ws.business_id = ? AND ws.is_active = 1
+        AND ws.effective_from <= ? AND (ws.effective_to IS NULL OR ws.effective_to >= $4)
       ORDER BY ws.effective_from DESC
       LIMIT 1
     `, [employeeId, businessId, currentDate, currentDate]);

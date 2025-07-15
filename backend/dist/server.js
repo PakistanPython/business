@@ -10,7 +10,7 @@ const morgan_1 = __importDefault(require("morgan"));
 const compression_1 = __importDefault(require("compression"));
 const express_rate_limit_1 = __importDefault(require("express-rate-limit"));
 const dotenv_1 = __importDefault(require("dotenv"));
-const database_sqlite_1 = require("./config/database_sqlite");
+const database_1 = require("./config/database");
 const auth_1 = __importDefault(require("./routes/auth"));
 const dashboard_1 = __importDefault(require("./routes/dashboard"));
 const income_1 = __importDefault(require("./routes/income"));
@@ -80,7 +80,7 @@ app.get('/', (req, res) => {
         message: 'My Business API Server is running!',
         version: '1.0.0',
         environment: process.env.NODE_ENV || 'development',
-        database: 'SQLite'
+        database: 'PostgreSQL'
     });
 });
 app.use('*', (req, res) => {
@@ -105,11 +105,11 @@ app.use((err, req, res, next) => {
 });
 const startServer = async () => {
     try {
-        await (0, database_sqlite_1.testConnection)();
+        await (0, database_1.testConnection)();
         app.listen(PORT, () => {
             console.log(`🚀 Server running on http://localhost:${PORT}`);
             console.log(`📊 Environment: ${process.env.NODE_ENV || 'development'}`);
-            console.log(`💾 Database: SQLite`);
+            console.log(`💾 Database: PostgreSQL`);
             console.log(`🌐 CORS Origin: ${corsOrigin}`);
         });
     }

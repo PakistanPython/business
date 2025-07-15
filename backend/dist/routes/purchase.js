@@ -58,7 +58,7 @@ router.get('/', [
        FROM purchases 
        ${whereClause} 
        ORDER BY ${sortBy} ${sortOrder.toUpperCase()}
-       LIMIT ? OFFSET ?`, [...whereParams, limit, offset]);
+       LIMIT ? OFFSET $2`, [...whereParams, limit, offset]);
         const totalPages = Math.ceil(total / limit);
         const hasNext = page < totalPages;
         const hasPrev = page > 1;
@@ -99,7 +99,7 @@ router.get('/:id', async (req, res) => {
         id, amount, description, category, payment_method, date, 
         receipt_path, created_at, updated_at
        FROM purchases 
-       WHERE id = ? AND user_id = ?`, [purchaseId, userId]);
+       WHERE id = ? AND user_id = $2`, [purchaseId, userId]);
         if (purchaseRecords.length === 0) {
             return res.status(404).json({
                 success: false,
@@ -158,10 +158,10 @@ router.post('/', [
         }
         const userId = req.user.userId;
         const { amount, description = null, category, payment_method = 'Cash', date, receipt_path = null } = req.body;
-        const purchaseResult = await (0, database_1.dbRun)('INSERT INTO purchases (user_id, amount, description, category, payment_method, date, receipt_path) VALUES (?, ?, ?, ?, ?, ?, ?)', [userId, amount, description, category, payment_method, date, receipt_path]);
-        const purchaseId = purchaseResult.lastID;
-        const purchaseRecord = await (0, database_1.dbGet)('SELECT * FROM purchases WHERE id = ?', [purchaseId]);
-        await (0, database_1.dbRun)('INSERT INTO transactions (user_id, transaction_type, reference_id, reference_table, amount, description, date) VALUES (?, ?, ?, ?, ?, ?, ?)', [userId, 'purchase', purchaseId, 'purchases', amount, `Purchase: ${description || category}`, date]);
+        const purchaseResult = await (0, database_1.dbRun)('INSERT INTO purchases (user_id, amount, description, category, payment_method, date, receipt_path) VALUES ($1, $2, $3, $4, $5, $6, $7)', [userId, amount, description, category, payment_method, date, receipt_path]);
+        const purchaseId = purchaseResult.rows?.[0]?.id;
+        const purchaseRecord = await (0, database_1.dbGet)('SELECT * FROM purchases WHERE id = $1', [purchaseId]);
+        await (0, database_1.dbRun)('INSERT INTO transactions (user_id, transaction_type, reference_id, reference_table, amount, description, date) VALUES ($1, $2, $3, $4, $5, $6, $7)', [userId, 'purchase', purchaseId, 'purchases', amount, `Purchase: ${description || category}`, date]);
         res.status(201).json({
             success: true,
             message: 'Purchase record created successfully',
@@ -224,7 +224,7 @@ router.put('/:id', [
                 message: 'Invalid purchase ID'
             });
         }
-        const existingRecord = await (0, database_1.dbGet)('SELECT id FROM purchases WHERE id = ? AND user_id = ?', [purchaseId, userId]);
+        const existingRecord = await (0, database_1.dbGet)('SELECT id FROM purchases WHERE id = ? AND user_id = $2', [purchaseId, userId]);
         if (!existingRecord) {
             return res.status(404).json({
                 success: false,
@@ -265,7 +265,7 @@ router.put('/:id', [
             });
         }
         values.push(purchaseId);
-        await (0, database_1.dbAll)(`UPDATE purchases SET ${updates.join(', ')}, updated_at = CURRENT_TIMESTAMP WHERE id = ?`, values);
+        await (0, database_1.dbAll)(`UPDATE purchases SET ${updates.join(', ')}, updated_at = CURRENT_TIMESTAMP WHERE id = $1`, values);
         const [updatedRecords] = await (0, database_1.dbAll)('SELECT * FROM purchases WHERE id = ?', [purchaseId]);
         res.json({
             success: true,
@@ -291,15 +291,15 @@ router.delete('/:id', async (req, res) => {
                 message: 'Invalid purchase ID'
             });
         }
-        const existingRecord = await (0, database_1.dbGet)('SELECT id FROM purchases WHERE id = ? AND user_id = ?', [purchaseId, userId]);
+        const existingRecord = await (0, database_1.dbGet)('SELECT id FROM purchases WHERE id = ? AND user_id = $2', [purchaseId, userId]);
         if (!existingRecord) {
             return res.status(404).json({
                 success: false,
                 message: 'Purchase record not found'
             });
         }
-        await (0, database_1.dbRun)('DELETE FROM transactions WHERE reference_id = ? AND reference_table = ? AND user_id = ?', [purchaseId, 'purchases', userId]);
-        await (0, database_1.dbRun)('DELETE FROM purchases WHERE id = ? AND user_id = ?', [purchaseId, userId]);
+        await (0, database_1.dbRun)('DELETE FROM transactions WHERE reference_id = ? AND reference_table = ? AND user_id = $3', [purchaseId, 'purchases', userId]);
+        await (0, database_1.dbRun)('DELETE FROM purchases WHERE id = ? AND user_id = $2', [purchaseId, userId]);
         res.json({
             success: true,
             message: 'Purchase record deleted successfully'
@@ -323,7 +323,7 @@ router.get('/stats/summary', async (req, res) => {
         MIN(date) as earliest_date,
         MAX(date) as latest_date
        FROM purchases 
-       WHERE user_id = ?`, [userId]);
+       WHERE user_id = $1`, [userId]);
         const [monthlyStats] = await (0, database_1.dbAll)(`SELECT 
         MONTH(date) as month,
         YEAR(date) as year,
@@ -339,16 +339,14 @@ router.get('/stats/summary', async (req, res) => {
         SUM(amount) as total_amount,
         AVG(amount) as average_amount
        FROM purchases 
-       WHERE user_id = ? 
-       GROUP BY category
+       WHERE user_id = ? GROUP BY category
        ORDER BY total_amount DESC`, [userId]);
         const [paymentStats] = await (0, database_1.dbAll)(`SELECT 
         payment_method,
         COUNT(*) as count,
         SUM(amount) as total_amount
        FROM purchases 
-       WHERE user_id = ? 
-       GROUP BY payment_method
+       WHERE user_id = ? GROUP BY payment_method
        ORDER BY total_amount DESC`, [userId]);
         res.json({
             success: true,

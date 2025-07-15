@@ -72,7 +72,7 @@ router.get('/', [
        FROM purchases 
        ${whereClause} 
        ORDER BY ${sortBy} ${sortOrder.toUpperCase()}
-       LIMIT ? OFFSET ?`,
+       LIMIT ? OFFSET $2`,
       [...whereParams, limit, offset]
     );
 
@@ -82,7 +82,7 @@ router.get('/', [
     const hasPrev = page > 1;
 
     res.json({
-      success: true,
+      success : true,
       data: {
         purchases: purchaseRecords,
         pagination: {
@@ -122,7 +122,7 @@ router.get('/:id', async (req, res) => {
         id, amount, description, category, payment_method, date, 
         receipt_path, created_at, updated_at
        FROM purchases 
-       WHERE id = ? AND user_id = ?`,
+       WHERE id = ? AND user_id = $2`,
       [purchaseId, userId]
     ) as any[];
 
@@ -190,21 +190,21 @@ router.post('/', [
 
     // Insert purchase record
     const purchaseResult = await dbRun(
-      'INSERT INTO purchases (user_id, amount, description, category, payment_method, date, receipt_path) VALUES (?, ?, ?, ?, ?, ?, ?)',
+      'INSERT INTO purchases (user_id, amount, description, category, payment_method, date, receipt_path) VALUES ($1, $2, $3, $4, $5, $6, $7)',
       [userId, amount, description, category, payment_method, date, receipt_path]
     );
 
-    const purchaseId = purchaseResult.lastID;
+    const purchaseId = purchaseResult.rows?.[0]?.id;
 
     // Get the created purchase record
     const purchaseRecord = await dbGet(
-      'SELECT * FROM purchases WHERE id = ?',
+      'SELECT * FROM purchases WHERE id = $1',
       [purchaseId]
     );
 
     // Record transaction for audit trail
     await dbRun(
-      'INSERT INTO transactions (user_id, transaction_type, reference_id, reference_table, amount, description, date) VALUES (?, ?, ?, ?, ?, ?, ?)',
+      'INSERT INTO transactions (user_id, transaction_type, reference_id, reference_table, amount, description, date) VALUES ($1, $2, $3, $4, $5, $6, $7)',
       [userId, 'purchase', purchaseId, 'purchases', amount, `Purchase: ${description || category}`, date]
     );
 
@@ -276,7 +276,7 @@ router.put('/:id', [
 
     // Check if purchase record exists and belongs to user
     const existingRecord = await dbGet(
-      'SELECT id FROM purchases WHERE id = ? AND user_id = ?',
+      'SELECT id FROM purchases WHERE id = ? AND user_id = $2',
       [purchaseId, userId]
     );
 
@@ -328,7 +328,7 @@ router.put('/:id', [
 
     // Update purchase record
     await dbAll(
-      `UPDATE purchases SET ${updates.join(', ')}, updated_at = CURRENT_TIMESTAMP WHERE id = ?`,
+      `UPDATE purchases SET ${updates.join(', ')}, updated_at = CURRENT_TIMESTAMP WHERE id = $1`,
       values
     );
 
@@ -367,7 +367,7 @@ router.delete('/:id', async (req, res) => {
 
     // Check if purchase record exists and belongs to user
     const existingRecord = await dbGet(
-      'SELECT id FROM purchases WHERE id = ? AND user_id = ?',
+      'SELECT id FROM purchases WHERE id = ? AND user_id = $2',
       [purchaseId, userId]
     );
 
@@ -380,13 +380,13 @@ router.delete('/:id', async (req, res) => {
 
     // Delete related transactions
     await dbRun(
-      'DELETE FROM transactions WHERE reference_id = ? AND reference_table = ? AND user_id = ?',
+      'DELETE FROM transactions WHERE reference_id = ? AND reference_table = ? AND user_id = $3',
       [purchaseId, 'purchases', userId]
     );
 
     // Delete purchase record
     await dbRun(
-      'DELETE FROM purchases WHERE id = ? AND user_id = ?',
+      'DELETE FROM purchases WHERE id = ? AND user_id = $2',
       [purchaseId, userId]
     );
 
@@ -417,7 +417,7 @@ router.get('/stats/summary', async (req, res) => {
         MIN(date) as earliest_date,
         MAX(date) as latest_date
        FROM purchases 
-       WHERE user_id = ?`,
+       WHERE user_id = $1`,
       [userId]
     ) as any[];
 
@@ -443,8 +443,7 @@ router.get('/stats/summary', async (req, res) => {
         SUM(amount) as total_amount,
         AVG(amount) as average_amount
        FROM purchases 
-       WHERE user_id = ? 
-       GROUP BY category
+       WHERE user_id = ? GROUP BY category
        ORDER BY total_amount DESC`,
       [userId]
     ) as any[];
@@ -456,8 +455,7 @@ router.get('/stats/summary', async (req, res) => {
         COUNT(*) as count,
         SUM(amount) as total_amount
        FROM purchases 
-       WHERE user_id = ? 
-       GROUP BY payment_method
+       WHERE user_id = ? GROUP BY payment_method
        ORDER BY total_amount DESC`,
       [userId]
     ) as any[];

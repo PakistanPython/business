@@ -4,17 +4,16 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
 };
 Object.defineProperty(exports, "__esModule", { value: true });
 const express_1 = __importDefault(require("express"));
-const database_sqlite_1 = require("../config/database_sqlite");
+const database_1 = require("../config/database");
 const auth_1 = require("../middleware/auth");
 const router = express_1.default.Router();
 router.use(auth_1.authenticateToken);
 router.get('/', async (req, res) => {
     try {
-        const businessId = req.user?.userId;
-        const rules = await (0, database_sqlite_1.dbAll)(`
+        const businessId = req.user.userId;
+        const rules = await (0, database_1.dbAll)(`
       SELECT * FROM attendance_rules 
-      WHERE business_id = ?
-      ORDER BY is_active DESC, created_at DESC
+      WHERE business_id = ? ORDER BY is_active DESC, created_at DESC
     `, [businessId]);
         res.json(rules);
     }
@@ -25,8 +24,8 @@ router.get('/', async (req, res) => {
 });
 router.get('/active', async (req, res) => {
     try {
-        const businessId = req.user?.userId;
-        const activeRule = await (0, database_sqlite_1.dbGet)(`
+        const businessId = req.user.userId;
+        const activeRule = await (0, database_1.dbGet)(`
       SELECT * FROM attendance_rules 
       WHERE business_id = ? AND is_active = 1
       ORDER BY created_at DESC
@@ -47,9 +46,9 @@ router.post('/', async (req, res) => {
             return res.status(400).json({ error: 'Rule name is required' });
         }
         if (is_active) {
-            await (0, database_sqlite_1.dbRun)('UPDATE attendance_rules SET is_active = 0 WHERE business_id = ?', [businessId]);
+            await (0, database_1.dbRun)('UPDATE attendance_rules SET is_active = 0 WHERE business_id = $1', [businessId]);
         }
-        const result = await (0, database_sqlite_1.dbRun)(`
+        const result = await (0, database_1.dbRun)(`
       INSERT INTO attendance_rules (
         business_id, rule_name, late_grace_period, late_penalty_type, late_penalty_amount,
         half_day_threshold, overtime_threshold, overtime_rate, min_working_hours,
@@ -72,7 +71,7 @@ router.post('/', async (req, res) => {
             holiday_overtime ? 1 : 0,
             is_active ? 1 : 0
         ]);
-        const newRule = await (0, database_sqlite_1.dbGet)('SELECT * FROM attendance_rules WHERE id = ?', [result.lastID]);
+        const newRule = await (0, database_1.dbGet)('SELECT * FROM attendance_rules WHERE id = $1', [result.rows?.[0]?.id]);
         res.status(201).json(newRule);
     }
     catch (error) {
@@ -85,14 +84,14 @@ router.put('/:id', async (req, res) => {
         const { id } = req.params;
         const businessId = req.user?.userId;
         const { rule_name, late_grace_period, late_penalty_type, late_penalty_amount, half_day_threshold, overtime_threshold, overtime_rate, min_working_hours, max_working_hours, auto_clock_out, auto_clock_out_time, weekend_overtime, holiday_overtime, is_active } = req.body;
-        const existingRule = await (0, database_sqlite_1.dbGet)('SELECT * FROM attendance_rules WHERE id = ? AND business_id = ?', [id, businessId]);
+        const existingRule = await (0, database_1.dbGet)('SELECT * FROM attendance_rules WHERE id = ? AND business_id = $2', [id, businessId]);
         if (!existingRule) {
             return res.status(404).json({ error: 'Attendance rule not found' });
         }
         if (is_active && !existingRule.is_active) {
-            await (0, database_sqlite_1.dbRun)('UPDATE attendance_rules SET is_active = 0 WHERE business_id = ? AND id != ?', [businessId, id]);
+            await (0, database_1.dbRun)('UPDATE attendance_rules SET is_active = 0 WHERE business_id = ? AND id != $2', [businessId, id]);
         }
-        await (0, database_sqlite_1.dbRun)(`
+        await (0, database_1.dbRun)(`
       UPDATE attendance_rules SET
         rule_name = ?, late_grace_period = ?, late_penalty_type = ?, late_penalty_amount = ?,
         half_day_threshold = ?, overtime_threshold = ?, overtime_rate = ?, min_working_hours = ?,
@@ -117,7 +116,7 @@ router.put('/:id', async (req, res) => {
             id,
             businessId
         ]);
-        const updatedRule = await (0, database_sqlite_1.dbGet)('SELECT * FROM attendance_rules WHERE id = ?', [id]);
+        const updatedRule = await (0, database_1.dbGet)('SELECT * FROM attendance_rules WHERE id = $1', [id]);
         res.json(updatedRule);
     }
     catch (error) {
@@ -129,14 +128,14 @@ router.delete('/:id', async (req, res) => {
     try {
         const { id } = req.params;
         const businessId = req.user?.userId;
-        const rule = await (0, database_sqlite_1.dbGet)('SELECT is_active FROM attendance_rules WHERE id = ? AND business_id = ?', [id, businessId]);
+        const rule = await (0, database_1.dbGet)('SELECT is_active FROM attendance_rules WHERE id = ? AND business_id = $2', [id, businessId]);
         if (!rule) {
             return res.status(404).json({ error: 'Attendance rule not found' });
         }
         if (rule.is_active) {
             return res.status(400).json({ error: 'Cannot delete active attendance rule' });
         }
-        await (0, database_sqlite_1.dbRun)('DELETE FROM attendance_rules WHERE id = ? AND business_id = ?', [id, businessId]);
+        await (0, database_1.dbRun)('DELETE FROM attendance_rules WHERE id = ? AND business_id = $2', [id, businessId]);
         res.json({ message: 'Attendance rule deleted successfully' });
     }
     catch (error) {
@@ -148,13 +147,13 @@ router.post('/:id/activate', async (req, res) => {
     try {
         const { id } = req.params;
         const businessId = req.user?.userId;
-        const rule = await (0, database_sqlite_1.dbGet)('SELECT * FROM attendance_rules WHERE id = ? AND business_id = ?', [id, businessId]);
+        const rule = await (0, database_1.dbGet)('SELECT * FROM attendance_rules WHERE id = ? AND business_id = $2', [id, businessId]);
         if (!rule) {
             return res.status(404).json({ error: 'Attendance rule not found' });
         }
-        await (0, database_sqlite_1.dbRun)('UPDATE attendance_rules SET is_active = 0 WHERE business_id = ?', [businessId]);
-        await (0, database_sqlite_1.dbRun)('UPDATE attendance_rules SET is_active = 1, updated_at = CURRENT_TIMESTAMP WHERE id = ?', [id]);
-        const updatedRule = await (0, database_sqlite_1.dbGet)('SELECT * FROM attendance_rules WHERE id = ?', [id]);
+        await (0, database_1.dbRun)('UPDATE attendance_rules SET is_active = 0 WHERE business_id = $1', [businessId]);
+        await (0, database_1.dbRun)('UPDATE attendance_rules SET is_active = 1, updated_at = CURRENT_TIMESTAMP WHERE id = $1', [id]);
+        const updatedRule = await (0, database_1.dbGet)('SELECT * FROM attendance_rules WHERE id = $1', [id]);
         res.json(updatedRule);
     }
     catch (error) {

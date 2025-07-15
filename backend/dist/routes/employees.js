@@ -5,17 +5,17 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
 Object.defineProperty(exports, "__esModule", { value: true });
 const express_1 = __importDefault(require("express"));
 const bcryptjs_1 = __importDefault(require("bcryptjs"));
-const database_sqlite_1 = require("../config/database_sqlite");
+const database_1 = require("../config/database");
 const auth_1 = require("../middleware/auth");
 const router = express_1.default.Router();
 router.use(auth_1.authenticateToken);
 const generateEmployeeCode = async (businessId) => {
     const year = new Date().getFullYear().toString().slice(-2);
     for (let attempt = 0; attempt < 10; attempt++) {
-        const result = await (0, database_sqlite_1.dbGet)('SELECT MAX(CAST(SUBSTR(employee_code, 6) AS INTEGER)) as max_number FROM employees WHERE employee_code LIKE ?', [`EMP${year}%`]);
+        const result = await (0, database_1.dbGet)('SELECT MAX(CAST(SUBSTR(employee_code, 6) AS INTEGER)) as max_number FROM employees WHERE employee_code LIKE $1', [`EMP${year}%`]);
         const nextNumber = ((result.max_number || 0) + 1 + attempt).toString().padStart(4, '0');
         const employeeCode = `EMP${year}${nextNumber}`;
-        const existing = await (0, database_sqlite_1.dbGet)('SELECT id FROM employees WHERE employee_code = ?', [employeeCode]);
+        const existing = await (0, database_1.dbGet)('SELECT id FROM employees WHERE employee_code = $1', [employeeCode]);
         if (!existing) {
             return employeeCode;
         }
@@ -25,14 +25,13 @@ const generateEmployeeCode = async (businessId) => {
 };
 router.get('/', async (req, res) => {
     try {
-        const businessId = req.user?.userId;
+        const businessId = req.user.userId;
         const { status, department, search } = req.query;
         let query = `
       SELECT 
         e.*
       FROM employees e
-      WHERE e.business_id = ?
-    `;
+      WHERE e.business_id = ? `;
         const params = [businessId];
         if (status && status !== 'all') {
             query += ' AND e.status = ?';
@@ -48,7 +47,7 @@ router.get('/', async (req, res) => {
             params.push(searchTerm, searchTerm, searchTerm, searchTerm);
         }
         query += ' ORDER BY e.created_at DESC';
-        const employees = await (0, database_sqlite_1.dbAll)(query, params);
+        const employees = await (0, database_1.dbAll)(query, params);
         res.json(employees);
     }
     catch (error) {
@@ -58,13 +57,12 @@ router.get('/', async (req, res) => {
 });
 router.get('/profile', async (req, res) => {
     try {
-        const employeeId = req.user?.userId;
-        const employee = await (0, database_sqlite_1.dbGet)(`
+        const employeeId = req.user.userId;
+        const employee = await (0, database_1.dbGet)(`
       SELECT 
         e.*
       FROM employees e
-      WHERE e.id = ?
-    `, [employeeId]);
+      WHERE e.id = ? `, [employeeId]);
         if (!employee) {
             return res.status(404).json({ error: 'Employee profile not found' });
         }
@@ -78,13 +76,12 @@ router.get('/profile', async (req, res) => {
 router.get('/:id', async (req, res) => {
     try {
         const { id } = req.params;
-        const businessId = req.user?.userId;
-        const employee = await (0, database_sqlite_1.dbGet)(`
+        const businessId = req.user.userId;
+        const employee = await (0, database_1.dbGet)(`
       SELECT 
         e.*
       FROM employees e
-      WHERE e.id = ? AND e.business_id = ?
-    `, [id, businessId]);
+      WHERE e.id = ? AND e.business_id = ? `, [id, businessId]);
         if (!employee) {
             return res.status(404).json({ error: 'Employee not found' });
         }
@@ -97,36 +94,35 @@ router.get('/:id', async (req, res) => {
 });
 router.post('/', async (req, res) => {
     try {
-        const businessId = req.user?.userId;
-        const createdByUserId = req.user?.userId;
+        const businessId = req.user.userId;
+        const createdByUserId = req.user.userId;
         const { first_name, last_name, email, password, phone, address, hire_date, employment_type, salary_type, base_salary, daily_wage, hourly_rate, department, position, } = req.body;
         if (!first_name || !last_name || !email || !password || !hire_date || !base_salary) {
             return res.status(400).json({
                 error: 'Required fields: first_name, last_name, email, password, hire_date, base_salary'
             });
         }
-        const existingEmployee = await (0, database_sqlite_1.dbGet)('SELECT id FROM employees WHERE email = ?', [email]);
+        const existingEmployee = await (0, database_1.dbGet)('SELECT id FROM employees WHERE email = $1', [email]);
         if (existingEmployee) {
             return res.status(400).json({ error: 'Employee with this email already exists' });
         }
         const employee_code = await generateEmployeeCode(businessId);
         const hashedPassword = await bcryptjs_1.default.hash(password, 10);
-        const result = await (0, database_sqlite_1.dbRun)(`
+        const result = await (0, database_1.dbRun)(`
       INSERT INTO employees (
         business_id, employee_code, first_name, last_name, email, password_hash, phone, address,
         hire_date, employment_type, salary_type, base_salary, daily_wage, hourly_rate,
         department, position, created_by_user_id
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)
     `, [
             businessId, employee_code, first_name, last_name, email, hashedPassword, phone, address,
             hire_date, employment_type || 'full_time', salary_type || 'monthly',
             base_salary, daily_wage, hourly_rate, department, position, createdByUserId
         ]);
-        const newEmployee = await (0, database_sqlite_1.dbGet)(`
+        const newEmployee = await (0, database_1.dbGet)(`
       SELECT *
       FROM employees
-      WHERE id = ?
-    `, [result.lastID]);
+      WHERE id = ? `, [result.rows?.[0]?.id]);
         res.status(201).json({ employee: newEmployee });
     }
     catch (error) {
@@ -157,24 +153,23 @@ router.put('/:id', async (req, res) => {
         const { id } = req.params;
         const businessId = req.user?.userId;
         const { first_name, last_name, email, phone, address, employment_type, salary_type, base_salary, daily_wage, hourly_rate, department, position, status } = req.body;
-        const existingEmployee = await (0, database_sqlite_1.dbGet)('SELECT * FROM employees WHERE id = ? AND business_id = ?', [id, businessId]);
+        const existingEmployee = await (0, database_1.dbGet)('SELECT * FROM employees WHERE id = ? AND business_id = $2', [id, businessId]);
         if (!existingEmployee) {
             return res.status(404).json({ error: 'Employee not found' });
         }
         if (email && email !== existingEmployee.email) {
-            const emailExists = await (0, database_sqlite_1.dbGet)('SELECT id FROM employees WHERE email = ? AND id != ?', [email, id]);
+            const emailExists = await (0, database_1.dbGet)('SELECT id FROM employees WHERE email = ? AND id != $2', [email, id]);
             if (emailExists) {
                 return res.status(400).json({ error: 'Employee with this email already exists' });
             }
         }
-        await (0, database_sqlite_1.dbRun)(`
+        await (0, database_1.dbRun)(`
       UPDATE employees SET
-        first_name = ?, last_name = ?, email = ?, phone = ?, address = ?,
-        employment_type = ?, salary_type = ?, base_salary = ?, daily_wage = ?,
-        hourly_rate = ?, department = ?, position = ?, status = ?,
+        first_name = $1, last_name = $2, email = $3, phone = $4, address = $5,
+        employment_type = $6, salary_type = $7, base_salary = $8, daily_wage = $9,
+        hourly_rate = $10, department = $11, position = $12, status = $13,
         updated_at = CURRENT_TIMESTAMP
-      WHERE id = ? AND business_id = ?
-    `, [
+      WHERE id = ? AND business_id = ? `, [
             first_name || existingEmployee.first_name,
             last_name || existingEmployee.last_name,
             email || existingEmployee.email,
@@ -191,12 +186,11 @@ router.put('/:id', async (req, res) => {
             id,
             businessId
         ]);
-        const updatedEmployee = await (0, database_sqlite_1.dbGet)(`
+        const updatedEmployee = await (0, database_1.dbGet)(`
       SELECT 
         e.*
       FROM employees e
-      WHERE e.id = ?
-    `, [id]);
+      WHERE e.id = ? `, [id]);
         res.json(updatedEmployee);
     }
     catch (error) {
@@ -208,11 +202,11 @@ router.delete('/:id', async (req, res) => {
     try {
         const { id } = req.params;
         const businessId = req.user?.userId;
-        const employee = await (0, database_sqlite_1.dbGet)('SELECT id FROM employees WHERE id = ? AND business_id = ?', [id, businessId]);
+        const employee = await (0, database_1.dbGet)('SELECT id FROM employees WHERE id = ? AND business_id = $2', [id, businessId]);
         if (!employee) {
             return res.status(404).json({ error: 'Employee not found' });
         }
-        await (0, database_sqlite_1.dbRun)('DELETE FROM employees WHERE id = ? AND business_id = ?', [id, businessId]);
+        await (0, database_1.dbRun)('DELETE FROM employees WHERE id = ? AND business_id = $2', [id, businessId]);
         res.json({ message: 'Employee deleted successfully' });
     }
     catch (error) {
@@ -223,7 +217,7 @@ router.delete('/:id', async (req, res) => {
 router.get('/stats/overview', async (req, res) => {
     try {
         const businessId = req.user?.userId;
-        const stats = await (0, database_sqlite_1.dbGet)(`
+        const stats = await (0, database_1.dbGet)(`
       SELECT 
         COUNT(*) as total_employees,
         COUNT(CASE WHEN status = 'active' THEN 1 END) as active_employees,
@@ -232,9 +226,8 @@ router.get('/stats/overview', async (req, res) => {
         COUNT(CASE WHEN employment_type = 'part_time' THEN 1 END) as part_time_employees,
         COUNT(CASE WHEN employment_type = 'contract' THEN 1 END) as contract_employees
       FROM employees 
-      WHERE business_id = ?
-    `, [businessId]);
-        const departments = await (0, database_sqlite_1.dbAll)(`
+      WHERE business_id = ? `, [businessId]);
+        const departments = await (0, database_1.dbAll)(`
       SELECT 
         department,
         COUNT(*) as count
@@ -258,7 +251,7 @@ router.post('/:id/reset-password', async (req, res) => {
         const { id } = req.params;
         const businessId = req.user?.userId;
         const { password } = req.body;
-        const employee = await (0, database_sqlite_1.dbGet)('SELECT id FROM employees WHERE id = ? AND business_id = ?', [id, businessId]);
+        const employee = await (0, database_1.dbGet)('SELECT id FROM employees WHERE id = ? AND business_id = $2', [id, businessId]);
         if (!employee) {
             return res.status(404).json({ error: 'Employee not found' });
         }
@@ -266,7 +259,7 @@ router.post('/:id/reset-password', async (req, res) => {
             return res.status(400).json({ error: 'Password is required' });
         }
         const hashedPassword = await bcryptjs_1.default.hash(password, 10);
-        await (0, database_sqlite_1.dbRun)('UPDATE employees SET password_hash = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?', [hashedPassword, id]);
+        await (0, database_1.dbRun)('UPDATE employees SET password_hash = $1, updated_at = CURRENT_TIMESTAMP WHERE id = $2', [hashedPassword, id]);
         res.json({
             message: 'Password reset successfully'
         });

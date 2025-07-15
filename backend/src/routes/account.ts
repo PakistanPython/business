@@ -18,8 +18,7 @@ router.get('/', async (req, res) => {
         id, account_type, account_name, balance, bank_name, account_number, 
         created_at, updated_at
        FROM accounts 
-       WHERE user_id = ? 
-       ORDER BY account_type, account_name`,
+       WHERE user_id = ? ORDER BY account_type, account_name`,
       [userId]
     );
 
@@ -71,7 +70,7 @@ router.get('/:id', async (req, res) => {
         id, account_type, account_name, balance, bank_name, account_number, 
         created_at, updated_at
        FROM accounts 
-       WHERE id = ? AND user_id = ?`,
+       WHERE id = ? AND user_id = $2`,
       [accountId, userId]
     );
 
@@ -135,7 +134,7 @@ router.post('/', [
 
     // Check for duplicate account name for the user
     const existingAccount = await dbGet(
-      'SELECT id FROM accounts WHERE user_id = ? AND account_name = ?',
+      'SELECT id FROM accounts WHERE user_id = ? AND account_name = $2',
       [userId, account_name]
     );
 
@@ -148,15 +147,12 @@ router.post('/', [
 
     // Insert account record
     const result = await dbRun(
-      'INSERT INTO accounts (user_id, account_type, account_name, balance, bank_name, account_number) VALUES (?, ?, ?, ?, ?, ?)',
-      [userId, account_type, account_name, balance, bank_name, account_number]
-    );
-
-    const accountId = result.lastID;
+      'INSERT INTO accounts (user_id, account_type, account_name, balance, bank_name, account_number) VALUES ($1, $2, $3, $4, $5, $6) RETURNING id', [userId, account_type, account_name, balance, bank_name, account_number]);
+    const accountId = result.rows?.[0]?.id;
 
     // Get the created account record
     const newAccount = await dbGet(
-      'SELECT * FROM accounts WHERE id = ?',
+      'SELECT * FROM accounts WHERE id = $1',
       [accountId]
     );
 
@@ -219,7 +215,7 @@ router.put('/:id', [
 
     // Check if account exists and belongs to user
     const existingAccount = await dbGet(
-      'SELECT id FROM accounts WHERE id = ? AND user_id = ?',
+      'SELECT id FROM accounts WHERE id = ? AND user_id = $2',
       [accountId, userId]
     );
 
@@ -235,7 +231,7 @@ router.put('/:id', [
     // Check for duplicate account name if changing name
     if (account_name) {
       const duplicateAccount = await dbGet(
-        'SELECT id FROM accounts WHERE user_id = ? AND account_name = ? AND id != ?',
+        'SELECT id FROM accounts WHERE user_id = ? AND account_name = ? AND id != $3',
         [userId, account_name, accountId]
       );
 
@@ -278,7 +274,7 @@ router.put('/:id', [
 
     // Update account record
     await dbRun(
-      `UPDATE accounts SET ${updates.join(', ')}, updated_at = CURRENT_TIMESTAMP WHERE id = ?`,
+      `UPDATE accounts SET ${updates.join(', ')}, updated_at = CURRENT_TIMESTAMP WHERE id = $1`,
       values
     );
 
@@ -317,7 +313,7 @@ router.delete('/:id', async (req, res) => {
 
     // Check if account exists and belongs to user
     const account = await dbGet(
-      'SELECT id, balance FROM accounts WHERE id = ? AND user_id = ?',
+      'SELECT id, balance FROM accounts WHERE id = ? AND user_id = $2',
       [accountId, userId]
     );
 
@@ -342,13 +338,13 @@ router.delete('/:id', async (req, res) => {
       
       // Delete related transactions
       await dbRun(
-        'DELETE FROM transactions WHERE account_id = ? AND user_id = ?',
+        'DELETE FROM transactions WHERE account_id = ? AND user_id = $2',
         [accountId, userId]
       );
 
       // Delete account record
       await dbRun(
-        'DELETE FROM accounts WHERE id = ? AND user_id = ?',
+        'DELETE FROM accounts WHERE id = ? AND user_id = $2',
         [accountId, userId]
       );
 
@@ -417,7 +413,7 @@ router.post('/transfer', [
 
       // Check both accounts exist and belong to user
       const accounts = await dbAll(
-        'SELECT id, account_name, balance FROM accounts WHERE id IN (?, ?) AND user_id = ?',
+        'SELECT id, account_name, balance FROM accounts WHERE id IN ($1, $2) AND user_id = $3',
         [from_account_id, to_account_id, userId]
       );
 
@@ -443,12 +439,12 @@ router.post('/transfer', [
 
       // Update account balances
       await dbRun(
-        'UPDATE accounts SET balance = balance - ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?',
+        'UPDATE accounts SET balance = balance - $1, updated_at = CURRENT_TIMESTAMP WHERE id = $2',
         [amount, from_account_id]
       );
 
       await dbRun(
-        'UPDATE accounts SET balance = balance + ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?',
+        'UPDATE accounts SET balance = balance + $1, updated_at = CURRENT_TIMESTAMP WHERE id = $2',
         [amount, to_account_id]
       );
 
@@ -457,19 +453,19 @@ router.post('/transfer', [
 
       // Debit transaction
       await dbRun(
-        'INSERT INTO transactions (user_id, transaction_type, amount, description, account_id, date) VALUES (?, ?, ?, ?, ?, ?)',
+        'INSERT INTO transactions (user_id, transaction_type, amount, description, account_id, date) VALUES ($1, $2, $3, $4, $5, $6)',
         [userId, 'transfer', -amount, `${transferDescription} (Debit)`, from_account_id, date]
       );
 
       // Credit transaction
       await dbRun(
-        'INSERT INTO transactions (user_id, transaction_type, amount, description, account_id, date) VALUES (?, ?, ?, ?, ?, ?)',
+        'INSERT INTO transactions (user_id, transaction_type, amount, description, account_id, date) VALUES ($1, $2, $3, $4, $5, $6)',
         [userId, 'transfer', amount, `${transferDescription} (Credit)`, to_account_id, date]
       );
 
       // Get updated account balances
       const updatedAccounts = await dbAll(
-        'SELECT id, account_name, balance FROM accounts WHERE id IN (?, ?)',
+        'SELECT id, account_name, balance FROM accounts WHERE id IN ($1, $2)',
         [from_account_id, to_account_id]
       );
 

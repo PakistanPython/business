@@ -16,8 +16,7 @@ router.get('/', async (req, res) => {
         id, account_type, account_name, balance, bank_name, account_number, 
         created_at, updated_at
        FROM accounts 
-       WHERE user_id = ? 
-       ORDER BY account_type, account_name`, [userId]);
+       WHERE user_id = ? ORDER BY account_type, account_name`, [userId]);
         const totals = accounts.reduce((acc, account) => {
             if (!acc[account.account_type]) {
                 acc[account.account_type] = 0;
@@ -59,7 +58,7 @@ router.get('/:id', async (req, res) => {
         id, account_type, account_name, balance, bank_name, account_number, 
         created_at, updated_at
        FROM accounts 
-       WHERE id = ? AND user_id = ?`, [accountId, userId]);
+       WHERE id = ? AND user_id = $2`, [accountId, userId]);
         if (!account) {
             return res.status(404).json({
                 success: false,
@@ -114,16 +113,16 @@ router.post('/', [
         }
         const userId = req.user.userId;
         const { account_type, account_name, balance = 0, bank_name, account_number } = req.body;
-        const existingAccount = await (0, database_1.dbGet)('SELECT id FROM accounts WHERE user_id = ? AND account_name = ?', [userId, account_name]);
+        const existingAccount = await (0, database_1.dbGet)('SELECT id FROM accounts WHERE user_id = ? AND account_name = $2', [userId, account_name]);
         if (existingAccount) {
             return res.status(409).json({
                 success: false,
                 message: 'Account name already exists'
             });
         }
-        const result = await (0, database_1.dbRun)('INSERT INTO accounts (user_id, account_type, account_name, balance, bank_name, account_number) VALUES (?, ?, ?, ?, ?, ?)', [userId, account_type, account_name, balance, bank_name, account_number]);
-        const accountId = result.lastID;
-        const newAccount = await (0, database_1.dbGet)('SELECT * FROM accounts WHERE id = ?', [accountId]);
+        const result = await (0, database_1.dbRun)('INSERT INTO accounts (user_id, account_type, account_name, balance, bank_name, account_number) VALUES ($1, $2, $3, $4, $5, $6) RETURNING id', [userId, account_type, account_name, balance, bank_name, account_number]);
+        const accountId = result.rows?.[0]?.id;
+        const newAccount = await (0, database_1.dbGet)('SELECT * FROM accounts WHERE id = $1', [accountId]);
         res.status(201).json({
             success: true,
             message: 'Account created successfully',
@@ -177,7 +176,7 @@ router.put('/:id', [
                 message: 'Invalid account ID'
             });
         }
-        const existingAccount = await (0, database_1.dbGet)('SELECT id FROM accounts WHERE id = ? AND user_id = ?', [accountId, userId]);
+        const existingAccount = await (0, database_1.dbGet)('SELECT id FROM accounts WHERE id = ? AND user_id = $2', [accountId, userId]);
         if (!existingAccount) {
             return res.status(404).json({
                 success: false,
@@ -186,7 +185,7 @@ router.put('/:id', [
         }
         const { account_name, balance, bank_name, account_number } = req.body;
         if (account_name) {
-            const duplicateAccount = await (0, database_1.dbGet)('SELECT id FROM accounts WHERE user_id = ? AND account_name = ? AND id != ?', [userId, account_name, accountId]);
+            const duplicateAccount = await (0, database_1.dbGet)('SELECT id FROM accounts WHERE user_id = ? AND account_name = ? AND id != $3', [userId, account_name, accountId]);
             if (duplicateAccount) {
                 return res.status(409).json({
                     success: false,
@@ -219,7 +218,7 @@ router.put('/:id', [
             });
         }
         values.push(accountId);
-        await (0, database_1.dbRun)(`UPDATE accounts SET ${updates.join(', ')}, updated_at = CURRENT_TIMESTAMP WHERE id = ?`, values);
+        await (0, database_1.dbRun)(`UPDATE accounts SET ${updates.join(', ')}, updated_at = CURRENT_TIMESTAMP WHERE id = $1`, values);
         const updatedAccount = await (0, database_1.dbGet)('SELECT * FROM accounts WHERE id = ?', [accountId]);
         res.json({
             success: true,
@@ -245,7 +244,7 @@ router.delete('/:id', async (req, res) => {
                 message: 'Invalid account ID'
             });
         }
-        const account = await (0, database_1.dbGet)('SELECT id, balance FROM accounts WHERE id = ? AND user_id = ?', [accountId, userId]);
+        const account = await (0, database_1.dbGet)('SELECT id, balance FROM accounts WHERE id = ? AND user_id = $2', [accountId, userId]);
         if (!account) {
             return res.status(404).json({
                 success: false,
@@ -260,8 +259,8 @@ router.delete('/:id', async (req, res) => {
         }
         try {
             await (0, database_1.dbRun)('BEGIN TRANSACTION');
-            await (0, database_1.dbRun)('DELETE FROM transactions WHERE account_id = ? AND user_id = ?', [accountId, userId]);
-            await (0, database_1.dbRun)('DELETE FROM accounts WHERE id = ? AND user_id = ?', [accountId, userId]);
+            await (0, database_1.dbRun)('DELETE FROM transactions WHERE account_id = ? AND user_id = $2', [accountId, userId]);
+            await (0, database_1.dbRun)('DELETE FROM accounts WHERE id = ? AND user_id = $2', [accountId, userId]);
             await (0, database_1.dbRun)('COMMIT');
             res.json({
                 success: true,
@@ -319,7 +318,7 @@ router.post('/transfer', [
         }
         try {
             await (0, database_1.dbRun)('BEGIN TRANSACTION');
-            const accounts = await (0, database_1.dbAll)('SELECT id, account_name, balance FROM accounts WHERE id IN (?, ?) AND user_id = ?', [from_account_id, to_account_id, userId]);
+            const accounts = await (0, database_1.dbAll)('SELECT id, account_name, balance FROM accounts WHERE id IN ($1, $2) AND user_id = $3', [from_account_id, to_account_id, userId]);
             if (accounts.length !== 2) {
                 await (0, database_1.dbRun)('ROLLBACK');
                 return res.status(404).json({
@@ -336,12 +335,12 @@ router.post('/transfer', [
                     message: 'Insufficient balance in source account'
                 });
             }
-            await (0, database_1.dbRun)('UPDATE accounts SET balance = balance - ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?', [amount, from_account_id]);
-            await (0, database_1.dbRun)('UPDATE accounts SET balance = balance + ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?', [amount, to_account_id]);
+            await (0, database_1.dbRun)('UPDATE accounts SET balance = balance - $1, updated_at = CURRENT_TIMESTAMP WHERE id = $2', [amount, from_account_id]);
+            await (0, database_1.dbRun)('UPDATE accounts SET balance = balance + $1, updated_at = CURRENT_TIMESTAMP WHERE id = $2', [amount, to_account_id]);
             const transferDescription = description || `Transfer from ${fromAccount.account_name} to ${toAccount.account_name}`;
-            await (0, database_1.dbRun)('INSERT INTO transactions (user_id, transaction_type, amount, description, account_id, date) VALUES (?, ?, ?, ?, ?, ?)', [userId, 'transfer', -amount, `${transferDescription} (Debit)`, from_account_id, date]);
-            await (0, database_1.dbRun)('INSERT INTO transactions (user_id, transaction_type, amount, description, account_id, date) VALUES (?, ?, ?, ?, ?, ?)', [userId, 'transfer', amount, `${transferDescription} (Credit)`, to_account_id, date]);
-            const updatedAccounts = await (0, database_1.dbAll)('SELECT id, account_name, balance FROM accounts WHERE id IN (?, ?)', [from_account_id, to_account_id]);
+            await (0, database_1.dbRun)('INSERT INTO transactions (user_id, transaction_type, amount, description, account_id, date) VALUES ($1, $2, $3, $4, $5, $6)', [userId, 'transfer', -amount, `${transferDescription} (Debit)`, from_account_id, date]);
+            await (0, database_1.dbRun)('INSERT INTO transactions (user_id, transaction_type, amount, description, account_id, date) VALUES ($1, $2, $3, $4, $5, $6)', [userId, 'transfer', amount, `${transferDescription} (Credit)`, to_account_id, date]);
+            const updatedAccounts = await (0, database_1.dbAll)('SELECT id, account_name, balance FROM accounts WHERE id IN ($1, $2)', [from_account_id, to_account_id]);
             await (0, database_1.dbRun)('COMMIT');
             res.json({
                 success: true,

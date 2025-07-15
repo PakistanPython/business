@@ -24,11 +24,9 @@ import {
   Car,
   Briefcase,
   User,
-  Eye,
 } from 'lucide-react';
 import { loanApi } from '../lib/api';
 import { Loan, LoanForm } from '../lib/types';
-import { formatCurrency } from '../lib/utils';
 import toast from 'react-hot-toast';
 
 export const LoansPage: React.FC = () => {
@@ -36,11 +34,8 @@ export const LoansPage: React.FC = () => {
   const [isLoading, setIsLoading] = useState(true);
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [isPaymentDialogOpen, setIsPaymentDialogOpen] = useState(false);
-  const [isPaymentHistoryDialogOpen, setIsPaymentHistoryDialogOpen] = useState(false);
   const [editingLoan, setEditingLoan] = useState<Loan | null>(null);
   const [selectedLoan, setSelectedLoan] = useState<Loan | null>(null);
-  const [paymentHistory, setPaymentHistory] = useState<any[]>([]);
-  const [isLoadingPayments, setIsLoadingPayments] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
   const [filterStatus, setFilterStatus] = useState<string>('all');
   const [filterType, setFilterType] = useState<string>('all');
@@ -196,25 +191,6 @@ export const LoansPage: React.FC = () => {
     setIsPaymentDialogOpen(true);
   };
 
-  const loadPaymentHistory = async (loanId: number) => {
-    try {
-      setIsLoadingPayments(true);
-      const response = await loanApi.getPayments(loanId);
-      setPaymentHistory(response.data.data.payments || []);
-    } catch (error) {
-      console.error('Error loading payment history:', error);
-      toast.error('Failed to load payment history');
-    } finally {
-      setIsLoadingPayments(false);
-    }
-  };
-
-  const openPaymentHistoryDialog = async (loan: Loan) => {
-    setSelectedLoan(loan);
-    setIsPaymentHistoryDialogOpen(true);
-    await loadPaymentHistory(loan.id);
-  };
-
   const getLoanIcon = (type: string) => {
     switch (type) {
       case 'mortgage': return <Home className="h-4 w-4" />;
@@ -309,7 +285,7 @@ export const LoansPage: React.FC = () => {
             <TrendingDown className="h-4 w-4 text-red-600" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold text-red-900">{formatCurrency(totalBalance)}</div>
+            <div className="text-2xl font-bold text-red-900">${totalBalance.toFixed(2)}</div>
             <p className="text-xs text-red-600 mt-1">Current balance</p>
           </CardContent>
         </Card>
@@ -320,7 +296,7 @@ export const LoansPage: React.FC = () => {
             <DollarSign className="h-4 w-4 text-blue-600" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold text-blue-900">{formatCurrency(totalPrincipal)}</div>
+            <div className="text-2xl font-bold text-blue-900">${totalPrincipal.toFixed(2)}</div>
             <p className="text-xs text-blue-600 mt-1">Original loan amounts</p>
           </CardContent>
         </Card>
@@ -331,7 +307,7 @@ export const LoansPage: React.FC = () => {
             <CheckCircle className="h-4 w-4 text-green-600" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold text-green-900">{formatCurrency(totalPaid)}</div>
+            <div className="text-2xl font-bold text-green-900">${totalPaid.toFixed(2)}</div>
             <p className="text-xs text-green-600 mt-1">Amount repaid</p>
           </CardContent>
         </Card>
@@ -414,9 +390,9 @@ export const LoansPage: React.FC = () => {
                     <TableRow key={loan.id}>
                       <TableCell className="font-medium">{loan.lender_name}</TableCell>
                       <TableCell>{getLoanTypeBadge(loan.loan_type)}</TableCell>
-                      {/* Using formatCurrency for proper PKR display */}
-                      <TableCell>{formatCurrency(Number(loan.principal_amount))}</TableCell>
-                      <TableCell className="font-medium text-red-600">{formatCurrency(Number(loan.current_balance))}</TableCell>
+                      {/* FIX: Convert to Number before .toFixed() */}
+                      <TableCell>${Number(loan.principal_amount).toFixed(2)}</TableCell>
+                      <TableCell className="font-medium text-red-600">${Number(loan.current_balance).toFixed(2)}</TableCell>
                       <TableCell>{loan.interest_rate ? `${Number(loan.interest_rate).toFixed(2)}%` : 'N/A'}</TableCell>
                       <TableCell>
                         <div className="flex items-center space-x-2">
@@ -433,14 +409,6 @@ export const LoansPage: React.FC = () => {
                               <CreditCard className="w-4 h-4 mr-1" /> Pay
                             </Button>
                           )}
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            onClick={() => openPaymentHistoryDialog(loan)}
-                          >
-                            <Eye className="w-4 h-4 mr-1" />
-                            View Payments
-                          </Button>
                           <Button size="sm" variant="outline" onClick={() => handleEdit(loan)}><Edit className="w-4 h-4" /></Button>
                           <Button size="sm" variant="outline" onClick={() => handleDelete(loan)} className="text-red-600 hover:text-red-700"><Trash2 className="w-4 h-4" /></Button>
                         </div>
@@ -624,55 +592,6 @@ export const LoansPage: React.FC = () => {
               <Button type="submit" className="bg-green-600 hover:bg-green-700">Record Payment</Button>
             </DialogFooter>
           </form>
-        </DialogContent>
-      </Dialog>
-
-      {/* Payment History Dialog */}
-      <Dialog open={isPaymentHistoryDialogOpen} onOpenChange={setIsPaymentHistoryDialogOpen}>
-        <DialogContent className="sm:max-w-[600px]">
-          <DialogHeader>
-            <DialogTitle>Payment History</DialogTitle>
-            <DialogDescription>
-              Payment history for loan: {selectedLoan?.lender_name}
-            </DialogDescription>
-          </DialogHeader>
-          <div className="max-h-[400px] overflow-y-auto">
-            {isLoadingPayments ? (
-              <div className="flex items-center justify-center py-8">
-                <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
-              </div>
-            ) : paymentHistory.length === 0 ? (
-              <div className="text-center py-8 text-gray-500">
-                <CreditCard className="h-12 w-12 mx-auto mb-2 text-gray-400" />
-                <p>No payments recorded yet</p>
-              </div>
-            ) : (
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Amount</TableHead>
-                    <TableHead>Date</TableHead>
-                    <TableHead>Description</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {paymentHistory.map((payment, index) => (
-                    <TableRow key={index}>
-                      <TableCell className="font-medium text-green-600">
-                        {formatCurrency(payment.amount)}
-                      </TableCell>
-                      <TableCell>
-                        {new Date(payment.date).toLocaleDateString()}
-                      </TableCell>
-                      <TableCell>
-                        {payment.description || 'Loan payment'}
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            )}
-          </div>
         </DialogContent>
       </Dialog>
     </div>

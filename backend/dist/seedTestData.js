@@ -1,7 +1,7 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.seedTestData = void 0;
-const database_sqlite_1 = require("./config/database_sqlite");
+const database_1 = require("./config/database");
 const testInvoices = [
     {
         business_id: 1,
@@ -115,7 +115,7 @@ const seedTestData = async () => {
     try {
         console.log('🌱 Seeding test data for accounts receivable...');
         for (const invoice of testInvoices) {
-            await (0, database_sqlite_1.dbRun)(`
+            await (0, database_1.dbRun)(`
         INSERT INTO accounts_receivable (
           business_id, customer_name, customer_email, customer_phone, customer_address,
           invoice_number, invoice_date, due_date, amount, balance_amount, status,
@@ -129,7 +129,7 @@ const seedTestData = async () => {
             ]);
         }
         for (const payment of testPayments) {
-            await (0, database_sqlite_1.dbRun)(`
+            await (0, database_1.dbRun)(`
         INSERT INTO payment_records (
           business_id, record_type, record_id, payment_date, amount,
           payment_method, reference_number, notes
@@ -140,12 +140,12 @@ const seedTestData = async () => {
                 payment.reference_number, payment.notes
             ]);
         }
-        await (0, database_sqlite_1.dbRun)(`
+        await (0, database_1.dbRun)(`
       UPDATE accounts_receivable 
       SET paid_amount = 750.00, status = 'paid'
       WHERE id = 2
     `);
-        await (0, database_sqlite_1.dbRun)(`
+        await (0, database_1.dbRun)(`
       UPDATE accounts_receivable 
       SET paid_amount = 5500.00, status = 'partial'
       WHERE id = 3

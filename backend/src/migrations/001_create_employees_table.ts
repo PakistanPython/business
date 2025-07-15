@@ -1,51 +1,43 @@
 import { db } from '../config/database';
 
 export const up = async () => {
-  await new Promise<void>((resolve, reject) => {
-    db.run(`
+  try {
+    await db.query(`
       CREATE TABLE IF NOT EXISTS employees (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        business_id INTEGER NOT NULL,
-        created_by_user_id INTEGER,
-        employee_code TEXT UNIQUE NOT NULL,
-        first_name TEXT NOT NULL,
-        last_name TEXT NOT NULL,
-        email TEXT UNIQUE NOT NULL,
-        password_hash TEXT NOT NULL,
-        phone TEXT,
-        address TEXT,
+        id SERIAL PRIMARY KEY,
+        user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
+        business_id INTEGER,
+        employee_id VARCHAR(20) UNIQUE NOT NULL,
+        first_name VARCHAR(50) NOT NULL,
+        last_name VARCHAR(50) NOT NULL,
+        email VARCHAR(100) UNIQUE NOT NULL,
+        phone VARCHAR(20),
+        position VARCHAR(100),
+        department VARCHAR(100),
         hire_date DATE NOT NULL,
-        employment_type TEXT CHECK(employment_type IN ('full_time', 'part_time', 'contract', 'temporary', 'intern')) DEFAULT 'full_time',
-        salary_type TEXT CHECK(salary_type IN ('monthly', 'daily', 'hourly')) DEFAULT 'monthly',
-        base_salary REAL,
-        daily_wage REAL,
-        hourly_rate REAL,
-        department TEXT,
-        position TEXT,
-        status TEXT CHECK(status IN ('active', 'inactive', 'on_leave', 'terminated')) DEFAULT 'active',
-        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-        updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-        FOREIGN KEY (business_id) REFERENCES users(id) ON DELETE CASCADE,
-        FOREIGN KEY (created_by_user_id) REFERENCES users(id) ON DELETE SET NULL
+        salary DECIMAL(15,2),
+        hourly_rate DECIMAL(10,2),
+        employment_type VARCHAR(20) DEFAULT 'full_time' CHECK (employment_type IN ('full_time', 'part_time', 'contract')),
+        status VARCHAR(20) DEFAULT 'active' CHECK (status IN ('active', 'inactive', 'terminated')),
+        password_hash VARCHAR(255),
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
       )
-    `, (err) => {
-      if (err) {
-        reject(err);
-      } else {
-        resolve();
-      }
-    });
-  });
+    `);
+    console.log('✅ Employees table created successfully');
+  } catch (error) {
+    console.error('❌ Error creating employees table:', error);
+    throw error;
+  }
 };
 
 export const down = async () => {
-  await new Promise<void>((resolve, reject) => {
-    db.run(`DROP TABLE IF EXISTS employees`, (err) => {
-      if (err) {
-        reject(err);
-      } else {
-        resolve();
-      }
-    });
-  });
+  try {
+    await db.query(`DROP TABLE IF EXISTS employees CASCADE`);
+    console.log('✅ Employees table dropped successfully');
+  } catch (error) {
+    console.error('❌ Error dropping employees table:', error);
+    throw error;
+  }
 };
+

@@ -29,7 +29,7 @@ router.post('/register', [
 
     // Check if user already exists
     const existingUser = await dbGet(
-      'SELECT id FROM users WHERE username = ? OR email = ?',
+      'SELECT id FROM users WHERE username = $1 OR email = $2',
       [username, email]
     );
 
@@ -45,11 +45,11 @@ router.post('/register', [
 
     // Create user
     const result = await dbRun(
-      'INSERT INTO users (username, email, password_hash, full_name, business_name) VALUES (?, ?, ?, ?, ?)',
+      'INSERT INTO users (username, email, password_hash, full_name, business_name) VALUES ($1, $2, $3, $4, $5) RETURNING id',
       [username, email, passwordHash, full_name, business_name || null]
     );
 
-    const userId = result.lastID;
+    const userId = result.rows?.[0]?.id;
 
     // Create default categories for the user
     const defaultCategories = [
@@ -68,20 +68,20 @@ router.post('/register', [
 
     for (const category of defaultCategories) {
       await dbRun(
-        'INSERT INTO categories (user_id, name, type, color, icon) VALUES (?, ?, ?, ?, ?)',
+        'INSERT INTO categories (user_id, name, type, color, icon) VALUES ($1, $2, $3, $4, $5)',
         [userId, category.name, category.type, category.color, category.icon]
       );
     }
 
     // Create default cash account
     await dbRun(
-      'INSERT INTO accounts (user_id, account_type, account_name, balance) VALUES (?, ?, ?, ?)',
+      'INSERT INTO accounts (user_id, account_type, account_name, balance) VALUES ($1, $2, $3, $4)',
       [userId, 'cash', 'Cash', 0]
     );
 
     // Get user data
     const user = await dbGet(
-      'SELECT id, username, email, full_name, business_name, user_type, business_id, created_at FROM users WHERE id = ?',
+      'SELECT id, username, email, full_name, business_name, user_type, business_id, created_at FROM users WHERE id = $1',
       [userId]
     );
 
@@ -124,7 +124,7 @@ router.post('/login', [
 
     // Find user by username or email
     const user = await dbGet(
-      'SELECT * FROM users WHERE (username = ? OR email = ?) AND is_active = 1',
+      'SELECT * FROM users WHERE (username = $1 OR email = $2) AND is_active = 1',
       [login, login]
     );
 
@@ -173,7 +173,7 @@ router.get('/profile', authenticateToken, async (req, res) => {
     const userId = req.user!.userId;
 
     const user = await dbGet(
-      'SELECT id, username, email, full_name, business_name, user_type, business_id, created_at FROM users WHERE id = ?',
+      'SELECT id, username, email, full_name, business_name, user_type, business_id, created_at FROM users WHERE id = $1',
       [userId]
     );
 
@@ -222,7 +222,7 @@ router.put('/profile', [
     // Check if email is already taken by another user
     if (email) {
       const existingUser = await dbGet(
-        'SELECT id FROM users WHERE email = ? AND id != ?',
+        'SELECT id FROM users WHERE email = $1 AND id != $2',
         [email, userId]
       );
 
@@ -237,17 +237,18 @@ router.put('/profile', [
     // Update user
     const updates: string[] = [];
     const values: any[] = [];
+    let paramIndex = 1;
 
     if (email) {
-      updates.push('email = ?');
+      updates.push(`email = $${paramIndex++}`);
       values.push(email);
     }
     if (full_name) {
-      updates.push('full_name = ?');
+      updates.push(`full_name = $${paramIndex++}`);
       values.push(full_name);
     }
     if (business_name !== undefined) {
-      updates.push('business_name = ?');
+      updates.push(`business_name = $${paramIndex++}`);
       values.push(business_name);
     }
 
@@ -258,17 +259,14 @@ router.put('/profile', [
       });
     }
 
-    updates.push('updated_at = CURRENT_TIMESTAMP');
-    values.push(userId);
-
     await dbRun(
-      `UPDATE users SET ${updates.join(', ')} WHERE id = ?`,
-      values
+      `UPDATE users SET ${updates.join(', ')} WHERE id = $${paramIndex}`,
+      [...values, userId]
     );
 
     // Get updated user
     const user = await dbGet(
-      'SELECT id, username, email, full_name, business_name, user_type, business_id, created_at FROM users WHERE id = ?',
+      'SELECT id, username, email, full_name, business_name, user_type, business_id, created_at FROM users WHERE id = $1',
       [userId]
     );
 
@@ -307,8 +305,8 @@ router.post('/employee/login', [
 
     // Find employee by email
     const employee = await dbGet(
-      'SELECT * FROM employees WHERE email = ? AND status = "active"',
-      [email]
+      'SELECT * FROM employees WHERE email = $1 AND status = $2',
+      [email, 'active']
     );
 
     if (!employee) {

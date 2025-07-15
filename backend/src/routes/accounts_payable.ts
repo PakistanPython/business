@@ -16,8 +16,7 @@ const generateBillNumber = async (businessId: number): Promise<string> => {
   const count = await dbGet(`
     SELECT COUNT(*) as count 
     FROM accounts_payable 
-    WHERE business_id = ? 
-    AND strftime('%Y', bill_date) = ? 
+    WHERE business_id = ? AND strftime('%Y', bill_date) = ? 
     AND strftime('%m', bill_date) = ?
   `, [businessId, year.toString(), month.toString().padStart(2, '0')]);
   
@@ -27,7 +26,7 @@ const generateBillNumber = async (businessId: number): Promise<string> => {
 
 // Helper function to update account status based on balance
 const updateAccountStatus = async (id: number) => {
-  const account = await dbGet('SELECT amount, paid_amount, due_date FROM accounts_payable WHERE id = ?', [id]);
+  const account = await dbGet('SELECT amount, paid_amount, due_date FROM accounts_payable WHERE id = $1', [id]);
   
   if (!account) return;
   
@@ -47,13 +46,13 @@ const updateAccountStatus = async (id: number) => {
     }
   }
   
-  await dbRun('UPDATE accounts_payable SET status = ? WHERE id = ?', [status, id]);
+  await dbRun('UPDATE accounts_payable SET status = ? WHERE id = $2', [status, id]);
 };
 
 // GET /api/accounts-payable - Get all accounts payable
 router.get('/', async (req: Request, res: Response) => {
   try {
-    const businessId = req.user?.userId;
+    const businessId = req.user!.userId;
     const { 
       status, 
       vendor_name, 
@@ -66,8 +65,7 @@ router.get('/', async (req: Request, res: Response) => {
 
     let query = `
       SELECT * FROM accounts_payable 
-      WHERE business_id = ?
-    `;
+      WHERE business_id = ? `;
     const params: any[] = [businessId];
 
     if (status && status !== 'all') {
@@ -93,7 +91,7 @@ router.get('/', async (req: Request, res: Response) => {
 
     // Add pagination
     const offset = (parseInt(page as string) - 1) * parseInt(limit as string);
-    query += ` LIMIT ? OFFSET ?`;
+    query += ` LIMIT ? OFFSET $2`;
     params.push(parseInt(limit as string), offset);
 
     const accounts = await dbAll(query, params);
@@ -102,9 +100,8 @@ router.get('/', async (req: Request, res: Response) => {
     let countQuery = `
       SELECT COUNT(*) as total
       FROM accounts_payable 
-      WHERE business_id = ?
-    `;
-    const countParams: any[] = [businessId];
+      WHERE business_id = ? `;
+    const countParams : any[] = [businessId];
 
     if (status && status !== 'all') {
       countQuery += ' AND status = ?';
@@ -149,7 +146,7 @@ router.get('/:id', async (req: Request, res: Response) => {
     const businessId = req.user?.userId;
 
     const account = await dbGet(
-      'SELECT * FROM accounts_payable WHERE id = ? AND business_id = ?',
+      'SELECT * FROM accounts_payable WHERE id = ? AND business_id = $2',
       [id, businessId]
     );
 
@@ -203,7 +200,7 @@ router.post('/', async (req: Request, res: Response) => {
 
     // Check if bill number already exists
     const existingBill = await dbGet(
-      'SELECT id FROM accounts_payable WHERE bill_number = ? AND business_id = ?',
+      'SELECT id FROM accounts_payable WHERE bill_number = ? AND business_id = $2',
       [finalBillNumber, businessId]
     );
 
@@ -222,7 +219,7 @@ router.post('/', async (req: Request, res: Response) => {
         business_id, vendor_name, vendor_email, vendor_phone, vendor_address,
         bill_number, bill_date, due_date, amount, balance_amount, status,
         payment_terms, description, notes
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
     `, [
       businessId, vendor_name, vendor_email, vendor_phone, vendor_address,
       finalBillNumber, bill_date, due_date, amount, amount, status,
@@ -232,7 +229,7 @@ router.post('/', async (req: Request, res: Response) => {
     // Fetch the created record
     const newAccount = await dbGet(
       'SELECT * FROM accounts_payable WHERE id = ?',
-      [result.lastID]
+      [result.rows?.[0]?.id]
     );
 
     res.status(201).json(newAccount);
@@ -263,7 +260,7 @@ router.put('/:id', async (req: Request, res: Response) => {
 
     // Check if account exists and belongs to this business
     const existingAccount = await dbGet(
-      'SELECT * FROM accounts_payable WHERE id = ? AND business_id = ?',
+      'SELECT * FROM accounts_payable WHERE id = ? AND business_id = $2',
       [id, businessId]
     );
 
@@ -279,7 +276,7 @@ router.put('/:id', async (req: Request, res: Response) => {
     // Check if bill number is being changed and already exists
     if (bill_number && bill_number !== existingAccount.bill_number) {
       const duplicateBill = await dbGet(
-        'SELECT id FROM accounts_payable WHERE bill_number = ? AND business_id = ? AND id != ?',
+        'SELECT id FROM accounts_payable WHERE bill_number = ? AND business_id = ? AND id != $3',
         [bill_number, businessId, id]
       );
       if (duplicateBill) {
@@ -290,12 +287,11 @@ router.put('/:id', async (req: Request, res: Response) => {
     // Update account payable
     await dbRun(`
       UPDATE accounts_payable SET
-        vendor_name = ?, vendor_email = ?, vendor_phone = ?, vendor_address = ?,
-        bill_number = ?, bill_date = ?, due_date = ?, amount = ?,
-        balance_amount = amount - paid_amount, payment_terms = ?, description = ?, notes = ?,
+        vendor_name = $1, vendor_email = $2, vendor_phone = $3, vendor_address = $4,
+        bill_number = $5, bill_date = $6, due_date = $7, amount = $8,
+        balance_amount = amount - paid_amount, payment_terms = $9, description = $10, notes = $11,
         updated_at = CURRENT_TIMESTAMP
-      WHERE id = ? AND business_id = ?
-    `, [
+      WHERE id = ? AND business_id = ? `, [
       vendor_name || existingAccount.vendor_name,
       vendor_email || existingAccount.vendor_email,
       vendor_phone || existingAccount.vendor_phone,
@@ -346,7 +342,7 @@ router.post('/:id/payment', async (req: Request, res: Response) => {
 
     // Check if account exists and belongs to this business
     const account = await dbGet(
-      'SELECT * FROM accounts_payable WHERE id = ? AND business_id = ?',
+      'SELECT * FROM accounts_payable WHERE id = ? AND business_id = $2',
       [id, businessId]
     );
 
@@ -365,13 +361,13 @@ router.post('/:id/payment', async (req: Request, res: Response) => {
       INSERT INTO payment_records (
         business_id, record_type, record_id, payment_date, amount,
         payment_method, reference_number, notes
-      ) VALUES (?, 'payable', ?, ?, ?, ?, ?, ?)
+      ) VALUES ($1, 'payable', ?, ?, ?, ?, ?, ?)
     `, [businessId, id, payment_date, amount, payment_method, reference_number, notes]);
 
     // Update paid amount
     const newPaidAmount = account.paid_amount + parseFloat(amount);
     await dbRun(
-      'UPDATE accounts_payable SET paid_amount = ? WHERE id = ?',
+      'UPDATE accounts_payable SET paid_amount = ? WHERE id = $2',
       [newPaidAmount, id]
     );
 
@@ -380,7 +376,7 @@ router.post('/:id/payment', async (req: Request, res: Response) => {
 
     // Fetch updated record
     const updatedAccount = await dbGet(
-      'SELECT * FROM accounts_payable WHERE id = ?',
+      'SELECT * FROM accounts_payable WHERE id = $1',
       [id]
     );
 
@@ -399,7 +395,7 @@ router.delete('/:id', async (req: Request, res: Response) => {
 
     // Check if account exists and belongs to this business
     const account = await dbGet(
-      'SELECT paid_amount FROM accounts_payable WHERE id = ? AND business_id = ?',
+      'SELECT paid_amount FROM accounts_payable WHERE id = ? AND business_id = $2',
       [id, businessId]
     );
 
@@ -413,8 +409,8 @@ router.delete('/:id', async (req: Request, res: Response) => {
     }
 
     // Delete account payable and related payment records
-    await dbRun('DELETE FROM payment_records WHERE record_type = "payable" AND record_id = ?', [id]);
-    await dbRun('DELETE FROM accounts_payable WHERE id = ? AND business_id = ?', [id, businessId]);
+    await dbRun('DELETE FROM payment_records WHERE record_type = "payable" AND record_id = $1', [id]);
+    await dbRun('DELETE FROM accounts_payable WHERE id = ? AND business_id = $2', [id, businessId]);
 
     res.json({ message: 'Account payable deleted successfully' });
   } catch (error) {
@@ -511,7 +507,7 @@ router.put('/:id/status', async (req: Request, res: Response) => {
 
     // Check if account exists and belongs to this business
     const account = await dbGet(
-      'SELECT * FROM accounts_payable WHERE id = ? AND business_id = ?',
+      'SELECT * FROM accounts_payable WHERE id = ? AND business_id = $2',
       [id, businessId]
     );
 
@@ -521,13 +517,13 @@ router.put('/:id/status', async (req: Request, res: Response) => {
 
     // Update status
     await dbRun(
-      'UPDATE accounts_payable SET status = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ? AND business_id = ?',
+      'UPDATE accounts_payable SET status = $1, updated_at = CURRENT_TIMESTAMP WHERE id = ? AND business_id = $3',
       [status, id, businessId]
     );
 
     // Fetch updated record
     const updatedAccount = await dbGet(
-      'SELECT * FROM accounts_payable WHERE id = ?',
+      'SELECT * FROM accounts_payable WHERE id = $1',
       [id]
     );
 

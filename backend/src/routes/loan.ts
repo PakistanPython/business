@@ -78,61 +78,6 @@ router.get('/', [
   }
 });
 
-// Get loan payment history
-router.get('/:id/payments', async (req, res) => {
-  try {
-    const userId = req.user!.userId;
-    const loanId = parseInt(req.params.id);
-
-    if (isNaN(loanId)) {
-      return res.status(400).json({
-        success: false,
-        message: 'Invalid loan ID'
-      });
-    }
-
-    // Verify loan belongs to user
-    const loan = await dbGet(
-      'SELECT id FROM loans WHERE id = ? AND user_id = ?',
-      [loanId, userId]
-    );
-
-    if (!loan) {
-      return res.status(404).json({
-        success: false,
-        message: 'Loan not found'
-      });
-    }
-
-    // Get payment history from transactions table
-    const payments = await dbAll(
-      `SELECT 
-        amount,
-        description,
-        date,
-        created_at
-      FROM transactions 
-      WHERE user_id = ? AND transaction_type = 'loan_payment' AND reference_id = ?
-      ORDER BY date DESC, created_at DESC`,
-      [userId, loanId]
-    );
-
-    res.json({
-      success: true,
-      data: {
-        loan_id: loanId,
-        payments: payments
-      }
-    });
-  } catch (error) {
-    console.error('Get loan payments error:', error);
-    res.status(500).json({
-      success: false,
-      message: 'Internal server error'
-    });
-  }
-});
-
 // Get loan by ID
 router.get('/:id', async (req, res) => {
   try {
@@ -152,7 +97,7 @@ router.get('/:id', async (req, res) => {
         interest_rate, monthly_payment, start_date, due_date, status, 
         created_at, updated_at
        FROM loans 
-       WHERE id = ? AND user_id = ?`,
+       WHERE id = ? AND user_id = $2`,
       [loanId, userId]
     );
 
@@ -236,12 +181,12 @@ router.post('/', [
       `INSERT INTO loans 
        (user_id, loan_type, lender_name, principal_amount, current_balance, 
         interest_rate, monthly_payment, start_date, due_date) 
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
       [userId, loan_type, lender_name, principal_amount, current_balance, 
        interest_rate, monthly_payment, start_date, due_date]
     );
 
-    const loanId = result.lastID;
+    const loanId = result.rows?.[0]?.id;
 
     // Get the created loan record
     const newLoan = await dbGet(
@@ -314,7 +259,7 @@ router.put('/:id', [
 
     // Check if loan exists and belongs to user
     const existingLoan = await dbGet(
-      'SELECT id FROM loans WHERE id = ? AND user_id = ?',
+      'SELECT id FROM loans WHERE id = ? AND user_id = $2',
       [loanId, userId]
     );
 
@@ -366,7 +311,7 @@ router.put('/:id', [
 
     // Update loan record
     await dbRun(
-      `UPDATE loans SET ${updates.join(', ')}, updated_at = CURRENT_TIMESTAMP WHERE id = ?`,
+      `UPDATE loans SET ${updates.join(', ')}, updated_at = CURRENT_TIMESTAMP WHERE id = $1`,
       values
     );
 
@@ -429,7 +374,7 @@ router.post('/:id/payment', [
       await dbRun('BEGIN TRANSACTION');
       // Get loan record
       const loan = await dbGet(
-        'SELECT id, lender_name, current_balance, status FROM loans WHERE id = ? AND user_id = ?',
+        'SELECT id, lender_name, current_balance, status FROM loans WHERE id = ? AND user_id = $2',
         [loanId, userId]
       );
 
@@ -464,19 +409,19 @@ router.post('/:id/payment', [
 
       // Update loan balance and status
       await dbRun(
-        'UPDATE loans SET current_balance = ?, status = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?',
+        'UPDATE loans SET current_balance = $1, status = $2, updated_at = CURRENT_TIMESTAMP WHERE id = $3',
         [newBalance, newStatus, loanId]
       );
 
       // Record transaction for audit trail
       await dbRun(
-        'INSERT INTO transactions (user_id, transaction_type, reference_id, reference_table, amount, description, date) VALUES (?, ?, ?, ?, ?, ?, ?)',
+        'INSERT INTO transactions (user_id, transaction_type, reference_id, reference_table, amount, description, date) VALUES ($1, $2, $3, $4, $5, $6, $7)',
         [userId, 'loan_payment', loanId, 'loans', amount, description || `Loan payment to ${loan.lender_name}`, payment_date]
       );
 
       // Get updated loan record
       const updatedLoan = await dbGet(
-        'SELECT * FROM loans WHERE id = ?',
+        'SELECT * FROM loans WHERE id = $1',
         [loanId]
       );
 
@@ -524,7 +469,7 @@ router.delete('/:id', async (req, res) => {
 
     // Check if loan exists and belongs to user
     const existingLoan = await dbGet(
-      'SELECT id, status FROM loans WHERE id = ? AND user_id = ?',
+      'SELECT id, status FROM loans WHERE id = ? AND user_id = $2',
       [loanId, userId]
     );
 
@@ -539,13 +484,13 @@ router.delete('/:id', async (req, res) => {
       await dbRun('BEGIN TRANSACTION');
       // Delete related transactions
       await dbRun(
-        'DELETE FROM transactions WHERE reference_id = ? AND reference_table = ? AND user_id = ?',
+        'DELETE FROM transactions WHERE reference_id = ? AND reference_table = ? AND user_id = $3',
         [loanId, 'loans', userId]
       );
 
       // Delete loan record
       await dbRun(
-        'DELETE FROM loans WHERE id = ? AND user_id = ?',
+        'DELETE FROM loans WHERE id = ? AND user_id = $2',
         [loanId, userId]
       );
 
@@ -584,7 +529,7 @@ router.get('/stats/summary', async (req, res) => {
         SUM(CASE WHEN status = 'active' THEN 1 ELSE 0 END) as active_loans,
         AVG(CASE WHEN status = 'active' THEN interest_rate END) as avg_interest_rate
        FROM loans 
-       WHERE user_id = ?`,
+       WHERE user_id = $1`,
       [userId]
     );
 
@@ -596,8 +541,7 @@ router.get('/stats/summary', async (req, res) => {
         SUM(principal_amount) as total_principal,
         SUM(current_balance) as total_balance
        FROM loans 
-       WHERE user_id = ? 
-       GROUP BY loan_type
+       WHERE user_id = ? GROUP BY loan_type
        ORDER BY total_balance DESC`,
       [userId]
     );

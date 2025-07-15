@@ -14,15 +14,14 @@ const generateInvoiceNumber = async (businessId) => {
     const count = await (0, database_1.dbGet)(`
     SELECT COUNT(*) as count 
     FROM accounts_receivable 
-    WHERE business_id = ? 
-    AND strftime('%Y', invoice_date) = ? 
+    WHERE business_id = ? AND strftime('%Y', invoice_date) = ? 
     AND strftime('%m', invoice_date) = ?
   `, [businessId, year.toString(), month.toString().padStart(2, '0')]);
     const nextNumber = (count.count + 1).toString().padStart(4, '0');
     return `INV-${year}${month.toString().padStart(2, '0')}-${nextNumber}`;
 };
 const updateAccountStatus = async (id) => {
-    const account = await (0, database_1.dbGet)('SELECT amount, paid_amount FROM accounts_receivable WHERE id = ?', [id]);
+    const account = await (0, database_1.dbGet)('SELECT amount, paid_amount FROM accounts_receivable WHERE id = $1', [id]);
     if (!account)
         return;
     let status = 'pending';
@@ -40,16 +39,15 @@ const updateAccountStatus = async (id) => {
             status = 'overdue';
         }
     }
-    await (0, database_1.dbRun)('UPDATE accounts_receivable SET status = ? WHERE id = ?', [status, id]);
+    await (0, database_1.dbRun)('UPDATE accounts_receivable SET status = ? WHERE id = $2', [status, id]);
 };
 router.get('/', async (req, res) => {
     try {
-        const businessId = req.user?.userId;
+        const businessId = req.user.userId;
         const { status, customer_name, date_from, date_to, overdue_only, page = 1, limit = 20 } = req.query;
         let query = `
       SELECT * FROM accounts_receivable 
-      WHERE business_id = ?
-    `;
+      WHERE business_id = ? `;
         const params = [businessId];
         if (status && status !== 'all') {
             query += ' AND status = ?';
@@ -68,14 +66,13 @@ router.get('/', async (req, res) => {
         }
         query += ' ORDER BY invoice_date DESC, created_at DESC';
         const offset = (parseInt(page) - 1) * parseInt(limit);
-        query += ` LIMIT ? OFFSET ?`;
+        query += ` LIMIT ? OFFSET $2`;
         params.push(parseInt(limit), offset);
         const accounts = await (0, database_1.dbAll)(query, params);
         let countQuery = `
       SELECT COUNT(*) as total
       FROM accounts_receivable 
-      WHERE business_id = ?
-    `;
+      WHERE business_id = ? `;
         const countParams = [businessId];
         if (status && status !== 'all') {
             countQuery += ' AND status = ?';
@@ -112,7 +109,7 @@ router.get('/:id', async (req, res) => {
     try {
         const { id } = req.params;
         const businessId = req.user?.userId;
-        const account = await (0, database_1.dbGet)('SELECT * FROM accounts_receivable WHERE id = ? AND business_id = ?', [id, businessId]);
+        const account = await (0, database_1.dbGet)('SELECT * FROM accounts_receivable WHERE id = ? AND business_id = $2', [id, businessId]);
         if (!account) {
             return res.status(404).json({ error: 'Account receivable not found' });
         }
@@ -137,7 +134,7 @@ router.post('/', async (req, res) => {
             });
         }
         const finalInvoiceNumber = invoice_number || await generateInvoiceNumber(businessId);
-        const existingInvoice = await (0, database_1.dbGet)('SELECT id FROM accounts_receivable WHERE invoice_number = ? AND business_id = ?', [finalInvoiceNumber, businessId]);
+        const existingInvoice = await (0, database_1.dbGet)('SELECT id FROM accounts_receivable WHERE invoice_number = ? AND business_id = $2', [finalInvoiceNumber, businessId]);
         if (existingInvoice) {
             return res.status(400).json({ error: 'Invoice number already exists' });
         }
@@ -149,13 +146,13 @@ router.post('/', async (req, res) => {
         business_id, customer_name, customer_email, customer_phone, customer_address,
         invoice_number, invoice_date, due_date, amount, status,
         payment_terms, description, notes
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
     `, [
             businessId, customer_name, customer_email, customer_phone, customer_address,
             finalInvoiceNumber, invoice_date, due_date, amount, status,
             payment_terms, description, notes
         ]);
-        const newAccount = await (0, database_1.dbGet)('SELECT * FROM accounts_receivable WHERE id = ?', [result.lastID]);
+        const newAccount = await (0, database_1.dbGet)('SELECT * FROM accounts_receivable WHERE id = ?', [result.rows?.[0]?.id]);
         res.status(201).json(newAccount);
     }
     catch (error) {
@@ -168,7 +165,7 @@ router.put('/:id', async (req, res) => {
         const { id } = req.params;
         const businessId = req.user?.userId;
         const { customer_name, customer_email, customer_phone, customer_address, invoice_number, invoice_date, due_date, amount, payment_terms, description, notes } = req.body;
-        const existingAccount = await (0, database_1.dbGet)('SELECT * FROM accounts_receivable WHERE id = ? AND business_id = ?', [id, businessId]);
+        const existingAccount = await (0, database_1.dbGet)('SELECT * FROM accounts_receivable WHERE id = ? AND business_id = $2', [id, businessId]);
         if (!existingAccount) {
             return res.status(404).json({ error: 'Account receivable not found' });
         }
@@ -176,19 +173,18 @@ router.put('/:id', async (req, res) => {
             return res.status(400).json({ error: 'Cannot update fully paid invoice' });
         }
         if (invoice_number && invoice_number !== existingAccount.invoice_number) {
-            const duplicateInvoice = await (0, database_1.dbGet)('SELECT id FROM accounts_receivable WHERE invoice_number = ? AND business_id = ? AND id != ?', [invoice_number, businessId, id]);
+            const duplicateInvoice = await (0, database_1.dbGet)('SELECT id FROM accounts_receivable WHERE invoice_number = ? AND business_id = ? AND id != $3', [invoice_number, businessId, id]);
             if (duplicateInvoice) {
                 return res.status(400).json({ error: 'Invoice number already exists' });
             }
         }
         await (0, database_1.dbRun)(`
       UPDATE accounts_receivable SET
-        customer_name = ?, customer_email = ?, customer_phone = ?, customer_address = ?,
-        invoice_number = ?, invoice_date = ?, due_date = ?, amount = ?,
-        balance_amount = amount - paid_amount, payment_terms = ?, description = ?, notes = ?,
+        customer_name = $1, customer_email = $2, customer_phone = $3, customer_address = $4,
+        invoice_number = $5, invoice_date = $6, due_date = $7, amount = $8,
+        balance_amount = amount - paid_amount, payment_terms = $9, description = $10, notes = $11,
         updated_at = CURRENT_TIMESTAMP
-      WHERE id = ? AND business_id = ?
-    `, [
+      WHERE id = ? AND business_id = ? `, [
             customer_name || existingAccount.customer_name,
             customer_email || existingAccount.customer_email,
             customer_phone || existingAccount.customer_phone,
@@ -219,7 +215,7 @@ router.post('/:id/payment', async (req, res) => {
         if (!amount || !payment_date) {
             return res.status(400).json({ error: 'Payment amount and date are required' });
         }
-        const account = await (0, database_1.dbGet)('SELECT * FROM accounts_receivable WHERE id = ? AND business_id = ?', [id, businessId]);
+        const account = await (0, database_1.dbGet)('SELECT * FROM accounts_receivable WHERE id = ? AND business_id = $2', [id, businessId]);
         if (!account) {
             return res.status(404).json({ error: 'Account receivable not found' });
         }
@@ -231,12 +227,12 @@ router.post('/:id/payment', async (req, res) => {
       INSERT INTO payment_records (
         business_id, record_type, record_id, payment_date, amount,
         payment_method, reference_number, notes
-      ) VALUES (?, 'receivable', ?, ?, ?, ?, ?, ?)
+      ) VALUES ($1, 'receivable', ?, ?, ?, ?, ?, ?)
     `, [businessId, id, payment_date, amount, payment_method, reference_number, notes]);
         const newPaidAmount = account.paid_amount + parseFloat(amount);
-        await (0, database_1.dbRun)('UPDATE accounts_receivable SET paid_amount = ? WHERE id = ?', [newPaidAmount, id]);
+        await (0, database_1.dbRun)('UPDATE accounts_receivable SET paid_amount = ? WHERE id = $2', [newPaidAmount, id]);
         await updateAccountStatus(parseInt(id));
-        const updatedAccount = await (0, database_1.dbGet)('SELECT * FROM accounts_receivable WHERE id = ?', [id]);
+        const updatedAccount = await (0, database_1.dbGet)('SELECT * FROM accounts_receivable WHERE id = $1', [id]);
         res.json(updatedAccount);
     }
     catch (error) {
@@ -248,15 +244,15 @@ router.delete('/:id', async (req, res) => {
     try {
         const { id } = req.params;
         const businessId = req.user?.userId;
-        const account = await (0, database_1.dbGet)('SELECT paid_amount FROM accounts_receivable WHERE id = ? AND business_id = ?', [id, businessId]);
+        const account = await (0, database_1.dbGet)('SELECT paid_amount FROM accounts_receivable WHERE id = ? AND business_id = $2', [id, businessId]);
         if (!account) {
             return res.status(404).json({ error: 'Account receivable not found' });
         }
         if (account.paid_amount > 0) {
             return res.status(400).json({ error: 'Cannot delete invoice with recorded payments' });
         }
-        await (0, database_1.dbRun)('DELETE FROM payment_records WHERE record_type = "receivable" AND record_id = ?', [id]);
-        await (0, database_1.dbRun)('DELETE FROM accounts_receivable WHERE id = ? AND business_id = ?', [id, businessId]);
+        await (0, database_1.dbRun)('DELETE FROM payment_records WHERE record_type = "receivable" AND record_id = $1', [id]);
+        await (0, database_1.dbRun)('DELETE FROM accounts_receivable WHERE id = ? AND business_id = $2', [id, businessId]);
         res.json({ message: 'Account receivable deleted successfully' });
     }
     catch (error) {
@@ -338,12 +334,12 @@ router.put('/:id/status', async (req, res) => {
         if (!['pending', 'partial', 'paid', 'overdue', 'cancelled'].includes(status)) {
             return res.status(400).json({ error: 'Invalid status' });
         }
-        const account = await (0, database_1.dbGet)('SELECT * FROM accounts_receivable WHERE id = ? AND business_id = ?', [id, businessId]);
+        const account = await (0, database_1.dbGet)('SELECT * FROM accounts_receivable WHERE id = ? AND business_id = $2', [id, businessId]);
         if (!account) {
             return res.status(404).json({ error: 'Account receivable not found' });
         }
-        await (0, database_1.dbRun)('UPDATE accounts_receivable SET status = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ? AND business_id = ?', [status, id, businessId]);
-        const updatedAccount = await (0, database_1.dbGet)('SELECT * FROM accounts_receivable WHERE id = ?', [id]);
+        await (0, database_1.dbRun)('UPDATE accounts_receivable SET status = $1, updated_at = CURRENT_TIMESTAMP WHERE id = ? AND business_id = $3', [status, id, businessId]);
+        const updatedAccount = await (0, database_1.dbGet)('SELECT * FROM accounts_receivable WHERE id = $1', [id]);
         res.json(updatedAccount);
     }
     catch (error) {

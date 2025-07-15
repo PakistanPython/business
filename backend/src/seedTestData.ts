@@ -1,4 +1,4 @@
-import { dbRun } from './config/database_sqlite';
+import { dbRun } from './config/database';
 
 // Test data for accounts receivable
 const testInvoices = [

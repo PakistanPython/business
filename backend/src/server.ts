@@ -5,7 +5,7 @@ import morgan from 'morgan';
 import compression from 'compression';
 import rateLimit from 'express-rate-limit';
 import dotenv from 'dotenv';
-import { testConnection } from './config/database_sqlite';
+import { testConnection } from './config/database';
 
 // Routes
 import authRoutes from './routes/auth';
@@ -91,7 +91,7 @@ app.get('/', (req, res) => {
     message: 'My Business API Server is running!',
     version: '1.0.0',
     environment: process.env.NODE_ENV || 'development',
-    database: 'SQLite'
+    database: 'PostgreSQL'
   });
 });
 
@@ -134,7 +134,7 @@ const startServer = async () => {
     app.listen(PORT, () => {
       console.log(`🚀 Server running on http://localhost:${PORT}`);
       console.log(`📊 Environment: ${process.env.NODE_ENV || 'development'}`);
-      console.log(`💾 Database: SQLite`);
+      console.log(`💾 Database: PostgreSQL`);
       console.log(`🌐 CORS Origin: ${corsOrigin}`);
     });
   } catch (error) {

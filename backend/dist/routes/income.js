@@ -58,7 +58,7 @@ router.get('/', [
        FROM income 
        ${whereClause} 
        ORDER BY ${sortBy} ${sortOrder.toUpperCase()}
-       LIMIT ? OFFSET ?`, [...whereParams, limit, offset]);
+       LIMIT ? OFFSET $2`, [...whereParams, limit, offset]);
         const totalPages = Math.ceil(total / limit);
         const hasNext = page < totalPages;
         const hasPrev = page > 1;
@@ -99,7 +99,7 @@ router.get('/:id', async (req, res) => {
         id, amount, description, category, source, date, 
         charity_required, created_at, updated_at
        FROM income 
-       WHERE id = ? AND user_id = ?`, [incomeId, userId]);
+       WHERE id = ? AND user_id = $2`, [incomeId, userId]);
         if (!incomeRecord) {
             return res.status(404).json({
                 success: false,
@@ -140,11 +140,7 @@ router.post('/', [
         .withMessage('Source cannot exceed 100 characters'),
     (0, express_validator_1.body)('date')
         .isISO8601()
-        .withMessage('Date must be valid ISO date'),
-    (0, express_validator_1.body)('charity_percentage')
-        .optional()
-        .isFloat({ min: 0, max: 100 })
-        .withMessage('Charity percentage must be between 0 and 100')
+        .withMessage('Date must be valid ISO date')
 ], async (req, res) => {
     try {
         const errors = (0, express_validator_1.validationResult)(req);
@@ -156,15 +152,15 @@ router.post('/', [
             });
         }
         const userId = req.user.userId;
-        const { amount, description, category = 'General', source, date, charity_percentage = 2.5 } = req.body;
+        const { amount, description, category = 'General', source, date } = req.body;
         try {
             await (0, database_1.dbRun)('BEGIN TRANSACTION');
-            const incomeResult = await (0, database_1.dbRun)('INSERT INTO income (user_id, amount, description, category, source, date, charity_percentage) VALUES (?, ?, ?, ?, ?, ?, ?)', [userId, amount, description, category, source, date, charity_percentage]);
-            const incomeId = incomeResult.lastID;
-            const incomeRecord = await (0, database_1.dbGet)('SELECT * FROM income WHERE id = ?', [incomeId]);
+            const incomeResult = await (0, database_1.dbRun)('INSERT INTO income (user_id, amount, description, category, source, date) VALUES ($1, $2, $3, $4, $5, $6)', [userId, amount, description, category, source, date]);
+            const incomeId = incomeResult.rows?.[0]?.id;
+            const incomeRecord = await (0, database_1.dbGet)('SELECT * FROM income WHERE id = $1', [incomeId]);
             const charityAmount = parseFloat(incomeRecord.charity_required);
-            await (0, database_1.dbRun)('INSERT INTO charity (user_id, income_id, amount_required, description) VALUES (?, ?, ?, ?)', [userId, incomeId, charityAmount, `Charity for income: ${description || category}`]);
-            await (0, database_1.dbRun)('INSERT INTO transactions (user_id, transaction_type, reference_id, reference_table, amount, description, date) VALUES (?, ?, ?, ?, ?, ?, ?)', [userId, 'income', incomeId, 'income', amount, `Income: ${description || category}`, date]);
+            await (0, database_1.dbRun)('INSERT INTO charity (user_id, income_id, amount_required, description) VALUES ($1, $2, $3, $4)', [userId, incomeId, charityAmount, `Charity for income: ${description || category}`]);
+            await (0, database_1.dbRun)('INSERT INTO transactions (user_id, transaction_type, reference_id, reference_table, amount, description, date) VALUES ($1, $2, $3, $4, $5, $6, $7)', [userId, 'income', incomeId, 'income', amount, `Income: ${description || category}`, date]);
             await (0, database_1.dbRun)('COMMIT');
             res.status(201).json({
                 success: true,
@@ -214,11 +210,7 @@ router.put('/:id', [
     (0, express_validator_1.body)('date')
         .optional()
         .isISO8601()
-        .withMessage('Date must be valid ISO date'),
-    (0, express_validator_1.body)('charity_percentage')
-        .optional()
-        .isFloat({ min: 0, max: 100 })
-        .withMessage('Charity percentage must be between 0 and 100')
+        .withMessage('Date must be valid ISO date')
 ], async (req, res) => {
     try {
         const errors = (0, express_validator_1.validationResult)(req);
@@ -237,14 +229,14 @@ router.put('/:id', [
                 message: 'Invalid income ID'
             });
         }
-        const existingRecord = await (0, database_1.dbGet)('SELECT id, amount FROM income WHERE id = ? AND user_id = ?', [incomeId, userId]);
+        const existingRecord = await (0, database_1.dbGet)('SELECT id, amount FROM income WHERE id = ? AND user_id = $2', [incomeId, userId]);
         if (!existingRecord) {
             return res.status(404).json({
                 success: false,
                 message: 'Income record not found'
             });
         }
-        const { amount, description, category, source, date, charity_percentage } = req.body;
+        const { amount, description, category, source, date } = req.body;
         const oldAmount = existingRecord.amount;
         const updates = [];
         const values = [];
@@ -268,10 +260,6 @@ router.put('/:id', [
             updates.push('date = ?');
             values.push(date);
         }
-        if (charity_percentage !== undefined) {
-            updates.push('charity_percentage = ?');
-            values.push(charity_percentage);
-        }
         if (updates.length === 0) {
             return res.status(400).json({
                 success: false,
@@ -281,8 +269,10 @@ router.put('/:id', [
         values.push(incomeId);
         try {
             await (0, database_1.dbRun)('BEGIN TRANSACTION');
-            await (0, database_1.dbRun)(`UPDATE income SET ${updates.join(', ')}, updated_at = CURRENT_TIMESTAMP WHERE id = ?`, values);
-            const updatedRecord = await (0, database_1.dbGet)('SELECT * FROM income WHERE id = ?', [incomeId]);
+            await (0, database_1.dbRun)(`UPDATE income SET ${updates.join(', ')}, updated_at = CURRENT_TIMESTAMP WHERE id = $1`, values);
+            if (amount !== undefined && amount !== oldAmount) {
+            }
+            const updatedRecord = await (0, database_1.dbGet)('SELECT * FROM income WHERE id = $1', [incomeId]);
             await (0, database_1.dbRun)('COMMIT');
             res.json({
                 success: true,
@@ -313,7 +303,7 @@ router.delete('/:id', async (req, res) => {
                 message: 'Invalid income ID'
             });
         }
-        const existingRecord = await (0, database_1.dbGet)('SELECT id FROM income WHERE id = ? AND user_id = ?', [incomeId, userId]);
+        const existingRecord = await (0, database_1.dbGet)('SELECT id FROM income WHERE id = ? AND user_id = $2', [incomeId, userId]);
         if (!existingRecord) {
             return res.status(404).json({
                 success: false,
@@ -322,10 +312,10 @@ router.delete('/:id', async (req, res) => {
         }
         try {
             await (0, database_1.dbRun)('BEGIN TRANSACTION');
-            await (0, database_1.dbRun)('DELETE FROM charity WHERE income_id = ? AND user_id = ?', [incomeId, userId]);
-            await (0, database_1.dbRun)('DELETE FROM transactions WHERE reference_id = ? AND reference_table = ? AND user_id = ?', [incomeId, 'income', userId]);
-            const result = await (0, database_1.dbRun)('DELETE FROM income WHERE id = ? AND user_id = ?', [incomeId, userId]);
-            if (result.changes === 0) {
+            await (0, database_1.dbRun)('DELETE FROM charity WHERE income_id = ? AND user_id = $2', [incomeId, userId]);
+            await (0, database_1.dbRun)('DELETE FROM transactions WHERE reference_id = ? AND reference_table = ? AND user_id = $3', [incomeId, 'income', userId]);
+            const result = await (0, database_1.dbRun)('DELETE FROM income WHERE id = ? AND user_id = $2', [incomeId, userId]);
+            if (result.rowCount === 0) {
                 await (0, database_1.dbRun)('ROLLBACK');
                 return res.status(404).json({
                     success: false,
@@ -362,7 +352,7 @@ router.get('/stats/summary', async (req, res) => {
         MIN(date) as earliest_date,
         MAX(date) as latest_date
        FROM income 
-       WHERE user_id = ?`, [userId]);
+       WHERE user_id = $1`, [userId]);
         const monthlyStats = await (0, database_1.dbAll)(`SELECT 
         strftime('%m', date) as month,
         strftime('%Y', date) as year,
@@ -378,8 +368,7 @@ router.get('/stats/summary', async (req, res) => {
         SUM(amount) as total_amount,
         AVG(amount) as average_amount
        FROM income 
-       WHERE user_id = ? 
-       GROUP BY category
+       WHERE user_id = ? GROUP BY category
        ORDER BY total_amount DESC`, [userId]);
         res.json({
             success: true,

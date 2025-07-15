@@ -85,7 +85,7 @@ router.get('/:id', async (req, res) => {
     }
 
     const category = await dbGet(
-      'SELECT id, name, type, color, icon, created_at FROM categories WHERE id = ? AND user_id = ?',
+      'SELECT id, name, type, color, icon, created_at FROM categories WHERE id = ? AND user_id = $2',
       [categoryId, userId]
     );
 
@@ -144,7 +144,7 @@ router.post('/', [
 
     // Check for duplicate category name and type for the user
     const existingCategory = await dbGet(
-      'SELECT id FROM categories WHERE user_id = ? AND name = ? AND type = ?',
+      'SELECT id FROM categories WHERE user_id = ? AND name = ? AND type = $3',
       [userId, name, type]
     );
 
@@ -157,15 +157,12 @@ router.post('/', [
 
     // Insert category record
     const result = await dbRun(
-      'INSERT INTO categories (user_id, name, type, color, icon) VALUES (?, ?, ?, ?, ?)',
-      [userId, name, type, color, icon]
-    );
-
-    const categoryId = result.lastID;
+      'INSERT INTO categories (user_id, name, type, color, icon) VALUES ($1, $2, $3, $4, $5) RETURNING id', [userId, name, type, color, icon]);
+    const categoryId = result.rows?.[0]?.id;
 
     // Get the created category record
     const newCategory = await dbGet(
-      'SELECT * FROM categories WHERE id = ?',
+      'SELECT * FROM categories WHERE id = $1',
       [categoryId]
     );
 
@@ -223,7 +220,7 @@ router.put('/:id', [
 
     // Check if category exists and belongs to user
     const existingCategory = await dbGet(
-      'SELECT id, name, type FROM categories WHERE id = ? AND user_id = ?',
+      'SELECT id, name, type FROM categories WHERE id = ? AND user_id = $2',
       [categoryId, userId]
     );
 
@@ -238,7 +235,7 @@ router.put('/:id', [
     // Check for duplicate category name if changing name
     if (name && name !== existingCategory.name) {
       const duplicateCategory = await dbGet(
-        'SELECT id FROM categories WHERE user_id = ? AND name = ? AND type = ? AND id != ?',
+        'SELECT id FROM categories WHERE user_id = ? AND name = ? AND type = ? AND id != $4',
         [userId, name, existingCategory.type, categoryId]
       );
 
@@ -283,7 +280,7 @@ router.put('/:id', [
 
     // Get updated record
     const updatedCategory = await dbGet(
-      'SELECT * FROM categories WHERE id = ?',
+      'SELECT * FROM categories WHERE id = $1',
       [categoryId]
     );
 
@@ -316,7 +313,7 @@ router.delete('/:id', async (req, res) => {
 
     // Check if category exists and belongs to user
     const category = await dbGet(
-      'SELECT id, name, type FROM categories WHERE id = ? AND user_id = ?',
+      'SELECT id, name, type FROM categories WHERE id = ? AND user_id = $2',
       [categoryId, userId]
     );
 
@@ -329,17 +326,17 @@ router.delete('/:id', async (req, res) => {
 
     // Check if category is being used in income or expenses
     const incomeUsage = await dbGet(
-      'SELECT COUNT(*) as count FROM income WHERE user_id = ? AND category = ?',
+      'SELECT COUNT(*) as count FROM income WHERE user_id = ? AND category = $2',
       [userId, category.name]
     );
 
     const expenseUsage = await dbGet(
-      'SELECT COUNT(*) as count FROM expenses WHERE user_id = ? AND category = ?',
+      'SELECT COUNT(*) as count FROM expenses WHERE user_id = ? AND category = $2',
       [userId, category.name]
     );
 
     const purchaseUsage = await dbGet(
-      'SELECT COUNT(*) as count FROM purchases WHERE user_id = ? AND category = ?',
+      'SELECT COUNT(*) as count FROM purchases WHERE user_id = ? AND category = $2',
       [userId, category.name]
     );
 
@@ -357,7 +354,7 @@ router.delete('/:id', async (req, res) => {
 
     // Delete category record
     await dbRun(
-      'DELETE FROM categories WHERE id = ? AND user_id = ?',
+      'DELETE FROM categories WHERE id = ? AND user_id = $2',
       [categoryId, userId]
     );
 
@@ -389,7 +386,7 @@ router.get('/:id/stats', async (req, res) => {
 
     // Get category info
     const category = await dbGet(
-      'SELECT id, name, type FROM categories WHERE id = ? AND user_id = ?',
+      'SELECT id, name, type FROM categories WHERE id = ? AND user_id = $2',
       [categoryId, userId]
     );
 
@@ -413,7 +410,7 @@ router.get('/:id/stats', async (req, res) => {
           MIN(date) as earliest_date,
           MAX(date) as latest_date
          FROM income 
-         WHERE user_id = ? AND category = ?`,
+         WHERE user_id = ? AND category = $2`,
         [userId, category.name]
       );
     } else {
@@ -427,7 +424,7 @@ router.get('/:id/stats', async (req, res) => {
           MIN(date) as earliest_date,
           MAX(date) as latest_date
          FROM expenses 
-         WHERE user_id = ? AND category = ?`,
+         WHERE user_id = ? AND category = $4`,
         [userId, category.name]
       );
     }

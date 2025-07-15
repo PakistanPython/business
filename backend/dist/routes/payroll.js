@@ -9,14 +9,13 @@ const auth_1 = require("../middleware/auth");
 const router = express_1.default.Router();
 router.use(auth_1.authenticateToken);
 const calculatePayroll = async (employeeId, payPeriodStart, payPeriodEnd) => {
-    const employee = await (0, database_1.dbGet)('SELECT * FROM employees WHERE id = ?', [employeeId]);
+    const employee = await (0, database_1.dbGet)('SELECT * FROM employees WHERE id = $1', [employeeId]);
     if (!employee) {
         throw new Error('Employee not found');
     }
     const attendanceRecords = await (0, database_1.dbAll)(`
     SELECT * FROM attendance 
-    WHERE employee_id = ? AND date BETWEEN ? AND ?
-  `, [employeeId, payPeriodStart, payPeriodEnd]);
+    WHERE employee_id = ? AND date BETWEEN ? AND ? `, [employeeId, payPeriodStart, payPeriodEnd]);
     const totalWorkingDays = attendanceRecords.length;
     const totalPresentDays = attendanceRecords.filter(a => a.status === 'present').length;
     const totalOvertimeHours = attendanceRecords.reduce((sum, a) => sum + (a.overtime_hours || 0), 0);
@@ -53,7 +52,7 @@ router.get('/', async (req, res) => {
         const userType = req.user?.userType;
         let businessId = req.user?.userId;
         if (userType === 'employee') {
-            businessId = req.user?.businessId;
+            businessId = req.user.businessId;
         }
         const { employee_id, status, pay_period_start, pay_period_end, page = 1, limit = 20 } = req.query;
         let query = `
@@ -66,8 +65,7 @@ router.get('/', async (req, res) => {
         e.position
       FROM payroll p
       JOIN employees e ON p.employee_id = e.id
-      WHERE p.business_id = ?
-    `;
+      WHERE p.business_id = ? `;
         const params = [businessId];
         if (userType === 'employee') {
             query += ' AND p.employee_id = ?';
@@ -87,18 +85,17 @@ router.get('/', async (req, res) => {
         }
         query += ' ORDER BY p.pay_period_end DESC, p.created_at DESC';
         const offset = (parseInt(page) - 1) * parseInt(limit);
-        query += ` LIMIT ? OFFSET ?`;
+        query += ` LIMIT ? OFFSET $2`;
         params.push(parseInt(limit), offset);
         const payrollRecords = await (0, database_1.dbAll)(query, params);
         let countQuery = `
       SELECT COUNT(*) as total
       FROM payroll p
       JOIN employees e ON p.employee_id = e.id
-      WHERE p.business_id = ?
-    `;
+      WHERE p.business_id = ? `;
         const countParams = [businessId];
         if (userType === 'employee') {
-            const employee = await (0, database_1.dbGet)('SELECT id FROM employees WHERE user_id = ?', [req.user?.userId]);
+            const employee = await (0, database_1.dbGet)('SELECT id FROM employees WHERE user_id = $1', [req.user?.userId]);
             if (employee) {
                 countQuery += ' AND p.employee_id = ?';
                 countParams.push(employee.id);
@@ -132,101 +129,11 @@ router.get('/', async (req, res) => {
         res.status(500).json({ error: 'Failed to fetch payroll records' });
     }
 });
-router.get('/:id/payslip', async (req, res) => {
-    try {
-        const payrollId = parseInt(req.params.id);
-        if (isNaN(payrollId)) {
-            return res.status(400).json({
-                success: false,
-                message: 'Invalid payroll ID'
-            });
-        }
-        const payroll = await (0, database_1.dbGet)(`
-      SELECT 
-        p.*,
-        (e.first_name || ' ' || e.last_name) as employee_name,
-        e.employee_code,
-        e.position,
-        e.department,
-        e.hire_date,
-        u.business_name
-      FROM payroll p
-      JOIN employees e ON p.employee_id = e.id
-      JOIN users u ON p.business_id = u.id
-      WHERE p.id = ? AND p.business_id = ?
-    `, [payrollId, req.user.userId]);
-        if (!payroll) {
-            return res.status(404).json({
-                success: false,
-                message: 'Payroll record not found'
-            });
-        }
-        const payslipData = {
-            payroll_id: payroll.id,
-            employee: {
-                name: payroll.employee_name,
-                employee_id: payroll.employee_code,
-                position: payroll.position,
-                department: payroll.department,
-                join_date: payroll.hire_date
-            },
-            company: {
-                name: payroll.business_name || 'Company Name'
-            },
-            pay_period: {
-                start: payroll.pay_period_start,
-                end: payroll.pay_period_end
-            },
-            earnings: {
-                basic_salary: parseFloat(payroll.basic_salary),
-                overtime_amount: parseFloat(payroll.overtime_amount || 0),
-                bonus: parseFloat(payroll.bonus || 0),
-                allowances: parseFloat(payroll.allowances || 0),
-                total_earnings: parseFloat(payroll.gross_salary)
-            },
-            deductions: {
-                tax_deduction: parseFloat(payroll.tax_deduction || 0),
-                insurance_deduction: parseFloat(payroll.insurance_deduction || 0),
-                other_deductions: parseFloat(payroll.other_deductions || 0),
-                total_deductions: parseFloat(payroll.total_deductions)
-            },
-            summary: {
-                gross_salary: parseFloat(payroll.gross_salary),
-                total_deductions: parseFloat(payroll.total_deductions),
-                net_salary: parseFloat(payroll.net_salary)
-            },
-            attendance: {
-                total_working_days: payroll.total_working_days || 0,
-                total_present_days: payroll.total_present_days || 0,
-                total_overtime_hours: payroll.total_overtime_hours || 0
-            },
-            payment: {
-                method: payroll.payment_method,
-                status: payroll.status,
-                generated_date: new Date().toISOString()
-            },
-            notes: payroll.notes
-        };
-        res.json({
-            success: true,
-            data: {
-                payslip: payslipData
-            }
-        });
-    }
-    catch (error) {
-        console.error('Generate payslip error:', error);
-        res.status(500).json({
-            success: false,
-            message: 'Internal server error'
-        });
-    }
-});
 router.get('/:id', async (req, res) => {
     try {
         const { id } = req.params;
-        const businessId = req.user?.userId;
-        const userType = req.user?.userType;
+        const businessId = req.user.userId;
+        const userType = req.user.userType;
         let query = `
       SELECT 
         p.*,
@@ -239,11 +146,10 @@ router.get('/:id', async (req, res) => {
         e.base_salary
       FROM payroll p
       JOIN employees e ON p.employee_id = e.id
-      WHERE p.id = ? AND p.business_id = ?
-    `;
+      WHERE p.id = ? AND p.business_id = ? `;
         const params = [id, businessId];
         if (userType === 'employee') {
-            const employee = await (0, database_1.dbGet)('SELECT id FROM employees WHERE user_id = ?', [req.user?.userId]);
+            const employee = await (0, database_1.dbGet)('SELECT id FROM employees WHERE user_id = $1', [req.user?.userId]);
             if (employee) {
                 query += ' AND p.employee_id = ?';
                 params.push(employee.id);
@@ -269,11 +175,11 @@ router.post('/', async (req, res) => {
                 error: 'Employee ID, pay period start, and pay period end are required'
             });
         }
-        const employee = await (0, database_1.dbGet)('SELECT * FROM employees WHERE id = ? AND business_id = ?', [employee_id, businessId]);
+        const employee = await (0, database_1.dbGet)('SELECT * FROM employees WHERE id = ? AND business_id = $2', [employee_id, businessId]);
         if (!employee) {
             return res.status(404).json({ error: 'Employee not found' });
         }
-        const existingPayroll = await (0, database_1.dbGet)('SELECT id FROM payroll WHERE employee_id = ? AND pay_period_start = ? AND pay_period_end = ?', [employee_id, pay_period_start, pay_period_end]);
+        const existingPayroll = await (0, database_1.dbGet)('SELECT id FROM payroll WHERE employee_id = ? AND pay_period_start = ? AND pay_period_end = $3', [employee_id, pay_period_start, pay_period_end]);
         if (existingPayroll) {
             return res.status(400).json({ error: 'Payroll already exists for this period' });
         }
@@ -307,7 +213,7 @@ router.post('/', async (req, res) => {
         tax_deduction, insurance_deduction, other_deductions,
         total_working_days, total_present_days, total_overtime_hours,
         payment_method, notes
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)
     `, [
             employee_id, businessId, pay_period_start, pay_period_end,
             basicSalary, overtimeAmount, bonus, allowances,
@@ -324,8 +230,7 @@ router.post('/', async (req, res) => {
         e.department
       FROM payroll p
       JOIN employees e ON p.employee_id = e.id
-      WHERE p.id = ?
-    `, [result.lastID]);
+      WHERE p.id = ? `, [result.rows?.[0]?.id]);
         res.status(201).json(newPayroll);
     }
     catch (error) {
@@ -338,40 +243,39 @@ router.put('/:id', async (req, res) => {
         const { id } = req.params;
         const businessId = req.user?.userId;
         const { basic_salary, overtime_amount, bonus, allowances, tax_deduction, insurance_deduction, other_deductions, total_working_days, total_present_days, total_overtime_hours, payment_method, notes } = req.body;
-        const existingPayroll = await (0, database_1.dbGet)('SELECT * FROM payroll WHERE id = ? AND business_id = ?', [id, businessId]);
+        const existingPayroll = await (0, database_1.dbGet)('SELECT * FROM payroll WHERE id = ? AND business_id = $2', [id, businessId]);
         if (!existingPayroll) {
             return res.status(404).json({ error: 'Payroll record not found' });
         }
         if (existingPayroll.status === 'paid') {
             return res.status(400).json({ error: 'Cannot update payroll that has already been paid' });
         }
-        const finalBasicSalary = basic_salary ?? existingPayroll.basic_salary;
-        const finalOvertimeAmount = overtime_amount ?? existingPayroll.overtime_amount;
-        const finalBonus = bonus ?? existingPayroll.bonus;
-        const finalAllowances = allowances ?? existingPayroll.allowances;
-        const finalTaxDeduction = tax_deduction ?? existingPayroll.tax_deduction;
-        const finalInsuranceDeduction = insurance_deduction ?? existingPayroll.insurance_deduction;
-        const finalOtherDeductions = other_deductions ?? existingPayroll.other_deductions;
+        const finalBasicSalary = basic_salary || existingPayroll.basic_salary;
+        const finalOvertimeAmount = overtime_amount || existingPayroll.overtime_amount;
+        const finalBonus = bonus || existingPayroll.bonus;
+        const finalAllowances = allowances || existingPayroll.allowances;
+        const finalTaxDeduction = tax_deduction || existingPayroll.tax_deduction;
+        const finalInsuranceDeduction = insurance_deduction || existingPayroll.insurance_deduction;
+        const finalOtherDeductions = other_deductions || existingPayroll.other_deductions;
         const grossSalary = finalBasicSalary + finalOvertimeAmount + finalBonus + finalAllowances;
         const totalDeductions = finalTaxDeduction + finalInsuranceDeduction + finalOtherDeductions;
         const netSalary = grossSalary - totalDeductions;
         await (0, database_1.dbRun)(`
       UPDATE payroll SET
-        basic_salary = ?, overtime_amount = ?, bonus = ?, allowances = ?,
-        gross_salary = ?, tax_deduction = ?, insurance_deduction = ?,
-        other_deductions = ?, total_deductions = ?, net_salary = ?,
-        total_working_days = ?, total_present_days = ?, total_overtime_hours = ?,
-        payment_method = ?, notes = ?, updated_at = CURRENT_TIMESTAMP
-      WHERE id = ? AND business_id = ?
-    `, [
+        basic_salary = $15, overtime_amount = $16, bonus = $17, allowances = $18,
+        gross_salary = $19, tax_deduction = $20, insurance_deduction = $21,
+        other_deductions = $22, total_deductions = $23, net_salary = $24,
+        total_working_days = $25, total_present_days = $26, total_overtime_hours = $27,
+        payment_method = $28, notes = $29, updated_at = CURRENT_TIMESTAMP
+      WHERE id = ? AND business_id = ? `, [
             finalBasicSalary, finalOvertimeAmount, finalBonus, finalAllowances,
             grossSalary, finalTaxDeduction, finalInsuranceDeduction,
             finalOtherDeductions, totalDeductions, netSalary,
-            total_working_days ?? existingPayroll.total_working_days,
-            total_present_days ?? existingPayroll.total_present_days,
-            total_overtime_hours ?? existingPayroll.total_overtime_hours,
-            payment_method ?? existingPayroll.payment_method,
-            notes ?? existingPayroll.notes,
+            total_working_days || existingPayroll.total_working_days,
+            total_present_days || existingPayroll.total_present_days,
+            total_overtime_hours || existingPayroll.total_overtime_hours,
+            payment_method || existingPayroll.payment_method,
+            notes || existingPayroll.notes,
             id, businessId
         ]);
         const updatedPayroll = await (0, database_1.dbGet)(`
@@ -383,8 +287,7 @@ router.put('/:id', async (req, res) => {
         e.department
       FROM payroll p
       JOIN employees e ON p.employee_id = e.id
-      WHERE p.id = ?
-    `, [id]);
+      WHERE p.id = ? `, [id]);
         res.json(updatedPayroll);
     }
     catch (error) {
@@ -400,16 +303,15 @@ router.put('/:id/status', async (req, res) => {
         if (!['draft', 'approved', 'paid'].includes(status)) {
             return res.status(400).json({ error: 'Invalid status. Must be draft, approved, or paid' });
         }
-        const payroll = await (0, database_1.dbGet)('SELECT * FROM payroll WHERE id = ? AND business_id = ?', [id, businessId]);
+        const payroll = await (0, database_1.dbGet)('SELECT * FROM payroll WHERE id = ? AND business_id = $2', [id, businessId]);
         if (!payroll) {
             return res.status(404).json({ error: 'Payroll record not found' });
         }
         const updatePaymentDate = status === 'paid' ? (payment_date || new Date().toISOString().split('T')[0]) : null;
         await (0, database_1.dbRun)(`
       UPDATE payroll SET
-        status = ?, payment_date = ?, updated_at = CURRENT_TIMESTAMP
-      WHERE id = ? AND business_id = ?
-    `, [status, updatePaymentDate, id, businessId]);
+        status = $1, payment_date = $2, updated_at = CURRENT_TIMESTAMP
+      WHERE id = ? AND business_id = ? `, [status, updatePaymentDate, id, businessId]);
         const updatedPayroll = await (0, database_1.dbGet)(`
       SELECT 
         p.*,
@@ -418,8 +320,7 @@ router.put('/:id/status', async (req, res) => {
         e.employee_code
       FROM payroll p
       JOIN employees e ON p.employee_id = e.id
-      WHERE p.id = ?
-    `, [id]);
+      WHERE p.id = ? `, [id]);
         res.json(updatedPayroll);
     }
     catch (error) {
@@ -431,14 +332,14 @@ router.delete('/:id', async (req, res) => {
     try {
         const { id } = req.params;
         const businessId = req.user?.userId;
-        const payroll = await (0, database_1.dbGet)('SELECT status FROM payroll WHERE id = ? AND business_id = ?', [id, businessId]);
+        const payroll = await (0, database_1.dbGet)('SELECT status FROM payroll WHERE id = ? AND business_id = $2', [id, businessId]);
         if (!payroll) {
             return res.status(404).json({ error: 'Payroll record not found' });
         }
         if (payroll.status === 'paid') {
             return res.status(400).json({ error: 'Cannot delete payroll that has already been paid' });
         }
-        await (0, database_1.dbRun)('DELETE FROM payroll WHERE id = ? AND business_id = ?', [id, businessId]);
+        await (0, database_1.dbRun)('DELETE FROM payroll WHERE id = ? AND business_id = $2', [id, businessId]);
         res.json({ message: 'Payroll record deleted successfully' });
     }
     catch (error) {
@@ -459,12 +360,12 @@ router.post('/bulk-create', async (req, res) => {
         const errors = [];
         for (const employeeId of employee_ids) {
             try {
-                const employee = await (0, database_1.dbGet)('SELECT * FROM employees WHERE id = ? AND business_id = ?', [employeeId, businessId]);
+                const employee = await (0, database_1.dbGet)('SELECT * FROM employees WHERE id = ? AND business_id = $2', [employeeId, businessId]);
                 if (!employee) {
                     errors.push({ employeeId, error: 'Employee not found' });
                     continue;
                 }
-                const existingPayroll = await (0, database_1.dbGet)('SELECT id FROM payroll WHERE employee_id = ? AND pay_period_start = ? AND pay_period_end = ?', [employeeId, pay_period_start, pay_period_end]);
+                const existingPayroll = await (0, database_1.dbGet)('SELECT id FROM payroll WHERE employee_id = ? AND pay_period_start = ? AND pay_period_end = $3', [employeeId, pay_period_start, pay_period_end]);
                 if (existingPayroll) {
                     errors.push({ employeeId, error: 'Payroll already exists for this period' });
                     continue;
@@ -489,7 +390,7 @@ router.post('/bulk-create', async (req, res) => {
             employee_id, business_id, pay_period_start, pay_period_end,
             basic_salary, overtime_amount,
             total_working_days, total_present_days, total_overtime_hours
-          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+          ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
         `, [
                     employeeId, businessId, pay_period_start, pay_period_end,
                     basicSalary, overtimeAmount,
@@ -497,7 +398,7 @@ router.post('/bulk-create', async (req, res) => {
                 ]);
                 results.push({
                     employeeId,
-                    payrollId: result.lastID,
+                    payrollId: result.rows?.[0]?.id,
                     basicSalary,
                     overtimeAmount,
                     grossSalary,

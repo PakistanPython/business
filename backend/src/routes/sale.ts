@@ -8,7 +8,7 @@ const router = express.Router();
 // Get all sales for authenticated user
 router.get('/', authenticateToken, async (req, res) => {
   try {
-    const userId = req.user?.userId;
+    const userId = req.user!.userId;
     
     const rows = await dbAll(`
       SELECT 
@@ -18,8 +18,7 @@ router.get('/', authenticateToken, async (req, res) => {
         p.date as purchase_date
       FROM sales s
       LEFT JOIN purchases p ON s.purchase_id = p.id
-      WHERE s.user_id = ?
-      ORDER BY s.date DESC, s.created_at DESC
+      WHERE s.user_id = ? ORDER BY s.date DESC, s.created_at DESC
     `, [userId]);
 
     res.json({
@@ -71,7 +70,7 @@ router.get('/summary', authenticateToken, async (req, res) => {
 // Get single sale by ID
 router.get('/:id', authenticateToken, async (req, res) => {
   try {
-    const userId = req.user?.userId;
+    const userId = req.user!.userId;
     const saleId = req.params.id;
 
     const sale = await dbGet(`
@@ -82,8 +81,7 @@ router.get('/:id', authenticateToken, async (req, res) => {
         p.date as purchase_date
       FROM sales s
       LEFT JOIN purchases p ON s.purchase_id = p.id
-      WHERE s.id = ? AND s.user_id = ?
-    `, [saleId, userId]);
+      WHERE s.id = ? AND s.user_id = ? `, [saleId, userId]);
 
     if (!sale) {
       return res.status(404).json({
@@ -125,16 +123,16 @@ router.post('/', authenticateToken, validateSale, async (req, res) => {
     const result = await dbRun(`
       INSERT INTO sales 
       (user_id, purchase_id, amount, selling_price, description, customer_name, customer_contact, payment_method, date, status, notes)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
     `, [userId, purchase_id || null, amount, selling_price, description, customer_name, customer_contact, payment_method, date, status, notes]);
 
-    const saleId = result.lastID;
+    const saleId = result.rows?.[0]?.id;
 
     // Create transaction record
     await dbRun(`
       INSERT INTO transactions 
       (user_id, transaction_type, reference_id, reference_table, amount, description, date)
-      VALUES (?, 'sale', ?, 'sales', ?, ?, ?)
+      VALUES ($12, 'sale', ?, 'sales', ?, ?, ?)
     `, [userId, saleId, selling_price, description || 'Sale transaction', date]);
 
     // Get the created sale with purchase details
@@ -146,8 +144,7 @@ router.post('/', authenticateToken, validateSale, async (req, res) => {
         p.date as purchase_date
       FROM sales s
       LEFT JOIN purchases p ON s.purchase_id = p.id
-      WHERE s.id = ?
-    `, [saleId]);
+      WHERE s.id = ? `, [saleId]);
 
     res.status(201).json({
       success: true,
@@ -183,7 +180,7 @@ router.put('/:id', authenticateToken, validateSale, async (req, res) => {
 
     // Check if sale exists and belongs to user
     const existing = await dbGet(
-      'SELECT id FROM sales WHERE id = ? AND user_id = ?',
+      'SELECT id FROM sales WHERE id = ? AND user_id = $2',
       [saleId, userId]
     );
 
@@ -196,17 +193,15 @@ router.put('/:id', authenticateToken, validateSale, async (req, res) => {
 
     await dbRun(`
       UPDATE sales 
-      SET purchase_id = ?, amount = ?, selling_price = ?, description = ?, 
-          customer_name = ?, customer_contact = ?, payment_method = ?, 
-          date = ?, status = ?, notes = ?, updated_at = CURRENT_TIMESTAMP
-      WHERE id = ? AND user_id = ?
-    `, [purchase_id || null, amount, selling_price, description, customer_name, customer_contact, payment_method, date, status, notes, saleId, userId]);
+      SET purchase_id = $1, amount = $2, selling_price = $3, description = $4, 
+          customer_name = $5, customer_contact = $6, payment_method = $7, 
+          date = $8, status = $9, notes = $10, updated_at = CURRENT_TIMESTAMP
+      WHERE id = ? AND user_id = ? `, [purchase_id || null, amount, selling_price, description, customer_name, customer_contact, payment_method, date, status, notes, saleId, userId]);
 
     // Update transaction record
     await dbRun(`
       UPDATE transactions 
-      SET amount = ?, description = ?, date = ?
-      WHERE reference_id = ? AND reference_table = 'sales' AND user_id = ?
+      SET amount = $13, description = $14, date = ? WHERE reference_id = ? AND reference_table = 'sales' AND user_id = ?
     `, [selling_price, description || 'Sale transaction', date, saleId, userId]);
 
     // Get updated sale with purchase details
@@ -218,8 +213,7 @@ router.put('/:id', authenticateToken, validateSale, async (req, res) => {
         p.date as purchase_date
       FROM sales s
       LEFT JOIN purchases p ON s.purchase_id = p.id
-      WHERE s.id = ?
-    `, [saleId]);
+      WHERE s.id = ? `, [saleId]);
 
     res.json({
       success: true,
@@ -243,7 +237,7 @@ router.delete('/:id', authenticateToken, async (req, res) => {
 
     // Check if sale exists and belongs to user
     const existing = await dbGet(
-      'SELECT id FROM sales WHERE id = ? AND user_id = ?',
+      'SELECT id FROM sales WHERE id = ? AND user_id = $2',
       [saleId, userId]
     );
 
@@ -262,7 +256,7 @@ router.delete('/:id', authenticateToken, async (req, res) => {
 
     // Delete sale
     await dbRun(
-      'DELETE FROM sales WHERE id = ? AND user_id = ?',
+      'DELETE FROM sales WHERE id = ? AND user_id = $2',
       [saleId, userId]
     );
 
@@ -282,7 +276,7 @@ router.delete('/:id', authenticateToken, async (req, res) => {
 // Get available purchases for sale (purchases not yet sold)
 router.get('/available/purchases', authenticateToken, async (req, res) => {
   try {
-    const userId = req.user?.userId;
+    const userId = req.user!.userId;
     
     const rows = await dbAll(`
       SELECT p.*

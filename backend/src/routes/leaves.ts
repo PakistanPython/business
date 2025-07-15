@@ -1,5 +1,5 @@
 import express from 'express';
-import { dbGet, dbAll, dbRun } from '../config/database_sqlite';
+import { dbGet, dbAll, dbRun } from '../config/database';
 import { authenticateToken } from '../middleware/auth';
 import { Request, Response } from 'express';
 
@@ -29,7 +29,7 @@ const calculateWorkingDays = (startDate: string, endDate: string): number => {
 // GET /api/leaves/types - Get leave types
 router.get('/types', async (req: Request, res: Response) => {
   try {
-    const businessId = req.user?.userId;
+    const businessId = req.user!.userId;
 
     const leaveTypes = await dbAll(`
       SELECT * FROM leave_types 
@@ -68,17 +68,17 @@ router.post('/types', async (req: Request, res: Response) => {
       INSERT INTO leave_types (
         business_id, name, description, max_days_per_year, max_days_per_month,
         carry_forward, is_paid, requires_approval, advance_notice_days, color
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
     `, [
       businessId, name, description,
       max_days_per_year || 0, max_days_per_month || 0,
-      carry_forward ? 1 : 0, is_paid ? 1 : 0, requires_approval ? 1 : 0,
+      carry_forward ? 1  : 0, is_paid ? 1  : 0, requires_approval ? 1  : 0,
       advance_notice_days || 1, color || '#3B82F6'
     ]);
 
     const newLeaveType = await dbGet(
-      'SELECT * FROM leave_types WHERE id = ?',
-      [result.lastID]
+      'SELECT * FROM leave_types WHERE id = $1',
+      [result.rows?.[0]?.id]
     );
 
     res.status(201).json(newLeaveType);
@@ -97,12 +97,12 @@ router.post('/types', async (req: Request, res: Response) => {
 // GET /api/leaves/entitlements - Get leave entitlements
 router.get('/entitlements', async (req: Request, res: Response) => {
   try {
-    const businessId = req.user?.userId;
-    const userType = req.user?.userType;
+    const businessId = req.user!.userId;
+    const userType = req.user!.userType;
     const { employee_id, year } = req.query;
 
     const currentYear = new Date().getFullYear();
-    const targetYear = year ? parseInt(year as string) : currentYear;
+    const targetYear = year ? parseInt(year as string)  : currentYear;
 
     let query = `
       SELECT 
@@ -115,13 +115,12 @@ router.get('/entitlements', async (req: Request, res: Response) => {
       FROM employee_leave_entitlements le
       JOIN employees e ON le.employee_id = e.id
       JOIN leave_types lt ON le.leave_type_id = lt.id
-      WHERE le.business_id = ? AND le.year = ?
-    `;
+      WHERE le.business_id = ? AND le.year = ? `;
     const params: any[] = [businessId, targetYear];
 
     // If employee user, only show their own entitlements
     if (userType === 'employee') {
-      const employee = await dbGet('SELECT id FROM employees WHERE user_id = ?', [req.user?.userId]);
+      const employee = await dbGet('SELECT id FROM employees WHERE user_id = $1', [req.user?.userId]);
       if (employee) {
         query += ' AND le.employee_id = ?';
         params.push(employee.id);
@@ -155,7 +154,7 @@ router.post('/entitlements', async (req: Request, res: Response) => {
 
     // Check if employee belongs to this business
     const employee = await dbGet(
-      'SELECT id FROM employees WHERE id = ? AND business_id = ?',
+      'SELECT id FROM employees WHERE id = ? AND business_id = $2',
       [employee_id, businessId]
     );
 
@@ -165,7 +164,7 @@ router.post('/entitlements', async (req: Request, res: Response) => {
 
     // Check if entitlement already exists
     const existing = await dbGet(
-      'SELECT id FROM employee_leave_entitlements WHERE employee_id = ? AND leave_type_id = ? AND year = ?',
+      'SELECT id FROM employee_leave_entitlements WHERE employee_id = ? AND leave_type_id = ? AND year = $3',
       [employee_id, leave_type_id, year]
     );
 
@@ -210,7 +209,7 @@ router.post('/entitlements', async (req: Request, res: Response) => {
         JOIN employees e ON le.employee_id = e.id
         JOIN leave_types lt ON le.leave_type_id = lt.id
         WHERE le.id = ?
-      `, [result.lastID]);
+      `, [result.rows?.[0]?.id]);
 
       res.status(201).json(newEntitlement);
     }
@@ -225,8 +224,8 @@ router.post('/entitlements', async (req: Request, res: Response) => {
 // GET /api/leaves/requests - Get leave requests
 router.get('/requests', async (req: Request, res: Response) => {
   try {
-    const businessId = req.user?.userId;
-    const userType = req.user?.userType;
+    const businessId = req.user!.userId;
+    const userType = req.user!.userType;
     const { 
       employee_id, 
       status, 
@@ -250,13 +249,12 @@ router.get('/requests', async (req: Request, res: Response) => {
       JOIN employees e ON lr.employee_id = e.id
       JOIN leave_types lt ON lr.leave_type_id = lt.id
       LEFT JOIN users approver ON lr.approved_by = approver.id
-      WHERE lr.business_id = ?
-    `;
+      WHERE lr.business_id = ? `;
     const params: any[] = [businessId];
 
     // If employee user, only show their own requests
     if (userType === 'employee') {
-      const employee = await dbGet('SELECT id FROM employees WHERE user_id = ?', [req.user?.userId]);
+      const employee = await dbGet('SELECT id FROM employees WHERE user_id = $1', [req.user?.userId]);
       if (employee) {
         query += ' AND lr.employee_id = ?';
         params.push(employee.id);
@@ -280,7 +278,7 @@ router.get('/requests', async (req: Request, res: Response) => {
 
     // Add pagination
     const offset = (parseInt(page as string) - 1) * parseInt(limit as string);
-    query += ` LIMIT ? OFFSET ?`;
+    query += ` LIMIT ? OFFSET $2`;
     params.push(parseInt(limit as string), offset);
 
     const requests = await dbAll(query, params);
@@ -290,12 +288,11 @@ router.get('/requests', async (req: Request, res: Response) => {
       SELECT COUNT(*) as total
       FROM employee_leave_requests lr
       JOIN employees e ON lr.employee_id = e.id
-      WHERE lr.business_id = ?
-    `;
-    const countParams: any[] = [businessId];
+      WHERE lr.business_id = ? `;
+    const countParams : any[] = [businessId];
 
     if (userType === 'employee') {
-      const employee = await dbGet('SELECT id FROM employees WHERE user_id = ?', [req.user?.userId]);
+      const employee = await dbGet('SELECT id FROM employees WHERE user_id = $1', [req.user?.userId]);
       if (employee) {
         countQuery += ' AND lr.employee_id = ?';
         countParams.push(employee.id);
@@ -351,7 +348,7 @@ router.post('/requests', async (req: Request, res: Response) => {
 
     // If employee user, use their own employee ID
     if (userType === 'employee') {
-      const employee = await dbGet('SELECT id FROM employees WHERE user_id = ?', [req.user?.userId]);
+      const employee = await dbGet('SELECT id FROM employees WHERE user_id = $1', [req.user?.userId]);
       if (!employee) {
         return res.status(404).json({ error: 'Employee record not found' });
       }
@@ -376,8 +373,7 @@ router.post('/requests', async (req: Request, res: Response) => {
     const currentYear = new Date(start_date).getFullYear();
     const entitlement = await dbGet(`
       SELECT * FROM employee_leave_entitlements 
-      WHERE employee_id = ? AND leave_type_id = ? AND year = ?
-    `, [actualEmployeeId, leave_type_id, currentYear]);
+      WHERE employee_id = ? AND leave_type_id = ? AND year = ? `, [actualEmployeeId, leave_type_id, currentYear]);
 
     if (entitlement && entitlement.remaining_days < totalDays) {
       return res.status(400).json({ 
@@ -401,7 +397,7 @@ router.post('/requests', async (req: Request, res: Response) => {
       INSERT INTO employee_leave_requests (
         employee_id, leave_type_id, business_id, start_date, end_date,
         total_days, reason, emergency_contact, handover_notes
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
     `, [
       actualEmployeeId, leave_type_id, businessId, start_date, end_date,
       totalDays, reason, emergency_contact, handover_notes
@@ -419,8 +415,7 @@ router.post('/requests', async (req: Request, res: Response) => {
       FROM employee_leave_requests lr
       JOIN employees e ON lr.employee_id = e.id
       JOIN leave_types lt ON lr.leave_type_id = lt.id
-      WHERE lr.id = ?
-    `, [result.lastID]);
+      WHERE lr.id = ? `, [result.rows?.[0]?.id]);
 
     res.status(201).json(newRequest);
   } catch (error) {
@@ -442,7 +437,7 @@ router.put('/requests/:id/approve', async (req: Request, res: Response) => {
 
     // Check if request exists and belongs to this business
     const leaveRequest = await dbGet(
-      'SELECT * FROM employee_leave_requests WHERE id = ? AND business_id = ?',
+      'SELECT * FROM employee_leave_requests WHERE id = ? AND business_id = $2',
       [id, businessId]
     );
 
@@ -455,23 +450,21 @@ router.put('/requests/:id/approve', async (req: Request, res: Response) => {
     }
 
     const status = action === 'approve' ? 'approved' : 'rejected';
-    const approvedAt = action === 'approve' ? new Date().toISOString() : null;
+    const approvedAt = action === "approve" ? new Date().toISOString()  : null;
 
     // Update request status
     await dbRun(`
       UPDATE employee_leave_requests SET
-        status = ?, approved_by = ?, approved_at = ?, rejection_reason = ?, updated_at = CURRENT_TIMESTAMP
-      WHERE id = ? AND business_id = ?
-    `, [status, req.user?.userId, approvedAt, rejection_reason, id, businessId]);
+        status = $2, approved_by = $3, approved_at = $4, rejection_reason = $5, updated_at = CURRENT_TIMESTAMP
+      WHERE id = ? AND business_id = ? `, [status, req.user!.userId, approvedAt, rejection_reason, id, businessId]);
 
     // If approved, update leave entitlement
     if (action === 'approve') {
       const currentYear = new Date(leaveRequest.start_date).getFullYear();
       await dbRun(`
         UPDATE employee_leave_entitlements SET
-          used_days = used_days + ?, updated_at = CURRENT_TIMESTAMP
-        WHERE employee_id = ? AND leave_type_id = ? AND year = ?
-      `, [leaveRequest.total_days, leaveRequest.employee_id, leaveRequest.leave_type_id, currentYear]);
+          used_days = used_days + $1, updated_at = CURRENT_TIMESTAMP
+        WHERE employee_id = ? AND leave_type_id = ? AND year = ? `, [leaveRequest.total_days, leaveRequest.employee_id, leaveRequest.leave_type_id, currentYear]);
     }
 
     // Fetch updated request
@@ -487,8 +480,7 @@ router.put('/requests/:id/approve', async (req: Request, res: Response) => {
       JOIN employees e ON lr.employee_id = e.id
       JOIN leave_types lt ON lr.leave_type_id = lt.id
       LEFT JOIN users approver ON lr.approved_by = approver.id
-      WHERE lr.id = ?
-    `, [id]);
+      WHERE lr.id = ? `, [id]);
 
     res.json(updatedRequest);
   } catch (error) {
@@ -501,10 +493,10 @@ router.put('/requests/:id/approve', async (req: Request, res: Response) => {
 router.get('/balance/:employeeId', async (req: Request, res: Response) => {
   try {
     const { employeeId } = req.params;
-    const businessId = req.user?.userId;
+    const businessId = req.user!.userId;
     const { year } = req.query;
 
-    const currentYear = year ? parseInt(year as string) : new Date().getFullYear();
+    const currentYear = year ? parseInt(year as string)  : new Date().getFullYear();
 
     const balances = await dbAll(`
       SELECT 
@@ -515,8 +507,7 @@ router.get('/balance/:employeeId', async (req: Request, res: Response) => {
         lt.max_days_per_month
       FROM employee_leave_entitlements le
       JOIN leave_types lt ON le.leave_type_id = lt.id
-      WHERE le.employee_id = ? AND le.business_id = ? AND le.year = ?
-      ORDER BY lt.name
+      WHERE le.employee_id = ? AND le.business_id = ? AND le.year = ? ORDER BY lt.name
     `, [employeeId, businessId, currentYear]);
 
     res.json(balances);

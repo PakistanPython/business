@@ -21,20 +21,8 @@ import {
   CheckCircle,
   Timer
 } from 'lucide-react';
-import { 
-  ResponsiveContainer, 
-  ComposedChart, 
-  Bar, 
-  Line, 
-  XAxis, 
-  YAxis, 
-  CartesianGrid, 
-  Tooltip, 
-  Legend 
-} from 'recharts';
 import { dashboardApi } from '../lib/api';
 import { DashboardData, AnalyticsData, DashboardSummary } from '../lib/types';
-import { formatCurrency } from '../lib/utils';
 import { Link } from 'react-router-dom';
 
 export const Dashboard: React.FC = () => {
@@ -88,7 +76,12 @@ export const Dashboard: React.FC = () => {
     );
   }
 
-  // Using formatCurrency from utils
+  const formatCurrency = (amount: number) => {
+    return new Intl.NumberFormat('en-PK', {
+      style: 'currency',
+      currency: 'PKR',
+    }).format(amount);
+  };
 
   const summary = dashboardOverviewData?.summary;
 
@@ -370,67 +363,12 @@ export const Dashboard: React.FC = () => {
             </CardDescription>
           </CardHeader>
           <CardContent>
-            <div className="h-[300px]">
-              {dashboardOverviewData?.trend_data && dashboardOverviewData.trend_data.length > 0 ? (
-                <ResponsiveContainer width="100%" height="100%">
-                  <ComposedChart data={dashboardOverviewData.trend_data}>
-                    <CartesianGrid strokeDasharray="3 3" className="opacity-30" />
-                    <XAxis 
-                      dataKey="month_label" 
-                      tick={{ fontSize: 12 }}
-                      tickLine={false}
-                    />
-                    <YAxis 
-                      tick={{ fontSize: 12 }}
-                      tickLine={false}
-                      tickFormatter={(value) => {
-                        if (value >= 1000000) {
-                          return `${(value / 1000000).toFixed(1)}M`;
-                        } else if (value >= 1000) {
-                          return `${(value / 1000).toFixed(1)}K`;
-                        }
-                        return value.toLocaleString();
-                      }}
-                    />
-                    <Tooltip 
-                      formatter={(value: number, name: string) => [
-                        formatCurrency(value), 
-                        name === 'income' ? 'Income' : 'Expenses'
-                      ]}
-                      labelFormatter={(label) => `Month: ${label}`}
-                      contentStyle={{
-                        backgroundColor: 'white',
-                        border: '1px solid #e2e8f0',
-                        borderRadius: '8px',
-                        boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1)'
-                      }}
-                    />
-                    <Legend />
-                    <Bar 
-                      dataKey="income" 
-                      name="Income"
-                      fill="#10b981" 
-                      radius={[2, 2, 0, 0]}
-                      opacity={0.8}
-                    />
-                    <Bar 
-                      dataKey="expenses" 
-                      name="Expenses"
-                      fill="#ef4444" 
-                      radius={[2, 2, 0, 0]}
-                      opacity={0.8}
-                    />
-                  </ComposedChart>
-                </ResponsiveContainer>
-              ) : (
-                <div className="h-full flex items-center justify-center bg-gray-50 rounded-lg">
-                  <div className="text-center">
-                    <BarChart3 className="h-12 w-12 text-gray-400 mx-auto mb-2" />
-                    <p className="text-gray-500">No trend data available</p>
-                    <p className="text-sm text-gray-400">Add some income and expenses to see trends</p>
-                  </div>
-                </div>
-              )}
+            <div className="h-[300px] flex items-center justify-center bg-gray-50 rounded-lg">
+              <div className="text-center">
+                <BarChart3 className="h-12 w-12 text-gray-400 mx-auto mb-2" />
+                <p className="text-gray-500">Chart will be rendered here</p>
+                <p className="text-sm text-gray-400">Integration with chart library needed</p>
+              </div>
             </div>
           </CardContent>
         </Card>

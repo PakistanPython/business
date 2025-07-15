@@ -15,22 +15,17 @@ import {
   Clock,
   AlertCircle,
   CreditCard,
-  Search,
-  Eye
+  Search
 } from 'lucide-react';
 import { charityApi } from '../lib/api';
 import { Charity, CharityPaymentForm } from '../lib/types';
-import { formatCurrency } from '../lib/utils';
 import toast from 'react-hot-toast';
 
 export const CharityPage: React.FC = () => {
   const [charities, setCharities] = useState<Charity[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isPaymentDialogOpen, setIsPaymentDialogOpen] = useState(false);
-  const [isPaymentHistoryDialogOpen, setIsPaymentHistoryDialogOpen] = useState(false);
   const [selectedCharity, setSelectedCharity] = useState<Charity | null>(null);
-  const [paymentHistory, setPaymentHistory] = useState<any[]>([]);
-  const [isLoadingPayments, setIsLoadingPayments] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
   const [filterStatus, setFilterStatus] = useState<string>('all');
   const [paymentForm, setPaymentForm] = useState<CharityPaymentForm>({
@@ -55,19 +50,6 @@ export const CharityPage: React.FC = () => {
       toast.error('Failed to load charity data');
     } finally {
       setIsLoading(false);
-    }
-  };
-
-  const loadPaymentHistory = async (charityId: number) => {
-    try {
-      setIsLoadingPayments(true);
-      const response = await charityApi.getPayments(charityId);
-      setPaymentHistory(response.data.data.payments || []);
-    } catch (error) {
-      console.error('Error loading payment history:', error);
-      toast.error('Failed to load payment history');
-    } finally {
-      setIsLoadingPayments(false);
     }
   };
 
@@ -117,12 +99,6 @@ export const CharityPage: React.FC = () => {
       description: ''
     });
     setIsPaymentDialogOpen(true);
-  };
-
-  const openPaymentHistoryDialog = async (charity: Charity) => {
-    setSelectedCharity(charity);
-    setIsPaymentHistoryDialogOpen(true);
-    await loadPaymentHistory(charity.id);
   };
 
   const getStatusBadge = (status: string) => {
@@ -186,8 +162,8 @@ export const CharityPage: React.FC = () => {
             <Heart className="h-4 w-4 text-green-600" />
           </CardHeader>
           <CardContent>
-            {/* The variables are now numbers, so formatCurrency is safe */}
-            <div className="text-2xl font-bold text-green-900">{formatCurrency(totalRequired)}</div>
+            {/* The variables are now numbers, so .toFixed() is safe */}
+            <div className="text-2xl font-bold text-green-900">${totalRequired.toFixed(2)}</div>
             <p className="text-xs text-green-600 mt-1">Total charity obligations</p>
           </CardContent>
         </Card>
@@ -198,7 +174,7 @@ export const CharityPage: React.FC = () => {
             <CheckCircle className="h-4 w-4 text-blue-600" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold text-blue-900">{formatCurrency(totalPaid)}</div>
+            <div className="text-2xl font-bold text-blue-900">${totalPaid.toFixed(2)}</div>
             <p className="text-xs text-blue-600 mt-1">Payments made</p>
           </CardContent>
         </Card>
@@ -209,7 +185,7 @@ export const CharityPage: React.FC = () => {
             <Clock className="h-4 w-4 text-yellow-600" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold text-yellow-900">{formatCurrency(totalRemaining)}</div>
+            <div className="text-2xl font-bold text-yellow-900">${totalRemaining.toFixed(2)}</div>
             <p className="text-xs text-yellow-600 mt-1">Amount still due</p>
           </CardContent>
         </Card>
@@ -288,10 +264,10 @@ export const CharityPage: React.FC = () => {
                           <div className="text-sm text-gray-500">{charity.recipient || 'N/A'}</div>
                         </div>
                       </TableCell>
-                      {/* Using formatCurrency for proper PKR display */}
-                      <TableCell className="font-medium">{formatCurrency(Number(charity.amount_required))}</TableCell>
-                      <TableCell className="text-green-600">{formatCurrency(Number(charity.amount_paid))}</TableCell>
-                      <TableCell className="text-red-600">{formatCurrency(Number(charity.amount_remaining))}</TableCell>
+                      {/* --- FIX 2: Convert to number before .toFixed() --- */}
+                      <TableCell className="font-medium">${Number(charity.amount_required).toFixed(2)}</TableCell>
+                      <TableCell className="text-green-600">${Number(charity.amount_paid).toFixed(2)}</TableCell>
+                      <TableCell className="text-red-600">${Number(charity.amount_remaining).toFixed(2)}</TableCell>
                       <TableCell>
                         <div className="flex items-center space-x-2">
                           <Progress value={getProgressPercentage(charity)} className="w-16" />
@@ -321,14 +297,6 @@ export const CharityPage: React.FC = () => {
                               Pay
                             </Button>
                           )}
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            onClick={() => openPaymentHistoryDialog(charity)}
-                          >
-                            <Eye className="w-4 h-4 mr-1" />
-                            View Payments
-                          </Button>
                         </div>
                       </TableCell>
                     </TableRow>
@@ -370,8 +338,8 @@ export const CharityPage: React.FC = () => {
                 />
                 {selectedCharity && (
                   <p className="text-sm text-gray-500">
-                    {/* Using formatCurrency for proper PKR display */}
-                    Remaining: {formatCurrency(Number(selectedCharity.amount_remaining))}
+                    {/* --- FIX 4: Convert to number before .toFixed() --- */}
+                    Remaining: ${Number(selectedCharity.amount_remaining).toFixed(2)}
                   </p>
                 )}
               </div>
@@ -430,55 +398,6 @@ export const CharityPage: React.FC = () => {
               </Button>
             </DialogFooter>
           </form>
-        </DialogContent>
-      </Dialog>
-
-      {/* Payment History Dialog */}
-      <Dialog open={isPaymentHistoryDialogOpen} onOpenChange={setIsPaymentHistoryDialogOpen}>
-        <DialogContent className="sm:max-w-[600px]">
-          <DialogHeader>
-            <DialogTitle>Payment History</DialogTitle>
-            <DialogDescription>
-              Payment history for: {selectedCharity?.income_description || selectedCharity?.description}
-            </DialogDescription>
-          </DialogHeader>
-          <div className="max-h-[400px] overflow-y-auto">
-            {isLoadingPayments ? (
-              <div className="flex items-center justify-center py-8">
-                <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
-              </div>
-            ) : paymentHistory.length === 0 ? (
-              <div className="text-center py-8 text-gray-500">
-                <CreditCard className="h-12 w-12 mx-auto mb-2 text-gray-400" />
-                <p>No payments recorded yet</p>
-              </div>
-            ) : (
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Amount</TableHead>
-                    <TableHead>Date</TableHead>
-                    <TableHead>Description</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {paymentHistory.map((payment, index) => (
-                    <TableRow key={index}>
-                      <TableCell className="font-medium text-green-600">
-                        {formatCurrency(payment.amount)}
-                      </TableCell>
-                      <TableCell>
-                        {new Date(payment.date).toLocaleDateString()}
-                      </TableCell>
-                      <TableCell>
-                        {payment.description || 'Charity payment'}
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            )}
-          </div>
         </DialogContent>
       </Dialog>
     </div>

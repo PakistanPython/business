@@ -1,5 +1,5 @@
 import express from 'express';
-import { dbGet, dbAll, dbRun } from '../config/database_sqlite';
+import { dbGet, dbAll, dbRun } from '../config/database';
 import { authenticateToken } from '../middleware/auth';
 import { Request, Response } from 'express';
 
@@ -11,12 +11,11 @@ router.use(authenticateToken);
 // GET /api/attendance-rules - Get attendance rules
 router.get('/', async (req: Request, res: Response) => {
   try {
-    const businessId = req.user?.userId;
+    const businessId = req.user!.userId;
 
     const rules = await dbAll(`
       SELECT * FROM attendance_rules 
-      WHERE business_id = ?
-      ORDER BY is_active DESC, created_at DESC
+      WHERE business_id = ? ORDER BY is_active DESC, created_at DESC
     `, [businessId]);
 
     res.json(rules);
@@ -29,7 +28,7 @@ router.get('/', async (req: Request, res: Response) => {
 // GET /api/attendance-rules/active - Get active attendance rule
 router.get('/active', async (req: Request, res: Response) => {
   try {
-    const businessId = req.user?.userId;
+    const businessId = req.user!.userId;
 
     const activeRule = await dbGet(`
       SELECT * FROM attendance_rules 
@@ -73,7 +72,7 @@ router.post('/', async (req: Request, res: Response) => {
     // If setting this rule as active, deactivate others
     if (is_active) {
       await dbRun(
-        'UPDATE attendance_rules SET is_active = 0 WHERE business_id = ?',
+        'UPDATE attendance_rules SET is_active = 0 WHERE business_id = $1',
         [businessId]
       );
     }
@@ -103,8 +102,8 @@ router.post('/', async (req: Request, res: Response) => {
     ]);
 
     const newRule = await dbGet(
-      'SELECT * FROM attendance_rules WHERE id = ?',
-      [result.lastID]
+      'SELECT * FROM attendance_rules WHERE id = $1',
+      [result.rows?.[0]?.id]
     );
 
     res.status(201).json(newRule);
@@ -139,7 +138,7 @@ router.put('/:id', async (req: Request, res: Response) => {
 
     // Check if rule exists and belongs to this business
     const existingRule = await dbGet(
-      'SELECT * FROM attendance_rules WHERE id = ? AND business_id = ?',
+      'SELECT * FROM attendance_rules WHERE id = ? AND business_id = $2',
       [id, businessId]
     );
 
@@ -150,7 +149,7 @@ router.put('/:id', async (req: Request, res: Response) => {
     // If setting this rule as active, deactivate others
     if (is_active && !existingRule.is_active) {
       await dbRun(
-        'UPDATE attendance_rules SET is_active = 0 WHERE business_id = ? AND id != ?',
+        'UPDATE attendance_rules SET is_active = 0 WHERE business_id = ? AND id != $2',
         [businessId, id]
       );
     }
@@ -184,7 +183,7 @@ router.put('/:id', async (req: Request, res: Response) => {
 
     // Fetch updated rule
     const updatedRule = await dbGet(
-      'SELECT * FROM attendance_rules WHERE id = ?',
+      'SELECT * FROM attendance_rules WHERE id = $1',
       [id]
     );
 
@@ -203,7 +202,7 @@ router.delete('/:id', async (req: Request, res: Response) => {
 
     // Check if rule exists and belongs to this business
     const rule = await dbGet(
-      'SELECT is_active FROM attendance_rules WHERE id = ? AND business_id = ?',
+      'SELECT is_active FROM attendance_rules WHERE id = ? AND business_id = $2',
       [id, businessId]
     );
 
@@ -217,7 +216,7 @@ router.delete('/:id', async (req: Request, res: Response) => {
     }
 
     // Delete attendance rule
-    await dbRun('DELETE FROM attendance_rules WHERE id = ? AND business_id = ?', [id, businessId]);
+    await dbRun('DELETE FROM attendance_rules WHERE id = ? AND business_id = $2', [id, businessId]);
 
     res.json({ message: 'Attendance rule deleted successfully' });
   } catch (error) {
@@ -234,7 +233,7 @@ router.post('/:id/activate', async (req: Request, res: Response) => {
 
     // Check if rule exists and belongs to this business
     const rule = await dbGet(
-      'SELECT * FROM attendance_rules WHERE id = ? AND business_id = ?',
+      'SELECT * FROM attendance_rules WHERE id = ? AND business_id = $2',
       [id, businessId]
     );
 
@@ -244,19 +243,19 @@ router.post('/:id/activate', async (req: Request, res: Response) => {
 
     // Deactivate all other rules
     await dbRun(
-      'UPDATE attendance_rules SET is_active = 0 WHERE business_id = ?',
+      'UPDATE attendance_rules SET is_active = 0 WHERE business_id = $1',
       [businessId]
     );
 
     // Activate this rule
     await dbRun(
-      'UPDATE attendance_rules SET is_active = 1, updated_at = CURRENT_TIMESTAMP WHERE id = ?',
+      'UPDATE attendance_rules SET is_active = 1, updated_at = CURRENT_TIMESTAMP WHERE id = $1',
       [id]
     );
 
     // Fetch updated rule
     const updatedRule = await dbGet(
-      'SELECT * FROM attendance_rules WHERE id = ?',
+      'SELECT * FROM attendance_rules WHERE id = $1',
       [id]
     );
 

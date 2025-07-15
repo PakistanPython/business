@@ -32,17 +32,17 @@ router.get('/summary', async (req, res) => {
     };
 
     // Get totals
-    const incomeTotal = await dbGet('SELECT COALESCE(SUM(amount), 0) as total FROM income WHERE user_id = ?', [userId]);
-    const expenseTotal = await dbGet('SELECT COALESCE(SUM(amount), 0) as total FROM expenses WHERE user_id = ?', [userId]);
-    const purchaseTotal = await dbGet('SELECT COALESCE(SUM(amount), 0) as total FROM purchases WHERE user_id = ?', [userId]);
+    const incomeTotal = await dbGet('SELECT COALESCE(SUM(amount), 0) as total FROM income WHERE user_id = $1', [userId]);
+    const expenseTotal = await dbGet('SELECT COALESCE(SUM(amount), 0) as total FROM expenses WHERE user_id = $1', [userId]);
+    const purchaseTotal = await dbGet('SELECT COALESCE(SUM(amount), 0) as total FROM purchases WHERE user_id = $1', [userId]);
     const salesTotal = await dbGet('SELECT COALESCE(SUM(selling_price), 0) as revenue, COALESCE(SUM(profit), 0) as profit FROM sales WHERE user_id = ? AND status = "completed"', [userId]);
-    const purchaseCount = await dbGet('SELECT COUNT(*) as count FROM purchases WHERE user_id = ?', [userId]);
+    const purchaseCount = await dbGet('SELECT COUNT(*) as count FROM purchases WHERE user_id = $1', [userId]);
     const salesCount = await dbGet('SELECT COUNT(*) as count FROM sales WHERE user_id = ? AND status = "completed"', [userId]);
-    const accountsBalance = await dbGet('SELECT COALESCE(SUM(balance), 0) as total FROM accounts WHERE user_id = ?', [userId]);
+    const accountsBalance = await dbGet('SELECT COALESCE(SUM(balance), 0) as total FROM accounts WHERE user_id = $1', [userId]);
     const activeLoans = await dbGet('SELECT COALESCE(SUM(current_balance), 0) as total FROM loans WHERE user_id = ? AND status = "active"', [userId]);
-    const charityRequired = await dbGet('SELECT COALESCE(SUM(amount_required), 0) as total FROM charity WHERE user_id = ?', [userId]);
-    const charityPaid = await dbGet('SELECT COALESCE(SUM(amount_paid), 0) as total FROM charity WHERE user_id = ?', [userId]);
-    const charityRemaining = await dbGet('SELECT COALESCE(SUM(amount_remaining), 0) as total FROM charity WHERE user_id = ?', [userId]);
+    const charityRequired = await dbGet('SELECT COALESCE(SUM(amount_required), 0) as total FROM charity WHERE user_id = $1', [userId]);
+    const charityPaid = await dbGet('SELECT COALESCE(SUM(amount_paid), 0) as total FROM charity WHERE user_id = $1', [userId]);
+    const charityRemaining = await dbGet('SELECT COALESCE(SUM(amount_remaining), 0) as total FROM charity WHERE user_id = $1', [userId]);
 
     summary.total_income = parseFloat(incomeTotal?.total || 0);
     summary.total_expenses = parseFloat(expenseTotal?.total || 0);
@@ -103,8 +103,7 @@ router.get('/summary', async (req, res) => {
         id, transaction_type, amount, description, date, created_at,
         reference_table, reference_id
       FROM transactions 
-      WHERE user_id = ? 
-      ORDER BY created_at DESC 
+      WHERE user_id = ? ORDER BY created_at DESC 
       LIMIT 10
     `, [userId]);
 
@@ -114,10 +113,9 @@ router.get('/summary', async (req, res) => {
         category,
         SUM(amount) as total_amount,
         COUNT(*) as transaction_count,
-        ROUND((SUM(amount) / (SELECT SUM(amount) FROM expenses WHERE user_id = ?)) * 100, 2) as percentage
+        ROUND((SUM(amount) / (SELECT SUM(amount) FROM expenses WHERE user_id = $2)) * 100, 2) as percentage
       FROM expenses 
-      WHERE user_id = ? 
-      GROUP BY category 
+      WHERE user_id = ? GROUP BY category 
       ORDER BY total_amount DESC 
       LIMIT 5
     `, [userId, userId]);
@@ -161,8 +159,7 @@ router.get('/summary', async (req, res) => {
         SUM(amount_paid) as total_paid,
         SUM(amount_remaining) as total_remaining
       FROM charity 
-      WHERE user_id = ? 
-      GROUP BY status
+      WHERE user_id = ? GROUP BY status
     `, [userId]);
 
     res.json({
@@ -356,7 +353,7 @@ router.get('/metrics', async (req, res) => {
     const charityPending = await dbGet('SELECT COALESCE(SUM(amount_remaining), 0) as total FROM charity WHERE user_id = ? AND status != "paid"', [userId]);
     
     // Get account metrics
-    const totalAccounts = await dbGet('SELECT COUNT(*) as count FROM accounts WHERE user_id = ?', [userId]);
+    const totalAccounts = await dbGet('SELECT COUNT(*) as count FROM accounts WHERE user_id = $1', [userId]);
     const activeLoans = await dbGet('SELECT COUNT(*) as count FROM loans WHERE user_id = ? AND status = "active"', [userId]);
 
     metrics.revenue_30d = parseFloat(revenue30d?.total || 0);

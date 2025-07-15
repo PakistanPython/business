@@ -10,7 +10,7 @@ const runMigrations = async () => {
     console.error('Error running migrations:', error);
     process.exit(1);
   } finally {
-    db.close();
+    db.end();
   }
 };
 

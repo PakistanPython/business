@@ -313,7 +313,6 @@ export interface IncomeForm {
   category: string;
   source?: string;
   date: string;
-  charity_percentage?: number;
 }
 
 export interface ExpenseForm {

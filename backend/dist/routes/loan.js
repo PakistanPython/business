@@ -66,47 +66,6 @@ router.get('/', [
         });
     }
 });
-router.get('/:id/payments', async (req, res) => {
-    try {
-        const userId = req.user.userId;
-        const loanId = parseInt(req.params.id);
-        if (isNaN(loanId)) {
-            return res.status(400).json({
-                success: false,
-                message: 'Invalid loan ID'
-            });
-        }
-        const loan = await (0, database_1.dbGet)('SELECT id FROM loans WHERE id = ? AND user_id = ?', [loanId, userId]);
-        if (!loan) {
-            return res.status(404).json({
-                success: false,
-                message: 'Loan not found'
-            });
-        }
-        const payments = await (0, database_1.dbAll)(`SELECT 
-        amount,
-        description,
-        date,
-        created_at
-      FROM transactions 
-      WHERE user_id = ? AND transaction_type = 'loan_payment' AND reference_id = ?
-      ORDER BY date DESC, created_at DESC`, [userId, loanId]);
-        res.json({
-            success: true,
-            data: {
-                loan_id: loanId,
-                payments: payments
-            }
-        });
-    }
-    catch (error) {
-        console.error('Get loan payments error:', error);
-        res.status(500).json({
-            success: false,
-            message: 'Internal server error'
-        });
-    }
-});
 router.get('/:id', async (req, res) => {
     try {
         const userId = req.user.userId;
@@ -122,7 +81,7 @@ router.get('/:id', async (req, res) => {
         interest_rate, monthly_payment, start_date, due_date, status, 
         created_at, updated_at
        FROM loans 
-       WHERE id = ? AND user_id = ?`, [loanId, userId]);
+       WHERE id = ? AND user_id = $2`, [loanId, userId]);
         if (!loan) {
             return res.status(404).json({
                 success: false,
@@ -188,9 +147,9 @@ router.post('/', [
         const result = await (0, database_1.dbRun)(`INSERT INTO loans 
        (user_id, loan_type, lender_name, principal_amount, current_balance, 
         interest_rate, monthly_payment, start_date, due_date) 
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`, [userId, loan_type, lender_name, principal_amount, current_balance,
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`, [userId, loan_type, lender_name, principal_amount, current_balance,
             interest_rate, monthly_payment, start_date, due_date]);
-        const loanId = result.lastID;
+        const loanId = result.rows?.[0]?.id;
         const newLoan = await (0, database_1.dbGet)('SELECT * FROM loans WHERE id = ?', [loanId]);
         res.status(201).json({
             success: true,
@@ -251,7 +210,7 @@ router.put('/:id', [
                 message: 'Invalid loan ID'
             });
         }
-        const existingLoan = await (0, database_1.dbGet)('SELECT id FROM loans WHERE id = ? AND user_id = ?', [loanId, userId]);
+        const existingLoan = await (0, database_1.dbGet)('SELECT id FROM loans WHERE id = ? AND user_id = $2', [loanId, userId]);
         if (!existingLoan) {
             return res.status(404).json({
                 success: false,
@@ -292,7 +251,7 @@ router.put('/:id', [
             });
         }
         values.push(loanId);
-        await (0, database_1.dbRun)(`UPDATE loans SET ${updates.join(', ')}, updated_at = CURRENT_TIMESTAMP WHERE id = ?`, values);
+        await (0, database_1.dbRun)(`UPDATE loans SET ${updates.join(', ')}, updated_at = CURRENT_TIMESTAMP WHERE id = $1`, values);
         const updatedLoan = await (0, database_1.dbGet)('SELECT * FROM loans WHERE id = ?', [loanId]);
         res.json({
             success: true,
@@ -341,7 +300,7 @@ router.post('/:id/payment', [
         }
         try {
             await (0, database_1.dbRun)('BEGIN TRANSACTION');
-            const loan = await (0, database_1.dbGet)('SELECT id, lender_name, current_balance, status FROM loans WHERE id = ? AND user_id = ?', [loanId, userId]);
+            const loan = await (0, database_1.dbGet)('SELECT id, lender_name, current_balance, status FROM loans WHERE id = ? AND user_id = $2', [loanId, userId]);
             if (!loan) {
                 await (0, database_1.dbRun)('ROLLBACK');
                 return res.status(404).json({
@@ -365,9 +324,9 @@ router.post('/:id/payment', [
             }
             const newBalance = parseFloat(loan.current_balance) - parseFloat(amount);
             const newStatus = newBalance <= 0 ? 'paid' : 'active';
-            await (0, database_1.dbRun)('UPDATE loans SET current_balance = ?, status = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?', [newBalance, newStatus, loanId]);
-            await (0, database_1.dbRun)('INSERT INTO transactions (user_id, transaction_type, reference_id, reference_table, amount, description, date) VALUES (?, ?, ?, ?, ?, ?, ?)', [userId, 'loan_payment', loanId, 'loans', amount, description || `Loan payment to ${loan.lender_name}`, payment_date]);
-            const updatedLoan = await (0, database_1.dbGet)('SELECT * FROM loans WHERE id = ?', [loanId]);
+            await (0, database_1.dbRun)('UPDATE loans SET current_balance = $1, status = $2, updated_at = CURRENT_TIMESTAMP WHERE id = $3', [newBalance, newStatus, loanId]);
+            await (0, database_1.dbRun)('INSERT INTO transactions (user_id, transaction_type, reference_id, reference_table, amount, description, date) VALUES ($1, $2, $3, $4, $5, $6, $7)', [userId, 'loan_payment', loanId, 'loans', amount, description || `Loan payment to ${loan.lender_name}`, payment_date]);
+            const updatedLoan = await (0, database_1.dbGet)('SELECT * FROM loans WHERE id = $1', [loanId]);
             await (0, database_1.dbRun)('COMMIT');
             res.json({
                 success: true,
@@ -407,7 +366,7 @@ router.delete('/:id', async (req, res) => {
                 message: 'Invalid loan ID'
             });
         }
-        const existingLoan = await (0, database_1.dbGet)('SELECT id, status FROM loans WHERE id = ? AND user_id = ?', [loanId, userId]);
+        const existingLoan = await (0, database_1.dbGet)('SELECT id, status FROM loans WHERE id = ? AND user_id = $2', [loanId, userId]);
         if (!existingLoan) {
             return res.status(404).json({
                 success: false,
@@ -416,8 +375,8 @@ router.delete('/:id', async (req, res) => {
         }
         try {
             await (0, database_1.dbRun)('BEGIN TRANSACTION');
-            await (0, database_1.dbRun)('DELETE FROM transactions WHERE reference_id = ? AND reference_table = ? AND user_id = ?', [loanId, 'loans', userId]);
-            await (0, database_1.dbRun)('DELETE FROM loans WHERE id = ? AND user_id = ?', [loanId, userId]);
+            await (0, database_1.dbRun)('DELETE FROM transactions WHERE reference_id = ? AND reference_table = ? AND user_id = $3', [loanId, 'loans', userId]);
+            await (0, database_1.dbRun)('DELETE FROM loans WHERE id = ? AND user_id = $2', [loanId, userId]);
             await (0, database_1.dbRun)('COMMIT');
             res.json({
                 success: true,
@@ -449,15 +408,14 @@ router.get('/stats/summary', async (req, res) => {
         SUM(CASE WHEN status = 'active' THEN 1 ELSE 0 END) as active_loans,
         AVG(CASE WHEN status = 'active' THEN interest_rate END) as avg_interest_rate
        FROM loans 
-       WHERE user_id = ?`, [userId]);
+       WHERE user_id = $1`, [userId]);
         const typeStats = await (0, database_1.dbAll)(`SELECT 
         loan_type,
         COUNT(*) as count,
         SUM(principal_amount) as total_principal,
         SUM(current_balance) as total_balance
        FROM loans 
-       WHERE user_id = ? 
-       GROUP BY loan_type
+       WHERE user_id = ? GROUP BY loan_type
        ORDER BY total_balance DESC`, [userId]);
         const recentPayments = await (0, database_1.dbAll)(`SELECT 
         t.amount, t.description, t.date, t.created_at,

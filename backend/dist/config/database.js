@@ -4,77 +4,39 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
 };
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.dbRun = exports.dbAll = exports.dbGet = exports.testConnection = exports.db = void 0;
-const sqlite3_1 = __importDefault(require("sqlite3"));
-const path_1 = __importDefault(require("path"));
-const fs_1 = __importDefault(require("fs"));
+const pg_1 = require("pg");
 const dotenv_1 = __importDefault(require("dotenv"));
 dotenv_1.default.config();
-const dbPath = path_1.default.join(__dirname, '../../database.sqlite');
-const dbDir = path_1.default.dirname(dbPath);
-if (!fs_1.default.existsSync(dbDir)) {
-    fs_1.default.mkdirSync(dbDir, { recursive: true });
-}
-exports.db = new sqlite3_1.default.Database(dbPath, (err) => {
-    if (err) {
-        console.error('❌ SQLite connection failed:', err.message);
-        process.exit(1);
-    }
-    else {
-        console.log('✅ SQLite database connected successfully');
+const pool = new pg_1.Pool({
+    connectionString: process.env.business_POSTGRES_URL,
+    ssl: {
+        rejectUnauthorized: false
     }
 });
-exports.db.run('PRAGMA foreign_keys = ON');
+exports.db = pool;
 const testConnection = async () => {
-    return new Promise((resolve, reject) => {
-        exports.db.get('SELECT 1', (err) => {
-            if (err) {
-                console.error('❌ Database connection test failed:', err);
-                reject(err);
-            }
-            else {
-                console.log('✅ Database connection test successful');
-                resolve();
-            }
-        });
-    });
+    try {
+        await pool.query('SELECT 1');
+        console.log('✅ PostgreSQL database connected successfully');
+    }
+    catch (err) {
+        console.error('❌ PostgreSQL connection failed:', err);
+        process.exit(1);
+    }
 };
 exports.testConnection = testConnection;
-const dbGet = (sql, params = []) => {
-    return new Promise((resolve, reject) => {
-        exports.db.get(sql, params, (err, row) => {
-            if (err) {
-                reject(err);
-            }
-            else {
-                resolve(row);
-            }
-        });
-    });
+const dbGet = async (sql, params = []) => {
+    const { rows } = await pool.query(sql, params);
+    return rows[0];
 };
 exports.dbGet = dbGet;
-const dbAll = (sql, params = []) => {
-    return new Promise((resolve, reject) => {
-        exports.db.all(sql, params, (err, rows) => {
-            if (err) {
-                reject(err);
-            }
-            else {
-                resolve(rows || []);
-            }
-        });
-    });
+const dbAll = async (sql, params = []) => {
+    const { rows } = await pool.query(sql, params);
+    return rows;
 };
 exports.dbAll = dbAll;
-const dbRun = (sql, params = []) => {
-    return new Promise((resolve, reject) => {
-        exports.db.run(sql, params, function (err) {
-            if (err) {
-                reject(err);
-            }
-            else {
-                resolve({ lastID: this.lastID, changes: this.changes });
-            }
-        });
-    });
+const dbRun = async (sql, params = []) => {
+    const result = await pool.query(sql, params);
+    return { rows: result.rows, rowCount: result.rowCount || 0 };
 };
 exports.dbRun = dbRun;

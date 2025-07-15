@@ -1,5 +1,5 @@
 import express from 'express';
-import { dbGet, dbAll, dbRun } from '../config/database_sqlite';
+import { dbGet, dbAll, dbRun } from '../config/database';
 import { authenticateToken } from '../middleware/auth';
 import { Request, Response } from 'express';
 
@@ -11,7 +11,7 @@ router.use(authenticateToken);
 // GET /api/work-schedules - Get work schedules
 router.get('/', async (req: Request, res: Response) => {
   try {
-    const businessId = req.user?.userId;
+    const businessId = req.user!.userId;
     const { employee_id, is_active } = req.query;
 
     let query = `
@@ -22,8 +22,7 @@ router.get('/', async (req: Request, res: Response) => {
         e.employee_code
       FROM employee_work_schedules ws
       JOIN employees e ON ws.employee_id = e.id
-      WHERE ws.business_id = ?
-    `;
+      WHERE ws.business_id = ? `;
     const params: any[] = [businessId];
 
     if (employee_id) {
@@ -50,7 +49,7 @@ router.get('/', async (req: Request, res: Response) => {
 router.get('/:id', async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
-    const businessId = req.user?.userId;
+    const businessId = req.user!.userId;
 
     const schedule = await dbGet(`
       SELECT 
@@ -60,8 +59,7 @@ router.get('/:id', async (req: Request, res: Response) => {
         e.employee_code
       FROM employee_work_schedules ws
       JOIN employees e ON ws.employee_id = e.id
-      WHERE ws.id = ? AND ws.business_id = ?
-    `, [id, businessId]);
+      WHERE ws.id = ? AND ws.business_id = ? `, [id, businessId]);
 
     if (!schedule) {
       return res.status(404).json({ error: 'Work schedule not found' });
@@ -110,7 +108,7 @@ router.post('/', async (req: Request, res: Response) => {
 
     // Check if employee belongs to this business
     const employee = await dbGet(
-      'SELECT id FROM employees WHERE id = ? AND business_id = ?',
+      'SELECT id FROM employees WHERE id = ? AND business_id = $2',
       [employee_id, businessId]
     );
 
@@ -121,7 +119,7 @@ router.post('/', async (req: Request, res: Response) => {
     // Deactivate previous active schedules if this is the new active one
     if (req.body.is_active) {
       await dbRun(
-        'UPDATE employee_work_schedules SET is_active = 0 WHERE employee_id = ? AND business_id = ?',
+        'UPDATE employee_work_schedules SET is_active = 0 WHERE employee_id = ? AND business_id = $2',
         [employee_id, businessId]
       );
     }
@@ -154,7 +152,7 @@ router.post('/', async (req: Request, res: Response) => {
       FROM employee_work_schedules ws
       JOIN employees e ON ws.employee_id = e.id
       WHERE ws.id = ?
-    `, [result.lastID]);
+    `, [result.rows?.[0]?.id]);
 
     res.status(201).json(newSchedule);
   } catch (error) {
@@ -194,7 +192,7 @@ router.put('/:id', async (req: Request, res: Response) => {
 
     // Check if schedule exists and belongs to this business
     const existingSchedule = await dbGet(
-      'SELECT * FROM employee_work_schedules WHERE id = ? AND business_id = ?',
+      'SELECT * FROM employee_work_schedules WHERE id = ? AND business_id = $2',
       [id, businessId]
     );
 
@@ -205,7 +203,7 @@ router.put('/:id', async (req: Request, res: Response) => {
     // If setting this as active, deactivate others for this employee
     if (is_active) {
       await dbRun(
-        'UPDATE employee_work_schedules SET is_active = 0 WHERE employee_id = ? AND business_id = ? AND id != ?',
+        'UPDATE employee_work_schedules SET is_active = 0 WHERE employee_id = ? AND business_id = ? AND id != $3',
         [existingSchedule.employee_id, businessId, id]
       );
     }
@@ -272,7 +270,7 @@ router.delete('/:id', async (req: Request, res: Response) => {
 
     // Check if schedule exists and belongs to this business
     const schedule = await dbGet(
-      'SELECT id FROM employee_work_schedules WHERE id = ? AND business_id = ?',
+      'SELECT id FROM employee_work_schedules WHERE id = ? AND business_id = $2',
       [id, businessId]
     );
 
@@ -281,7 +279,7 @@ router.delete('/:id', async (req: Request, res: Response) => {
     }
 
     // Delete work schedule
-    await dbRun('DELETE FROM employee_work_schedules WHERE id = ? AND business_id = ?', [id, businessId]);
+    await dbRun('DELETE FROM employee_work_schedules WHERE id = ? AND business_id = $2', [id, businessId]);
 
     res.json({ message: 'Work schedule deleted successfully' });
   } catch (error) {
@@ -306,10 +304,8 @@ router.get('/employee/:employeeId/current', async (req: Request, res: Response) 
         e.employee_code
       FROM employee_work_schedules ws
       JOIN employees e ON ws.employee_id = e.id
-      WHERE ws.employee_id = ? AND ws.business_id = ? 
-        AND ws.is_active = 1
-        AND ws.effective_from <= ?
-        AND (ws.effective_to IS NULL OR ws.effective_to >= ?)
+      WHERE ws.employee_id = ? AND ws.business_id = ? AND ws.is_active = 1
+        AND ws.effective_from <= ? AND (ws.effective_to IS NULL OR ws.effective_to >= $4)
       ORDER BY ws.effective_from DESC
       LIMIT 1
     `, [employeeId, businessId, currentDate, currentDate]);

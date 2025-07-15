@@ -72,7 +72,7 @@ router.get('/', [
        FROM expenses 
        ${whereClause} 
        ORDER BY ${sortBy} ${sortOrder.toUpperCase()}
-       LIMIT ? OFFSET ?`,
+       LIMIT ? OFFSET $2`,
       [...whereParams, limit, offset]
     );
 
@@ -82,7 +82,7 @@ router.get('/', [
     const hasPrev = page > 1;
 
     res.json({
-      success: true,
+      success : true,
       data: {
         expenses: expenseRecords,
         pagination: {
@@ -122,7 +122,7 @@ router.get('/:id', async (req, res) => {
         id, amount, description, category, payment_method, date, 
         receipt_path, created_at, updated_at
        FROM expenses 
-       WHERE id = ? AND user_id = ?`,
+       WHERE id = ? AND user_id = $2`,
       [expenseId, userId]
     );
 
@@ -190,21 +190,21 @@ router.post('/', [
 
     // Insert expense record
     const expenseResult = await dbRun(
-      'INSERT INTO expenses (user_id, amount, description, category, payment_method, date, receipt_path) VALUES (?, ?, ?, ?, ?, ?, ?)',
+      'INSERT INTO expenses (user_id, amount, description, category, payment_method, date, receipt_path) VALUES ($1, $2, $3, $4, $5, $6, $7)',
       [userId, amount, description, category, payment_method, date, receipt_path]
     );
 
-    const expenseId = expenseResult.lastID;
+    const expenseId = expenseResult.rows?.[0]?.id;
 
     // Get the created expense record
     const expenseRecord = await dbGet(
-      'SELECT * FROM expenses WHERE id = ?',
+      'SELECT * FROM expenses WHERE id = $1',
       [expenseId]
     );
 
     // Record transaction for audit trail
     await dbRun(
-      'INSERT INTO transactions (user_id, transaction_type, reference_id, reference_table, amount, description, date) VALUES (?, ?, ?, ?, ?, ?, ?)',
+      'INSERT INTO transactions (user_id, transaction_type, reference_id, reference_table, amount, description, date) VALUES ($1, $2, $3, $4, $5, $6, $7)',
       [userId, 'expense', expenseId, 'expenses', amount, `Expense: ${description || category}`, date]
     );
 
@@ -276,7 +276,7 @@ router.put('/:id', [
 
     // Check if expense record exists and belongs to user
     const existingRecord = await dbGet(
-      'SELECT id FROM expenses WHERE id = ? AND user_id = ?',
+      'SELECT id FROM expenses WHERE id = ? AND user_id = $2',
       [expenseId, userId]
     );
 
@@ -335,7 +335,7 @@ router.put('/:id', [
 
     // Get updated record
     const updatedRecord = await dbGet(
-      'SELECT * FROM expenses WHERE id = ?',
+      'SELECT * FROM expenses WHERE id = $1',
       [expenseId]
     );
 
@@ -368,7 +368,7 @@ router.delete('/:id', async (req, res) => {
 
     // Check if expense record exists and belongs to user
     const existingRecord = await dbGet(
-      'SELECT id FROM expenses WHERE id = ? AND user_id = ?',
+      'SELECT id FROM expenses WHERE id = ? AND user_id = $2',
       [expenseId, userId]
     );
 
@@ -381,13 +381,13 @@ router.delete('/:id', async (req, res) => {
 
     // Delete related transactions
     await dbRun(
-      'DELETE FROM transactions WHERE reference_id = ? AND reference_table = ? AND user_id = ?',
+      'DELETE FROM transactions WHERE reference_id = ? AND reference_table = ? AND user_id = $3',
       [expenseId, 'expenses', userId]
     );
 
     // Delete expense record
     await dbRun(
-      'DELETE FROM expenses WHERE id = ? AND user_id = ?',
+      'DELETE FROM expenses WHERE id = ? AND user_id = $2',
       [expenseId, userId]
     );
 
@@ -418,7 +418,7 @@ router.get('/stats/summary', async (req, res) => {
         MIN(date) as earliest_date,
         MAX(date) as latest_date
        FROM expenses 
-       WHERE user_id = ?`,
+       WHERE user_id = $1`,
       [userId]
     );
 
@@ -444,8 +444,7 @@ router.get('/stats/summary', async (req, res) => {
         SUM(amount) as total_amount,
         AVG(amount) as average_amount
        FROM expenses 
-       WHERE user_id = ? 
-       GROUP BY category
+       WHERE user_id = ? GROUP BY category
        ORDER BY total_amount DESC`,
       [userId]
     );
@@ -457,8 +456,7 @@ router.get('/stats/summary', async (req, res) => {
         COUNT(*) as count,
         SUM(amount) as total_amount
        FROM expenses 
-       WHERE user_id = ? 
-       GROUP BY payment_method
+       WHERE user_id = ? GROUP BY payment_method
        ORDER BY total_amount DESC`,
       [userId]
     );

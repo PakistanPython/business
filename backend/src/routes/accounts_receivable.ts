@@ -16,8 +16,7 @@ const generateInvoiceNumber = async (businessId: number): Promise<string> => {
   const count = await dbGet(`
     SELECT COUNT(*) as count 
     FROM accounts_receivable 
-    WHERE business_id = ? 
-    AND strftime('%Y', invoice_date) = ? 
+    WHERE business_id = ? AND strftime('%Y', invoice_date) = ? 
     AND strftime('%m', invoice_date) = ?
   `, [businessId, year.toString(), month.toString().padStart(2, '0')]);
   
@@ -27,7 +26,7 @@ const generateInvoiceNumber = async (businessId: number): Promise<string> => {
 
 // Helper function to update account status based on balance
 const updateAccountStatus = async (id: number) => {
-  const account = await dbGet('SELECT amount, paid_amount FROM accounts_receivable WHERE id = ?', [id]);
+  const account = await dbGet('SELECT amount, paid_amount FROM accounts_receivable WHERE id = $1', [id]);
   
   if (!account) return;
   
@@ -47,13 +46,13 @@ const updateAccountStatus = async (id: number) => {
     }
   }
   
-  await dbRun('UPDATE accounts_receivable SET status = ? WHERE id = ?', [status, id]);
+  await dbRun('UPDATE accounts_receivable SET status = ? WHERE id = $2', [status, id]);
 };
 
 // GET /api/accounts-receivable - Get all accounts receivable
 router.get('/', async (req: Request, res: Response) => {
   try {
-    const businessId = req.user?.userId;
+    const businessId = req.user!.userId;
     const { 
       status, 
       customer_name, 
@@ -66,8 +65,7 @@ router.get('/', async (req: Request, res: Response) => {
 
     let query = `
       SELECT * FROM accounts_receivable 
-      WHERE business_id = ?
-    `;
+      WHERE business_id = ? `;
     const params: any[] = [businessId];
 
     if (status && status !== 'all') {
@@ -93,7 +91,7 @@ router.get('/', async (req: Request, res: Response) => {
 
     // Add pagination
     const offset = (parseInt(page as string) - 1) * parseInt(limit as string);
-    query += ` LIMIT ? OFFSET ?`;
+    query += ` LIMIT ? OFFSET $2`;
     params.push(parseInt(limit as string), offset);
 
     const accounts = await dbAll(query, params);
@@ -102,9 +100,8 @@ router.get('/', async (req: Request, res: Response) => {
     let countQuery = `
       SELECT COUNT(*) as total
       FROM accounts_receivable 
-      WHERE business_id = ?
-    `;
-    const countParams: any[] = [businessId];
+      WHERE business_id = ? `;
+    const countParams : any[] = [businessId];
 
     if (status && status !== 'all') {
       countQuery += ' AND status = ?';
@@ -149,7 +146,7 @@ router.get('/:id', async (req: Request, res: Response) => {
     const businessId = req.user?.userId;
 
     const account = await dbGet(
-      'SELECT * FROM accounts_receivable WHERE id = ? AND business_id = ?',
+      'SELECT * FROM accounts_receivable WHERE id = ? AND business_id = $2',
       [id, businessId]
     );
 
@@ -203,7 +200,7 @@ router.post('/', async (req: Request, res: Response) => {
 
     // Check if invoice number already exists
     const existingInvoice = await dbGet(
-      'SELECT id FROM accounts_receivable WHERE invoice_number = ? AND business_id = ?',
+      'SELECT id FROM accounts_receivable WHERE invoice_number = ? AND business_id = $2',
       [finalInvoiceNumber, businessId]
     );
 
@@ -222,7 +219,7 @@ router.post('/', async (req: Request, res: Response) => {
         business_id, customer_name, customer_email, customer_phone, customer_address,
         invoice_number, invoice_date, due_date, amount, status,
         payment_terms, description, notes
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
     `, [
       businessId, customer_name, customer_email, customer_phone, customer_address,
       finalInvoiceNumber, invoice_date, due_date, amount, status,
@@ -232,7 +229,7 @@ router.post('/', async (req: Request, res: Response) => {
     // Fetch the created record
     const newAccount = await dbGet(
       'SELECT * FROM accounts_receivable WHERE id = ?',
-      [result.lastID]
+      [result.rows?.[0]?.id]
     );
 
     res.status(201).json(newAccount);
@@ -263,7 +260,7 @@ router.put('/:id', async (req: Request, res: Response) => {
 
     // Check if account exists and belongs to this business
     const existingAccount = await dbGet(
-      'SELECT * FROM accounts_receivable WHERE id = ? AND business_id = ?',
+      'SELECT * FROM accounts_receivable WHERE id = ? AND business_id = $2',
       [id, businessId]
     );
 
@@ -279,7 +276,7 @@ router.put('/:id', async (req: Request, res: Response) => {
     // Check if invoice number is being changed and already exists
     if (invoice_number && invoice_number !== existingAccount.invoice_number) {
       const duplicateInvoice = await dbGet(
-        'SELECT id FROM accounts_receivable WHERE invoice_number = ? AND business_id = ? AND id != ?',
+        'SELECT id FROM accounts_receivable WHERE invoice_number = ? AND business_id = ? AND id != $3',
         [invoice_number, businessId, id]
       );
       if (duplicateInvoice) {
@@ -290,12 +287,11 @@ router.put('/:id', async (req: Request, res: Response) => {
     // Update account receivable
     await dbRun(`
       UPDATE accounts_receivable SET
-        customer_name = ?, customer_email = ?, customer_phone = ?, customer_address = ?,
-        invoice_number = ?, invoice_date = ?, due_date = ?, amount = ?,
-        balance_amount = amount - paid_amount, payment_terms = ?, description = ?, notes = ?,
+        customer_name = $1, customer_email = $2, customer_phone = $3, customer_address = $4,
+        invoice_number = $5, invoice_date = $6, due_date = $7, amount = $8,
+        balance_amount = amount - paid_amount, payment_terms = $9, description = $10, notes = $11,
         updated_at = CURRENT_TIMESTAMP
-      WHERE id = ? AND business_id = ?
-    `, [
+      WHERE id = ? AND business_id = ? `, [
       customer_name || existingAccount.customer_name,
       customer_email || existingAccount.customer_email,
       customer_phone || existingAccount.customer_phone,
@@ -346,7 +342,7 @@ router.post('/:id/payment', async (req: Request, res: Response) => {
 
     // Check if account exists and belongs to this business
     const account = await dbGet(
-      'SELECT * FROM accounts_receivable WHERE id = ? AND business_id = ?',
+      'SELECT * FROM accounts_receivable WHERE id = ? AND business_id = $2',
       [id, businessId]
     );
 
@@ -365,13 +361,13 @@ router.post('/:id/payment', async (req: Request, res: Response) => {
       INSERT INTO payment_records (
         business_id, record_type, record_id, payment_date, amount,
         payment_method, reference_number, notes
-      ) VALUES (?, 'receivable', ?, ?, ?, ?, ?, ?)
+      ) VALUES ($1, 'receivable', ?, ?, ?, ?, ?, ?)
     `, [businessId, id, payment_date, amount, payment_method, reference_number, notes]);
 
     // Update paid amount
     const newPaidAmount = account.paid_amount + parseFloat(amount);
     await dbRun(
-      'UPDATE accounts_receivable SET paid_amount = ? WHERE id = ?',
+      'UPDATE accounts_receivable SET paid_amount = ? WHERE id = $2',
       [newPaidAmount, id]
     );
 
@@ -380,7 +376,7 @@ router.post('/:id/payment', async (req: Request, res: Response) => {
 
     // Fetch updated record
     const updatedAccount = await dbGet(
-      'SELECT * FROM accounts_receivable WHERE id = ?',
+      'SELECT * FROM accounts_receivable WHERE id = $1',
       [id]
     );
 
@@ -399,7 +395,7 @@ router.delete('/:id', async (req: Request, res: Response) => {
 
     // Check if account exists and belongs to this business
     const account = await dbGet(
-      'SELECT paid_amount FROM accounts_receivable WHERE id = ? AND business_id = ?',
+      'SELECT paid_amount FROM accounts_receivable WHERE id = ? AND business_id = $2',
       [id, businessId]
     );
 
@@ -413,8 +409,8 @@ router.delete('/:id', async (req: Request, res: Response) => {
     }
 
     // Delete account receivable and related payment records
-    await dbRun('DELETE FROM payment_records WHERE record_type = "receivable" AND record_id = ?', [id]);
-    await dbRun('DELETE FROM accounts_receivable WHERE id = ? AND business_id = ?', [id, businessId]);
+    await dbRun('DELETE FROM payment_records WHERE record_type = "receivable" AND record_id = $1', [id]);
+    await dbRun('DELETE FROM accounts_receivable WHERE id = ? AND business_id = $2', [id, businessId]);
 
     res.json({ message: 'Account receivable deleted successfully' });
   } catch (error) {
@@ -511,7 +507,7 @@ router.put('/:id/status', async (req: Request, res: Response) => {
 
     // Check if account exists and belongs to this business
     const account = await dbGet(
-      'SELECT * FROM accounts_receivable WHERE id = ? AND business_id = ?',
+      'SELECT * FROM accounts_receivable WHERE id = ? AND business_id = $2',
       [id, businessId]
     );
 
@@ -521,13 +517,13 @@ router.put('/:id/status', async (req: Request, res: Response) => {
 
     // Update status
     await dbRun(
-      'UPDATE accounts_receivable SET status = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ? AND business_id = ?',
+      'UPDATE accounts_receivable SET status = $1, updated_at = CURRENT_TIMESTAMP WHERE id = ? AND business_id = $3',
       [status, id, businessId]
     );
 
     // Fetch updated record
     const updatedAccount = await dbGet(
-      'SELECT * FROM accounts_receivable WHERE id = ?',
+      'SELECT * FROM accounts_receivable WHERE id = $1',
       [id]
     );
 
