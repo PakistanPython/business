@@ -55,7 +55,7 @@ const determineAttendanceStatus = async (employeeId: number, businessId: number,
   // Get active attendance rule
   const rule = await dbGet(`
     SELECT * FROM attendance_rules 
-    WHERE business_id = AND is_active = 1
+    WHERE business_id = $1 AND is_active = 1
     ORDER BY created_at DESC LIMIT 1
   `, [businessId]);
   
@@ -85,7 +85,7 @@ const determineAttendanceStatus = async (employeeId: number, businessId: number,
 const calculateOvertime = async (businessId: number, totalHours: number, isWeekend: boolean, isHoliday: boolean): Promise<number> => {
   const rule = await dbGet(`
     SELECT * FROM attendance_rules 
-    WHERE business_id = AND is_active = 1
+    WHERE business_id = $1 AND is_active = 1
     ORDER BY created_at DESC LIMIT 1
   `, [businessId]);
   
@@ -286,9 +286,9 @@ router.post('/clock-in', async (req: Request, res: Response) => {
     }
 
     const today = new Date().toISOString().split('T')[0];
-    const currentTime = new Date().toTimeString().split(' ')[0];
-    const currentDate = new Date();
-    const dayOfWeek = currentDate.getDay();
+    const currentTimestamp = new Date();
+    const currentTime = currentTimestamp.toTimeString().split(' ')[0];
+    const dayOfWeek = currentTimestamp.getDay();
     const isWeekend = dayOfWeek === 0 || dayOfWeek === 6;
 
     // Check if already clocked in today
@@ -301,34 +301,18 @@ router.post('/clock-in', async (req: Request, res: Response) => {
       return res.status(400).json({ error: 'Already clocked in today' });
     }
 
-    // Get employee's current work schedule
+    // Get employee's current work schedule for the current day
     const workSchedule = await dbGet(`
-      SELECT * FROM employee_work_schedules 
-      WHERE employee_id = AND business_id = AND is_active = 1
-        AND effective_from <= AND (effective_to IS NULL OR effective_to >= $4)
-      ORDER BY effective_from DESC LIMIT 1
-    `, [actualEmployeeId, businessId, today, today]);
+      SELECT start_time, end_time FROM work_schedules 
+      WHERE employee_id = $1 AND day_of_week = $2
+    `, [actualEmployeeId, dayOfWeek]);
 
     let expectedStartTime = '09:00:00';
     let attendanceType = 'regular';
     let lateMinutes = 0;
 
     if (workSchedule) {
-      // Get expected start time based on day of week
-      const dayMap = {
-        0: { start: workSchedule.sunday_start, end: workSchedule.sunday_end },
-        1: { start: workSchedule.monday_start, end: workSchedule.monday_end },
-        2: { start: workSchedule.tuesday_start, end: workSchedule.tuesday_end },
-        3: { start: workSchedule.wednesday_start, end: workSchedule.wednesday_end },
-        4: { start: workSchedule.thursday_start, end: workSchedule.thursday_end },
-        5: { start: workSchedule.friday_start, end: workSchedule.friday_end },
-        6: { start: workSchedule.saturday_start, end: workSchedule.saturday_end }
-      };
-      
-      const daySchedule = dayMap[dayOfWeek as keyof typeof dayMap];
-      if (daySchedule.start) {
-        expectedStartTime = daySchedule.start;
-      }
+      expectedStartTime = workSchedule.start_time;
     }
 
     // Calculate late minutes
@@ -344,7 +328,7 @@ router.post('/clock-in', async (req: Request, res: Response) => {
       INSERT INTO attendance (
         employee_id, date, check_in_time, status
       ) VALUES ($1, $2, $3, 'present')
-    `, [actualEmployeeId, today, currentTime]);
+    `, [actualEmployeeId, today, currentTimestamp]);
 
     // Fetch the created record
     const newAttendance = await dbGet(`
@@ -390,9 +374,9 @@ router.post('/clock-out', async (req: Request, res: Response) => {
     }
 
     const today = new Date().toISOString().split('T')[0];
-    const currentTime = new Date().toTimeString().split(' ')[0];
-    const currentDate = new Date();
-    const dayOfWeek = currentDate.getDay();
+    const currentTimestamp = new Date();
+    const currentTime = currentTimestamp.toTimeString().split(' ')[0];
+    const dayOfWeek = currentTimestamp.getDay();
     const isWeekend = dayOfWeek === 0 || dayOfWeek === 6;
 
     // Check if clocked in today
@@ -411,33 +395,18 @@ router.post('/clock-out', async (req: Request, res: Response) => {
 
     // Get employee's work schedule for expected end time
     const workSchedule = await dbGet(`
-      SELECT * FROM employee_work_schedules 
-      WHERE employee_id = AND business_id = AND is_active = 1
-        AND effective_from <= AND (effective_to IS NULL OR effective_to >= $4)
-      ORDER BY effective_from DESC LIMIT 1
-    `, [actualEmployeeId, businessId, today, today]);
+      SELECT start_time, end_time FROM work_schedules 
+      WHERE employee_id = $1 AND day_of_week = $2
+    `, [actualEmployeeId, dayOfWeek]);
 
     let expectedEndTime = '17:00:00';
     if (workSchedule) {
-      const dayMap = {
-        0: { start: workSchedule.sunday_start, end: workSchedule.sunday_end },
-        1: { start: workSchedule.monday_start, end: workSchedule.monday_end },
-        2: { start: workSchedule.tuesday_start, end: workSchedule.tuesday_end },
-        3: { start: workSchedule.wednesday_start, end: workSchedule.wednesday_end },
-        4: { start: workSchedule.thursday_start, end: workSchedule.thursday_end },
-        5: { start: workSchedule.friday_start, end: workSchedule.friday_end },
-        6: { start: workSchedule.saturday_start, end: workSchedule.saturday_end }
-      };
-      
-      const daySchedule = dayMap[dayOfWeek as keyof typeof dayMap];
-      if (daySchedule.end) {
-        expectedEndTime = daySchedule.end;
-      }
+      expectedEndTime = workSchedule.end_time;
     }
 
     // Calculate working hours
     const totalHours = calculateWorkingHours(
-      attendance.clock_in_time,
+      new Date(attendance.check_in_time).toTimeString().split(' ')[0],
       currentTime,
       break_start_time,
       break_end_time
@@ -451,7 +420,7 @@ router.post('/clock-out', async (req: Request, res: Response) => {
 
     // Determine final status
     const finalStatus = await determineAttendanceStatus(
-      actualEmployeeId, businessId!, attendance.clock_in_time, currentTime, totalHours, attendance.late_minutes
+      actualEmployeeId, businessId!, new Date(attendance.check_in_time).toTimeString().split(' ')[0], currentTime, totalHours, attendance.late_minutes
     );
 
     // Update attendance record
@@ -460,7 +429,7 @@ router.post('/clock-out', async (req: Request, res: Response) => {
         check_out_time = $1,
         status = $2,
         updated_at = NOW()
-      WHERE id = $3`, [currentTime, finalStatus, attendance.id]);
+      WHERE id = $3`, [currentTimestamp, finalStatus, attendance.id]);
 
     // Fetch updated record
     const updatedAttendance = await dbGet(`
@@ -529,42 +498,31 @@ router.post('/', async (req: Request, res: Response) => {
     let earlyDepartureMinutes = 0;
     let finalStatus = status;
 
+    const checkInTimestamp = clock_in_time ? new Date(`${date}T${clock_in_time}`) : null;
+    const checkOutTimestamp = clock_out_time ? new Date(`${date}T${clock_out_time}`) : null;
+
     if (clock_in_time && clock_out_time) {
       totalHours = calculateWorkingHours(clock_in_time, clock_out_time, break_start_time, break_end_time);
       
       // Get employee's work schedule for calculating lateness
+      const inputDate = new Date(date);
+      const dayOfWeek = inputDate.getDay();
       const workSchedule = await dbGet(`
-        SELECT * FROM employee_work_schedules 
-        WHERE employee_id = AND business_id = AND is_active = 1
-          AND effective_from <= AND (effective_to IS NULL OR effective_to >= $4)
-        ORDER BY effective_from DESC LIMIT 1
-      `, [employee_id, businessId, date, date]);
+        SELECT start_time, end_time FROM work_schedules 
+        WHERE employee_id = $1 AND day_of_week = $2
+      `, [employee_id, dayOfWeek]);
 
       if (workSchedule) {
-        const inputDate = new Date(date);
-        const dayOfWeek = inputDate.getDay();
-        const dayMap = {
-          0: { start: workSchedule.sunday_start, end: workSchedule.sunday_end },
-          1: { start: workSchedule.monday_start, end: workSchedule.monday_end },
-          2: { start: workSchedule.tuesday_start, end: workSchedule.tuesday_end },
-          3: { start: workSchedule.wednesday_start, end: workSchedule.wednesday_end },
-          4: { start: workSchedule.thursday_start, end: workSchedule.thursday_end },
-          5: { start: workSchedule.friday_start, end: workSchedule.friday_end },
-          6: { start: workSchedule.saturday_start, end: workSchedule.saturday_end }
-        };
-        
-        const daySchedule = dayMap[dayOfWeek as keyof typeof dayMap];
-        if (daySchedule.start) {
-          lateMinutes = calculateLateMinutes(clock_in_time, daySchedule.start);
+        if (workSchedule.start_time) {
+          lateMinutes = calculateLateMinutes(clock_in_time, workSchedule.start_time);
         }
-        if (daySchedule.end) {
-          earlyDepartureMinutes = calculateEarlyDepartureMinutes(clock_out_time, daySchedule.end);
+        if (workSchedule.end_time) {
+          earlyDepartureMinutes = calculateEarlyDepartureMinutes(clock_out_time, workSchedule.end_time);
         }
       }
       
       // Calculate overtime
-      const inputDate = new Date(date);
-      const isWeekend = inputDate.getDay() === 0 || inputDate.getDay() === 6;
+      const isWeekend = dayOfWeek === 0 || dayOfWeek === 6;
       overtimeHours = await calculateOvertime(businessId!, totalHours, isWeekend, false);
       
       // Determine final status
@@ -579,7 +537,7 @@ router.post('/', async (req: Request, res: Response) => {
         employee_id, date, check_in_time, check_out_time, status
       ) VALUES ($1, $2, $3, $4, $5) RETURNING id
     `, [
-      employee_id, date, clock_in_time, clock_out_time, finalStatus
+      employee_id, date, checkInTimestamp, checkOutTimestamp, finalStatus
     ]);
 
     // Fetch the created record
@@ -628,16 +586,21 @@ router.put('/:id', async (req: Request, res: Response) => {
     }
 
     // Calculate working hours if both clock times are provided
-    let totalHours = existingAttendance.total_hours;
-    let overtimeHours = existingAttendance.overtime_hours;
+    let totalHours = 0;
+    let overtimeHours = 0;
 
-    const finalClockIn = clock_in_time || existingAttendance.clock_in_time;
-    const finalClockOut = clock_out_time || existingAttendance.clock_out_time;
+    const finalDate = date || new Date(existingAttendance.date).toISOString().split('T')[0];
 
-    if (finalClockIn && finalClockOut) {
+    const finalClockInTimestamp = clock_in_time ? new Date(`${finalDate}T${clock_in_time}`) : existingAttendance.check_in_time;
+    const finalClockOutTimestamp = clock_out_time ? new Date(`${finalDate}T${clock_out_time}`) : existingAttendance.check_out_time;
+
+    const clockInForCalc = clock_in_time || (existingAttendance.check_in_time ? new Date(existingAttendance.check_in_time).toTimeString().split(' ')[0] : null);
+    const clockOutForCalc = clock_out_time || (existingAttendance.check_out_time ? new Date(existingAttendance.check_out_time).toTimeString().split(' ')[0] : null);
+
+    if (clockInForCalc && clockOutForCalc) {
       totalHours = calculateWorkingHours(
-        finalClockIn,
-        finalClockOut,
+        clockInForCalc,
+        clockOutForCalc,
         break_start_time || existingAttendance.break_start_time,
         break_end_time || existingAttendance.break_end_time
       );
@@ -651,9 +614,9 @@ router.put('/:id', async (req: Request, res: Response) => {
       UPDATE attendance SET
         date = $1, check_in_time = $2, check_out_time = $3, status = $4, updated_at = NOW()
       WHERE id = $5`, [
-      date || existingAttendance.date,
-      finalClockIn,
-      finalClockOut,
+      finalDate,
+      finalClockInTimestamp,
+      finalClockOutTimestamp,
       status || existingAttendance.status,
       id
     ]);
@@ -724,8 +687,8 @@ router.get('/stats/monthly', async (req: Request, res: Response) => {
         COUNT(CASE WHEN a.status = 'absent' THEN 1 END) as absent_days,
         COUNT(CASE WHEN a.status = 'half_day' THEN 1 END) as half_days,
         COUNT(CASE WHEN a.status = 'late' THEN 1 END) as late_days,
-        ROUND(SUM(a.total_hours), 2) as total_hours,
-        ROUND(SUM(a.overtime_hours), 2) as total_overtime_hours
+        ROUND(SUM(EXTRACT(EPOCH FROM (a.check_out_time - a.check_in_time)) / 3600), 2) as total_hours,
+        ROUND(SUM(GREATEST(0, (EXTRACT(EPOCH FROM (a.check_out_time - a.check_in_time)) / 3600) - 8)), 2) as total_overtime_hours
       FROM employees e
       LEFT JOIN attendance a ON e.id = a.employee_id 
         AND to_char(a.date, 'MM') = $1 AND to_char(a.date, 'YYYY') = $2
@@ -779,10 +742,11 @@ router.get('/stats/summary', async (req: Request, res: Response) => {
         COUNT(CASE WHEN a.status = 'present' THEN 1 END) as present_count,
         COUNT(CASE WHEN a.status = 'absent' THEN 1 END) as absent_count,
         COUNT(CASE WHEN a.status = 'late' THEN 1 END) as late_count,
-        ROUND(AVG(a.total_hours), 2) as avg_working_hours,
-        ROUND(SUM(a.overtime_hours), 2) as total_overtime_hours
+        ROUND(AVG(EXTRACT(EPOCH FROM (a.check_out_time - a.check_in_time)) / 3600), 2) as avg_working_hours,
+        ROUND(SUM(GREATEST(0, (EXTRACT(EPOCH FROM (a.check_out_time - a.check_in_time)) / 3600) - 8)), 2) as total_overtime_hours
       FROM attendance a
-      WHERE a.date BETWEEN $2 AND $3`;
+      JOIN employees e ON a.employee_id = e.id
+      WHERE e.business_id = $1 AND a.date BETWEEN $2 AND $3`;
     
     const params: any[] = [businessId, defaultFrom, defaultTo];
     let summaryParamIndex = 4;

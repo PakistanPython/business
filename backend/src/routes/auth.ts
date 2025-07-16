@@ -295,7 +295,7 @@ router.post('/employee/login', [
 
     // Find employee by email
     const employee = await dbGet(
-      'SELECT * FROM employees WHERE email = $1 AND status = "active"',
+      'SELECT * FROM employees WHERE email = $1 AND status = \'active\'',
       [email]
     );
 
