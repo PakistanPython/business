@@ -37,7 +37,8 @@ export const IncomePage: React.FC = () => {
     description: '',
     category: '',
     source: '',
-    date: new Date().toISOString().split('T')[0]
+    date: new Date().toISOString().split('T')[0],
+    charity_percentage: 0,
   });
 
   useEffect(() => {
@@ -96,7 +97,8 @@ export const IncomePage: React.FC = () => {
       description: income.description || '',
       category: income.category,
       source: income.source || '',
-      date: income.date.split('T')[0]
+      date: income.date.split('T')[0],
+      charity_percentage: income.charity_percentage || 0,
     });
     setIsDialogOpen(true);
   };
@@ -120,7 +122,8 @@ export const IncomePage: React.FC = () => {
       description: '',
       category: '',
       source: '',
-      date: new Date().toISOString().split('T')[0]
+      date: new Date().toISOString().split('T')[0],
+      charity_percentage: 0,
     });
     setEditingIncome(null);
   };
@@ -221,6 +224,7 @@ export const IncomePage: React.FC = () => {
                 </Select>
               </div>
 
+
               <div>
                 <Label htmlFor="source">Source</Label>
                 <Input
@@ -239,6 +243,16 @@ export const IncomePage: React.FC = () => {
                   onChange={(e) => setFormData(prev => ({ ...prev, description: e.target.value }))}
                   placeholder="Optional description..."
                   rows={3}
+                />
+              </div>
+              <div>
+                <Label htmlFor="charity_percentage">Charity Percentage</Label>
+                <Input
+                  id="charity_percentage"
+                  type="number"
+                  step="0.01"
+                  value={formData.charity_percentage}
+                  onChange={(e) => setFormData(prev => ({ ...prev, charity_percentage: parseFloat(e.target.value) || 0 }))}
                 />
               </div>
 
@@ -364,13 +378,15 @@ export const IncomePage: React.FC = () => {
                   <TableHead>Category</TableHead>
                   <TableHead>Source</TableHead>
                   <TableHead>Description</TableHead>
+                  <TableHead>Charity %</TableHead>
+                  <TableHead>Charity Amount</TableHead>
                   <TableHead>Actions</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {filteredIncome.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={6} className="text-center py-8">
+                    <TableCell colSpan={7} className="text-center py-8">
                       <div className="flex flex-col items-center">
                         <TrendingUp className="h-12 w-12 text-gray-400 mb-2" />
                         <p className="text-gray-500">No income entries found</p>
@@ -397,6 +413,12 @@ export const IncomePage: React.FC = () => {
                       </TableCell>
                       <TableCell>
                         {item.description || '-'}
+                      </TableCell>
+                      <TableCell>
+                        {item.charity_percentage ? `${item.charity_percentage}%` : '-'}
+                      </TableCell>
+                      <TableCell>
+                        {formatCurrency(item.amount * (item.charity_percentage || 0) / 100)}
                       </TableCell>
                       <TableCell>
                         <div className="flex space-x-2">

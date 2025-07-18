@@ -28,7 +28,7 @@ export interface Income {
   category_id: number;
   source?: string;
   date: string;
-  charity_required: number;
+  charity_percentage?: number;
   created_at: string;
   updated_at: string;
 }
@@ -311,6 +311,7 @@ export interface IncomeForm {
   category: string;
   source?: string;
   date: string;
+  charity_percentage?: number;
 }
 
 export interface ExpenseForm {

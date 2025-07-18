@@ -15,7 +15,7 @@ router.get('/', [
   query('category').optional().trim(),
   query('start_date').optional().isISO8601().withMessage('Start date must be valid ISO date'),
   query('end_date').optional().isISO8601().withMessage('End date must be valid ISO date'),
-  query('sort_by').optional().isIn(['date', 'amount', 'created_at']).withMessage('Invalid sort field'),
+  query('sort_by').optional().isIn(['date', 'amount', 'created_at', 'source']).withMessage('Invalid sort field'),
   query('sort_order').optional().isIn(['asc', 'desc']).withMessage('Sort order must be asc or desc')
 ], async (req, res) => {
   try {
@@ -68,7 +68,7 @@ router.get('/', [
     // Get income records
     const incomeRecords = await dbAll(
       `SELECT 
-        i.id, i.amount, i.description, c.name as category, i.date, 
+        i.id, i.amount, i.description, c.name as category, i.date, i.source, i.charity_percentage,
         i.created_at, i.updated_at
        FROM income i
        JOIN categories c ON i.category_id = c.id
@@ -121,7 +121,7 @@ router.get('/:id', async (req, res) => {
 
     const incomeRecord = await dbGet(
       `SELECT 
-        i.id, i.amount, i.description, c.name as category, i.date, 
+        i.id, i.amount, i.description, c.name as category, i.date, i.source, i.charity_percentage,
         i.created_at, i.updated_at
        FROM income i
        JOIN categories c ON i.category_id = c.id
@@ -164,7 +164,11 @@ router.post('/', [
     .withMessage('Category is required'),
   body('date')
     .isISO8601()
-    .withMessage('Date must be valid ISO date')
+    .withMessage('Date must be valid ISO date'),
+  body('charity_percentage')
+    .optional()
+    .isFloat({ min: 0, max: 100 })
+    .withMessage('Charity percentage must be between 0 and 100')
 ], async (req, res) => {
   try {
     const errors = validationResult(req);
@@ -177,7 +181,7 @@ router.post('/', [
     }
 
     const userId = req.user!.userId;
-    const { amount, description, category, date } = req.body;
+    const { amount, description, category, date, charity_percentage, source } = req.body;
 
     try {
       await dbRun('BEGIN');
@@ -195,17 +199,11 @@ router.post('/', [
       }
 
       const incomeResult = await dbRun(
-        'INSERT INTO income (business_id, amount, description, category_id, date) VALUES ($1, $2, $3, $4, $5) RETURNING id',
-        [userId, amount, description, categoryRecord.id, date]
+        'INSERT INTO income (business_id, amount, description, category_id, date, charity_percentage, source) VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING id',
+        [userId, amount, description, categoryRecord.id, date, charity_percentage || 0, source]
       );
 
       const incomeId = incomeResult.lastID;
-
-      const charityAmount = amount * 0.025;
-      await dbRun(
-        'INSERT INTO charity (business_id, amount, date) VALUES ($1, $2, $3)',
-        [userId, charityAmount, date]
-      );
 
       await dbRun('COMMIT');
 
@@ -247,7 +245,11 @@ router.put('/:id', [
   body('date')
     .optional()
     .isISO8601()
-    .withMessage('Date must be valid ISO date')
+    .withMessage('Date must be valid ISO date'),
+  body('charity_percentage')
+    .optional()
+    .isFloat({ min: 0, max: 100 })
+    .withMessage('Charity percentage must be between 0 and 100')
 ], async (req, res) => {
   try {
     const errors = validationResult(req);
@@ -281,7 +283,7 @@ router.put('/:id', [
       });
     }
 
-    const { amount, description, category, date } = req.body;
+    const { amount, description, category, date, charity_percentage, source } = req.body;
 
     let categoryId = existingRecord.category_id;
     if (category) {
@@ -317,6 +319,14 @@ router.put('/:id', [
     if (date !== undefined) {
       updates.push(`date = $${paramIndex++}`);
       values.push(date);
+    }
+    if (charity_percentage !== undefined) {
+      updates.push(`charity_percentage = $${paramIndex++}`);
+      values.push(charity_percentage);
+    }
+    if (source !== undefined) {
+      updates.push(`source = $${paramIndex++}`);
+      values.push(source);
     }
 
     if (updates.length === 0) {
@@ -378,11 +388,6 @@ router.delete('/:id', async (req, res) => {
     }
 
     await dbRun('BEGIN');
-
-    await dbRun(
-      'DELETE FROM charity WHERE amount = $1 AND business_id = $2',
-      [existingRecord.amount * 0.025, userId]
-    );
 
     const result = await dbRun(
       'DELETE FROM income WHERE id = $1 AND business_id = $2',

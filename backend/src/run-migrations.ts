@@ -15,10 +15,16 @@ import { up as createPayrollTable } from './migrations/013_create_payroll_table'
 import { up as createPurchasesTable } from './migrations/014_create_purchases_table';
 import { up as createSalesTable } from './migrations/015_create_sales_table';
 import { up as createWorkSchedulesTable } from './migrations/016_create_work_schedules_table';
-import { pool } from './config/database';
+import { up as addCharityPercentageToIncome } from './migrations/017_add_charity_percentage_to_income';
+import { up as addSourceToIncome } from './migrations/018_add_source_to_income';
+import { pool, testConnection } from './config/database';
+import dotenv from 'dotenv';
+
+dotenv.config();
 
 const runMigrations = async () => {
   try {
+    await testConnection();
     console.log('Running migrations...');
     await createUsersTable();
     await createEmployeesTable();
@@ -37,6 +43,8 @@ const runMigrations = async () => {
     await createPurchasesTable();
     await createSalesTable();
     await createWorkSchedulesTable();
+    await addCharityPercentageToIncome();
+    await addSourceToIncome();
     console.log('Migrations completed successfully.');
   } catch (error) {
     console.error('Error running migrations:', error);

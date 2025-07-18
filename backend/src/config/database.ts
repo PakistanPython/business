@@ -1,5 +1,8 @@
 import { Pool } from 'pg';
 import dotenv from 'dotenv';
+import path from 'path';
+
+dotenv.config({ path: path.resolve(__dirname, '../../.env') });
 
 // Create PostgreSQL connection pool for Supabase
 export const pool = new Pool({
@@ -13,6 +16,7 @@ export const pool = new Pool({
 // Test the connection
 export const testConnection = async () => {
   try {
+    console.log('Attempting to connect with connection string:', process.env.DATABASE_URL || process.env.POSTGRES_URL);
     const client = await pool.connect();
     await client.query('SELECT 1');
     client.release();
