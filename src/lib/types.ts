@@ -96,6 +96,14 @@ export interface Charity {
   income_date?: string;
 }
 
+export interface CharityPaymentForm {
+  charity_id: number;
+  payment_amount: number;
+  payment_date: string;
+  recipient?: string;
+  description?: string;
+}
+
 export interface Account {
   id: number;
   account_type: 'cash' | 'bank' | 'savings' | 'investment';
@@ -343,13 +351,6 @@ export interface SaleForm {
   notes?: string;
 }
 
-export interface CharityPaymentForm {
-  charity_id: number;
-  payment_amount: number;
-  payment_date: string;
-  recipient?: string;
-  description?: string;
-}
 
 export interface AccountForm {
   account_type: 'cash' | 'bank' | 'savings' | 'investment';

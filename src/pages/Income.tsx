@@ -23,8 +23,10 @@ import {
 import { incomeApi, categoryApi } from '../lib/api';
 import { Income, IncomeForm, Category } from '../lib/types';
 import toast from 'react-hot-toast';
+import { useAppStore } from '../lib/store';
 
 export const IncomePage: React.FC = () => {
+  const { triggerCharityRefresh } = useAppStore();
   const [income, setIncome] = useState<Income[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -84,6 +86,7 @@ export const IncomePage: React.FC = () => {
       setEditingIncome(null);
       resetForm();
       loadData();
+      triggerCharityRefresh();
     } catch (error: any) {
       console.error('Error saving income:', error);
       toast.error(error.response?.data?.message || 'Failed to save income');
@@ -110,6 +113,7 @@ export const IncomePage: React.FC = () => {
       await incomeApi.delete(id);
       toast.success('Income deleted successfully');
       loadData();
+      triggerCharityRefresh();
     } catch (error: any) {
       console.error('Error deleting income:', error);
       toast.error(error.response?.data?.message || 'Failed to delete income');

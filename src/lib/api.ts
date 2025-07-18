@@ -1,4 +1,5 @@
 import axios from 'axios';
+import { LoginForm, RegisterForm, IncomeForm, ExpenseForm, PurchaseForm, SaleForm, AccountForm, LoanForm, CategoryForm, AccountsReceivableForm, PaymentForm, CharityPaymentForm } from './types';
 
 // Create axios instance with base configuration
 export const api = axios.create({
@@ -37,9 +38,9 @@ api.interceptors.response.use(
 
 // API endpoints
 export const authApi = {
-  register: (data: any) => api.post('/auth/register', data),
-  login: (data: any) => api.post('/auth/login', data),
-  loginEmployee: (data: any) => api.post('/auth/employee/login', data),
+  register: (data: RegisterForm) => api.post('/auth/register', data),
+  login: (data: LoginForm) => api.post('/auth/login', data),
+  loginEmployee: (data: LoginForm) => api.post('/auth/employee/login', data),
   getProfile: () => api.get('/auth/profile'),
   updateProfile: (data: any) => api.put('/auth/profile', data),
 };
@@ -53,8 +54,8 @@ export const dashboardApi = {
 export const incomeApi = {
   getAll: (params?: any) => api.get('/income', { params }),
   getById: (id: number) => api.get(`/income/${id}`),
-  create: (data: any) => api.post('/income', data),
-  update: (id: number, data: any) => api.put(`/income/${id}`, data),
+  create: (data: IncomeForm) => api.post('/income', data),
+  update: (id: number, data: IncomeForm) => api.put(`/income/${id}`, data),
   delete: (id: number) => api.delete(`/income/${id}`),
   getStats: () => api.get('/income/stats/summary'),
 };
@@ -62,8 +63,8 @@ export const incomeApi = {
 export const expenseApi = {
   getAll: (params?: any) => api.get('/expenses', { params }),
   getById: (id: number) => api.get(`/expenses/${id}`),
-  create: (data: any) => api.post('/expenses', data),
-  update: (id: number, data: any) => api.put(`/expenses/${id}`, data),
+  create: (data: ExpenseForm) => api.post('/expenses', data),
+  update: (id: number, data: ExpenseForm) => api.put(`/expenses/${id}`, data),
   delete: (id: number) => api.delete(`/expenses/${id}`),
   getStats: () => api.get('/expenses/stats/summary'),
 };
@@ -71,8 +72,8 @@ export const expenseApi = {
 export const purchaseApi = {
   getAll: (params?: any) => api.get('/purchases', { params }),
   getById: (id: number) => api.get(`/purchases/${id}`),
-  create: (data: any) => api.post('/purchases', data),
-  update: (id: number, data: any) => api.put(`/purchases/${id}`, data),
+  create: (data: PurchaseForm) => api.post('/purchases', data),
+  update: (id: number, data: PurchaseForm) => api.put(`/purchases/${id}`, data),
   delete: (id: number) => api.delete(`/purchases/${id}`),
   getStats: () => api.get('/purchases/stats/summary'),
 };
@@ -80,8 +81,8 @@ export const purchaseApi = {
 export const saleApi = {
   getAll: (params?: any) => api.get('/sales', { params }),
   getById: (id: number) => api.get(`/sales/${id}`),
-  create: (data: any) => api.post('/sales', data),
-  update: (id: number, data: any) => api.put(`/sales/${id}`, data),
+  create: (data: SaleForm) => api.post('/sales', data),
+  update: (id: number, data: SaleForm) => api.put(`/sales/${id}`, data),
   delete: (id: number) => api.delete(`/sales/${id}`),
   getSummary: () => api.get('/sales/summary'),
   getAvailablePurchases: () => api.get('/sales/available/purchases'),
@@ -89,19 +90,15 @@ export const saleApi = {
 
 export const charityApi = {
   getAll: (params?: any) => api.get('/charity', { params }),
-  getById: (id: number) => api.get(`/charity/${id}`),
-  create: (data: any) => api.post('/charity', data),
-  update: (id: number, data: any) => api.put(`/charity/${id}`, data),
-  delete: (id: number) => api.delete(`/charity/${id}`),
-  recordPayment: (data: any) => api.post('/charity/payment', data),
+  recordPayment: (data: CharityPaymentForm) => api.post('/charity/payment', data),
   getStats: () => api.get('/charity/stats/summary'),
 };
 
 export const accountApi = {
   getAll: () => api.get('/accounts'),
   getById: (id: number) => api.get(`/accounts/${id}`),
-  create: (data: any) => api.post('/accounts', data),
-  update: (id: number, data: any) => api.put(`/accounts/${id}`, data),
+  create: (data: AccountForm) => api.post('/accounts', data),
+  update: (id: number, data: AccountForm) => api.put(`/accounts/${id}`, data),
   delete: (id: number) => api.delete(`/accounts/${id}`),
   transfer: (data: any) => api.post('/accounts/transfer', data),
   getStats: () => api.get('/accounts/stats'),
@@ -110,10 +107,10 @@ export const accountApi = {
 export const loanApi = {
   getAll: (params?: any) => api.get('/loans', { params }),
   getById: (id: number) => api.get(`/loans/${id}`),
-  create: (data: any) => api.post('/loans', data),
-  update: (id: number, data: any) => api.put(`/loans/${id}`, data),
+  create: (data: LoanForm) => api.post('/loans', data),
+  update: (id: number, data: LoanForm) => api.put(`/loans/${id}`, data),
   delete: (id: number) => api.delete(`/loans/${id}`),
-  recordPayment: (id: number, data: any) => api.post(`/loans/${id}/payment`, data),
+  recordPayment: (id: number, data: PaymentForm) => api.post(`/loans/${id}/payment`, data),
   getStats: () => api.get('/loans/stats/summary'),
 };
 
@@ -197,8 +194,8 @@ export const attendanceRuleApi = {
 export const categoryApi = {
   getAll: (params?: any) => api.get('/categories', { params }),
   getById: (id: number) => api.get(`/categories/${id}`),
-  create: (data: any) => api.post('/categories', data),
-  update: (id: number, data: any) => api.put(`/categories/${id}`, data),
+  create: (data: CategoryForm) => api.post('/categories', data),
+  update: (id: number, data: CategoryForm) => api.put(`/categories/${id}`, data),
   delete: (id: number) => api.delete(`/categories/${id}`),
   getStats: (id: number) => api.get(`/categories/${id}/stats`),
   getUsageSummary: () => api.get('/categories/usage/summary'),
@@ -207,10 +204,10 @@ export const categoryApi = {
 export const accountsReceivableApi = {
   getAll: (params?: any) => api.get('/accounts-receivable', { params }),
   getById: (id: number) => api.get(`/accounts-receivable/${id}`),
-  create: (data: any) => api.post('/accounts-receivable', data),
-  update: (id: number, data: any) => api.put(`/accounts-receivable/${id}`, data),
+  create: (data: AccountsReceivableForm) => api.post('/accounts-receivable', data),
+  update: (id: number, data: AccountsReceivableForm) => api.put(`/accounts-receivable/${id}`, data),
   delete: (id: number) => api.delete(`/accounts-receivable/${id}`),
-  recordPayment: (id: number, data: any) => api.post(`/accounts-receivable/${id}/payment`, data),
+  recordPayment: (id: number, data: PaymentForm) => api.post(`/accounts-receivable/${id}/payment`, data),
   updateStatus: (id: number, data: any) => api.put(`/accounts-receivable/${id}/status`, data),
   getStats: () => api.get('/accounts-receivable/stats/summary'),
   getCustomerStats: () => api.get('/accounts-receivable/stats/customers'),

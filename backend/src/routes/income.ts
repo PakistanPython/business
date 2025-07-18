@@ -205,6 +205,14 @@ router.post('/', [
 
       const incomeId = incomeResult.lastID;
 
+      if (charity_percentage && charity_percentage > 0) {
+        const charityAmount = amount * (charity_percentage / 100);
+        await dbRun(
+          'INSERT INTO charity (business_id, income_id, amount_required, description) VALUES ($1, $2, $3, $4)',
+          [userId, incomeId, charityAmount, `Charity for income: ${description}`]
+        );
+      }
+
       await dbRun('COMMIT');
 
       const newIncome = await dbGet('SELECT * FROM income WHERE id = $1', [incomeId]);

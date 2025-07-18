@@ -20,8 +20,10 @@ import {
 import { charityApi } from '../lib/api';
 import { Charity, CharityPaymentForm } from '../lib/types';
 import toast from 'react-hot-toast';
+import { useAppStore } from '../lib/store';
 
 export const CharityPage: React.FC = () => {
+  const { charityDataNeedsRefresh, resetCharityRefresh } = useAppStore();
   const [charities, setCharities] = useState<Charity[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isPaymentDialogOpen, setIsPaymentDialogOpen] = useState(false);
@@ -39,6 +41,13 @@ export const CharityPage: React.FC = () => {
   useEffect(() => {
     loadCharities();
   }, []);
+
+  useEffect(() => {
+    if (charityDataNeedsRefresh) {
+      loadCharities();
+      resetCharityRefresh();
+    }
+  }, [charityDataNeedsRefresh]);
 
   const loadCharities = async () => {
     try {
@@ -131,7 +140,6 @@ export const CharityPage: React.FC = () => {
     return matchesSearch && matchesStatus;
   });
 
-  // --- FIX 1: Convert to number during calculation ---
   const totalRequired = charities.reduce((sum, charity) => sum + Number(charity.amount_required), 0);
   const totalPaid = charities.reduce((sum, charity) => sum + Number(charity.amount_paid), 0);
   const totalRemaining = charities.reduce((sum, charity) => sum + Number(charity.amount_remaining), 0);
@@ -162,7 +170,6 @@ export const CharityPage: React.FC = () => {
             <Heart className="h-4 w-4 text-green-600" />
           </CardHeader>
           <CardContent>
-            {/* The variables are now numbers, so .toFixed() is safe */}
             <div className="text-2xl font-bold text-green-900">${totalRequired.toFixed(2)}</div>
             <p className="text-xs text-green-600 mt-1">Total charity obligations</p>
           </CardContent>
@@ -264,7 +271,6 @@ export const CharityPage: React.FC = () => {
                           <div className="text-sm text-gray-500">{charity.recipient || 'N/A'}</div>
                         </div>
                       </TableCell>
-                      {/* --- FIX 2: Convert to number before .toFixed() --- */}
                       <TableCell className="font-medium">${Number(charity.amount_required).toFixed(2)}</TableCell>
                       <TableCell className="text-green-600">${Number(charity.amount_paid).toFixed(2)}</TableCell>
                       <TableCell className="text-red-600">${Number(charity.amount_remaining).toFixed(2)}</TableCell>
@@ -326,7 +332,6 @@ export const CharityPage: React.FC = () => {
                   type="number"
                   step="0.01"
                   min="0.01"
-                  // --- FIX 3: Convert to number for max property ---
                   max={Number(selectedCharity?.amount_remaining) || 0}
                   value={paymentForm.payment_amount}
                   onChange={(e) => setPaymentForm({
@@ -338,7 +343,6 @@ export const CharityPage: React.FC = () => {
                 />
                 {selectedCharity && (
                   <p className="text-sm text-gray-500">
-                    {/* --- FIX 4: Convert to number before .toFixed() --- */}
                     Remaining: ${Number(selectedCharity.amount_remaining).toFixed(2)}
                   </p>
                 )}
