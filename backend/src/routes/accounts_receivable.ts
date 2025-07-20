@@ -25,8 +25,7 @@ router.get('/', async (req: Request, res: Response) => {
     let query = `
       SELECT 
         ar.*,
-        CASE WHEN ar.received = true THEN ar.amount ELSE 0 END as paid_amount,
-        CASE WHEN ar.received = true THEN 0 ELSE ar.amount END as balance_amount
+        ar.amount - ar.paid_amount as balance_amount
       FROM accounts_receivable ar
       WHERE ar.business_id = $1`;
     const params: any[] = [businessId];
@@ -253,6 +252,49 @@ router.delete('/:id', async (req: Request, res: Response) => {
   }
 });
 
+// POST /api/accounts-receivable/:id/payment - Record a payment for an accounts receivable
+router.post('/:id/payment', async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+    const businessId = req.user!.userId;
+    const { amount, payment_date, payment_method, notes } = req.body;
+
+    // Check if account exists and belongs to this business
+    const existingAccount = await dbGet(
+      'SELECT * FROM accounts_receivable WHERE id = $1 AND business_id = $2',
+      [id, businessId]
+    );
+
+    if (!existingAccount) {
+      return res.status(404).json({ error: 'Account receivable not found' });
+    }
+
+    const newPaidAmount = Number(existingAccount.paid_amount) + Number(amount);
+    const newStatus = newPaidAmount >= existingAccount.amount ? 'paid' : 'partial';
+
+    // Update account receivable
+    await dbRun(`
+      UPDATE accounts_receivable SET
+        paid_amount = $1,
+        status = $2,
+        updated_at = NOW()
+      WHERE id = $3 AND business_id = $4`,
+      [newPaidAmount, newStatus, id, businessId]
+    );
+
+    // Fetch updated record
+    const updatedAccount = await dbGet(
+      'SELECT * FROM accounts_receivable WHERE id = $1',
+      [id]
+    );
+
+    res.json(updatedAccount);
+  } catch (error) {
+    console.error('Error recording payment:', error);
+    res.status(500).json({ error: 'Failed to record payment' });
+  }
+});
+
 // GET /api/accounts-receivable/stats/summary - Get accounts receivable summary statistics
 router.get('/stats/summary', async (req: Request, res: Response) => {
   try {
@@ -261,14 +303,14 @@ router.get('/stats/summary', async (req: Request, res: Response) => {
     const summary = await dbGet(`
       SELECT
         COUNT(*) as total_invoices,
-        SUM(amount) as total_amount,
-        SUM(CASE WHEN received = true THEN amount ELSE 0 END) as total_paid,
-        SUM(CASE WHEN received = false THEN amount ELSE 0 END) as total_outstanding,
+        SUM(amount) as total_outstanding, -- Changed to total_amount
+        SUM(paid_amount) as total_paid,
+        SUM(amount - paid_amount) as pending_amount, -- Changed to total_outstanding - total_paid
         AVG(amount) as average_invoice_amount,
-        COUNT(CASE WHEN due_date < NOW() AND received = false THEN 1 END) as overdue_invoices,
-        SUM(CASE WHEN due_date < NOW() AND received = false THEN amount ELSE 0 END) as overdue_amount,
-        COUNT(CASE WHEN received = true THEN 1 END) as paid_invoices,
-        COUNT(CASE WHEN received = false THEN 1 END) as pending_invoices
+        COUNT(CASE WHEN due_date < NOW() AND status != 'paid' THEN 1 END) as overdue_invoices,
+        SUM(CASE WHEN due_date < NOW() AND status != 'paid' THEN amount - paid_amount ELSE 0 END) as overdue_amount,
+        COUNT(CASE WHEN status = 'paid' THEN 1 END) as paid_invoices,
+        COUNT(CASE WHEN status = 'pending' THEN 1 END) as pending_invoices
       FROM accounts_receivable
       WHERE business_id = $1
     `, [businessId]);

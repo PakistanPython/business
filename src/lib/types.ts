@@ -448,6 +448,7 @@ export interface AccountsReceivableStats {
   total_paid: number;
   total_outstanding: number;
   overdue_amount: number;
+  pending_amount: number;
   aging: {
     current_0_30: number;
     days_31_60: number;
