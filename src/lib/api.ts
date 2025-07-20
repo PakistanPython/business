@@ -90,6 +90,7 @@ export const saleApi = {
 
 export const charityApi = {
   getAll: (params?: any) => api.get('/charity', { params }),
+  getSummary: () => api.get('/charity/summary'),
   recordPayment: (data: CharityPaymentForm) => api.post('/charity/payment', data),
   getStats: () => api.get('/charity/stats/summary'),
 };

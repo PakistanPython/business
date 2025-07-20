@@ -61,7 +61,16 @@ router.get('/', [
     // Get charity records
     const charityRecords = await dbAll(
       `SELECT 
-        id, amount_required, amount_paid, status, description, recipient, created_at, updated_at
+        id, 
+        amount_required, 
+        COALESCE(amount_paid, 0) as amount_paid, 
+        status, 
+        description, 
+        recipient, 
+        created_at, 
+        updated_at,
+        (amount_required - COALESCE(amount_paid, 0)) as amount_remaining,
+        (COALESCE(amount_paid, 0) * 100 / amount_required) as progress
        FROM charity 
        ${whereClause} 
        ORDER BY ${sortBy} ${sortOrder.toUpperCase()}
@@ -94,7 +103,37 @@ router.get('/', [
       success: false,
       message: 'Internal server error'
     });
-  }
+    }
+});
+
+// Get charity summary
+router.get('/summary', async (req, res) => {
+    try {
+        const userId = req.user!.userId;
+
+        const summary = await dbGet(
+            `SELECT 
+                SUM(amount_required) as total_required,
+                SUM(COALESCE(amount_paid, 0)) as total_paid,
+                SUM(amount_required - COALESCE(amount_paid, 0)) as total_remaining
+             FROM charity
+             WHERE business_id = $1`,
+            [userId]
+        );
+
+        res.json({
+            success: true,
+            data: {
+                summary
+            }
+        });
+    } catch (error) {
+        console.error('Get charity summary error:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Internal server error'
+        });
+    }
 });
 
 // Record a payment for a charity

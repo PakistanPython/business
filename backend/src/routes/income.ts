@@ -346,21 +346,55 @@ router.put('/:id', [
 
     values.push(incomeId);
 
-    await dbRun(
-      `UPDATE income SET ${updates.join(', ')}, updated_at = NOW() WHERE id = $${paramIndex++}`,
-      values
-    );
+    await dbRun('BEGIN');
 
-    const updatedRecord = await dbGet(
-      'SELECT * FROM income WHERE id = $1',
-      [incomeId]
-    );
+    try {
+      await dbRun(
+        `UPDATE income SET ${updates.join(', ')}, updated_at = NOW() WHERE id = $${paramIndex++}`,
+        values
+      );
 
-    res.json({
-      success: true,
-      message: 'Income record updated successfully',
-      data: { income: updatedRecord }
-    });
+      const updatedRecord = await dbGet(
+        'SELECT * FROM income WHERE id = $1',
+        [incomeId]
+      );
+
+      if (updatedRecord && (amount !== undefined || charity_percentage !== undefined)) {
+        const charityAmount = updatedRecord.amount * (updatedRecord.charity_percentage / 100);
+        
+        const existingCharity = await dbGet(
+          'SELECT id FROM charity WHERE income_id = $1',
+          [incomeId]
+        );
+
+        if (charityAmount > 0) {
+          if (existingCharity) {
+            await dbRun(
+              'UPDATE charity SET amount_required = $1, description = $2 WHERE income_id = $3',
+              [charityAmount, `Charity for income: ${updatedRecord.description}`, incomeId]
+            );
+          } else {
+            await dbRun(
+              'INSERT INTO charity (business_id, income_id, amount_required, description) VALUES ($1, $2, $3, $4)',
+              [userId, incomeId, charityAmount, `Charity for income: ${updatedRecord.description}`]
+            );
+          }
+        } else if (existingCharity) {
+          await dbRun('DELETE FROM charity WHERE id = $1', [existingCharity.id]);
+        }
+      }
+
+      await dbRun('COMMIT');
+
+      res.json({
+        success: true,
+        message: 'Income record updated successfully',
+        data: { income: updatedRecord }
+      });
+    } catch (error) {
+      await dbRun('ROLLBACK');
+      throw error;
+    }
   } catch (error) {
     console.error('Update income error:', error);
     res.status(500).json({
@@ -397,20 +431,27 @@ router.delete('/:id', async (req, res) => {
 
     await dbRun('BEGIN');
 
-    const result = await dbRun(
-      'DELETE FROM income WHERE id = $1 AND business_id = $2',
-      [incomeId, userId]
-    );
+    try {
+      await dbRun('DELETE FROM charity WHERE income_id = $1 AND business_id = $2', [incomeId, userId]);
 
-    if (result.changes === 0) {
+      const result = await dbRun(
+        'DELETE FROM income WHERE id = $1 AND business_id = $2',
+        [incomeId, userId]
+      );
+
+      if (result.changes === 0) {
+        await dbRun('ROLLBACK');
+        return res.status(404).json({
+          success: false,
+          message: 'Income record not found or already deleted'
+        });
+      }
+
+      await dbRun('COMMIT');
+    } catch (error) {
       await dbRun('ROLLBACK');
-      return res.status(404).json({
-        success: false,
-        message: 'Income record not found or already deleted'
-      });
+      throw error;
     }
-
-    await dbRun('COMMIT');
 
     res.json({
       success: true,

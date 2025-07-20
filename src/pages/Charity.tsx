@@ -25,6 +25,7 @@ import { useAppStore } from '../lib/store';
 export const CharityPage: React.FC = () => {
   const { charityDataNeedsRefresh, resetCharityRefresh } = useAppStore();
   const [charities, setCharities] = useState<Charity[]>([]);
+  const [summary, setSummary] = useState({ total_required: 0, total_paid: 0, total_remaining: 0 });
   const [isLoading, setIsLoading] = useState(true);
   const [isPaymentDialogOpen, setIsPaymentDialogOpen] = useState(false);
   const [selectedCharity, setSelectedCharity] = useState<Charity | null>(null);
@@ -39,23 +40,27 @@ export const CharityPage: React.FC = () => {
   });
 
   useEffect(() => {
-    loadCharities();
+    loadCharityData();
   }, []);
 
   useEffect(() => {
     if (charityDataNeedsRefresh) {
-      loadCharities();
+      loadCharityData();
       resetCharityRefresh();
     }
   }, [charityDataNeedsRefresh]);
 
-  const loadCharities = async () => {
+  const loadCharityData = async () => {
     try {
       setIsLoading(true);
-      const response = await charityApi.getAll();
-      setCharities(response.data.data.charity || []);
+      const [charitiesRes, summaryRes] = await Promise.all([
+        charityApi.getAll(),
+        charityApi.getSummary()
+      ]);
+      setCharities(charitiesRes.data.data.charity || []);
+      setSummary(summaryRes.data.data.summary);
     } catch (error) {
-      console.error('Error loading charities:', error);
+      console.error('Error loading charity data:', error);
       toast.error('Failed to load charity data');
     } finally {
       setIsLoading(false);
@@ -81,7 +86,7 @@ export const CharityPage: React.FC = () => {
       setIsPaymentDialogOpen(false);
       setSelectedCharity(null);
       resetPaymentForm();
-      loadCharities();
+      loadCharityData();
     } catch (error: any) {
       console.error('Error recording payment:', error);
       toast.error(error.response?.data?.message || 'Failed to record payment');
@@ -140,10 +145,6 @@ export const CharityPage: React.FC = () => {
     return matchesSearch && matchesStatus;
   });
 
-  const totalRequired = charities.reduce((sum, charity) => sum + Number(charity.amount_required), 0);
-  const totalPaid = charities.reduce((sum, charity) => sum + Number(charity.amount_paid), 0);
-  const totalRemaining = charities.reduce((sum, charity) => sum + Number(charity.amount_remaining), 0);
-
   if (isLoading) {
     return (
       <div className="flex items-center justify-center h-64">
@@ -170,7 +171,7 @@ export const CharityPage: React.FC = () => {
             <Heart className="h-4 w-4 text-green-600" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold text-green-900">${totalRequired.toFixed(2)}</div>
+            <div className="text-2xl font-bold text-green-900">${(Number(summary.total_required) || 0).toFixed(2)}</div>
             <p className="text-xs text-green-600 mt-1">Total charity obligations</p>
           </CardContent>
         </Card>
@@ -181,7 +182,7 @@ export const CharityPage: React.FC = () => {
             <CheckCircle className="h-4 w-4 text-blue-600" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold text-blue-900">${totalPaid.toFixed(2)}</div>
+            <div className="text-2xl font-bold text-blue-900">${(Number(summary.total_paid) || 0).toFixed(2)}</div>
             <p className="text-xs text-blue-600 mt-1">Payments made</p>
           </CardContent>
         </Card>
@@ -192,7 +193,7 @@ export const CharityPage: React.FC = () => {
             <Clock className="h-4 w-4 text-yellow-600" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold text-yellow-900">${totalRemaining.toFixed(2)}</div>
+            <div className="text-2xl font-bold text-yellow-900">${(Number(summary.total_remaining) || 0).toFixed(2)}</div>
             <p className="text-xs text-yellow-600 mt-1">Amount still due</p>
           </CardContent>
         </Card>
@@ -204,7 +205,7 @@ export const CharityPage: React.FC = () => {
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold text-purple-900">
-              {totalRequired > 0 ? ((totalPaid / totalRequired) * 100).toFixed(1) : '0.0'}%
+              {Number(summary.total_required) > 0 ? ((Number(summary.total_paid) / Number(summary.total_required)) * 100).toFixed(1) : '0.0'}%
             </div>
             <p className="text-xs text-purple-600 mt-1">Payment progress</p>
           </CardContent>
