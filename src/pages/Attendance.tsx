@@ -369,7 +369,7 @@ export const AttendancePage: React.FC = () => {
                 <CheckCircle className="h-8 w-8 text-green-600" />
                 <div className="ml-4">
                   <p className="text-sm font-medium text-gray-600">Present Days</p>
-                  <p className="text-2xl font-bold text-gray-900">{stats.present_days}</p>
+                  <p className="text-2xl font-bold text-gray-900">{stats.present_count}</p>
                 </div>
               </div>
             </CardContent>
@@ -381,7 +381,7 @@ export const AttendancePage: React.FC = () => {
                 <Timer className="h-8 w-8 text-purple-600" />
                 <div className="ml-4">
                   <p className="text-sm font-medium text-gray-600">Total Hours</p>
-                  <p className="text-2xl font-bold text-gray-900">{Math.round(stats.total_hours)}</p>
+                  <p className="text-2xl font-bold text-gray-900">{stats.total_hours?.toFixed(1) || '0.0'}</p>
                 </div>
               </div>
             </CardContent>
@@ -393,7 +393,7 @@ export const AttendancePage: React.FC = () => {
                 <Clock className="h-8 w-8 text-orange-600" />
                 <div className="ml-4">
                   <p className="text-sm font-medium text-gray-600">Overtime Hours</p>
-                  <p className="text-2xl font-bold text-gray-900">{Math.round(stats.overtime_hours)}</p>
+                  <p className="text-2xl font-bold text-gray-900">{stats.total_overtime_hours?.toFixed(1) || '0.0'}</p>
                 </div>
               </div>
             </CardContent>

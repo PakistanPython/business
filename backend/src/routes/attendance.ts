@@ -389,7 +389,7 @@ router.post('/clock-out', async (req: Request, res: Response) => {
       return res.status(400).json({ error: 'No clock-in record found for today' });
     }
 
-    if (attendance.clock_out_time) {
+    if (attendance.check_out_time) {
       return res.status(400).json({ error: 'Already clocked out today' });
     }
 
@@ -428,8 +428,10 @@ router.post('/clock-out', async (req: Request, res: Response) => {
       UPDATE attendance SET
         check_out_time = $1,
         status = $2,
+        total_hours = $3,
+        overtime_hours = $4,
         updated_at = NOW()
-      WHERE id = $3`, [currentTimestamp, finalStatus, attendance.id]);
+      WHERE id = $5`, [currentTimestamp, finalStatus, totalHours, overtimeHours, attendance.id]);
 
     // Fetch updated record
     const updatedAttendance = await dbGet(`
@@ -534,10 +536,10 @@ router.post('/', async (req: Request, res: Response) => {
     // Create attendance record
     const result = await dbRun(`
       INSERT INTO attendance (
-        employee_id, date, check_in_time, check_out_time, status
-      ) VALUES ($1, $2, $3, $4, $5) RETURNING id
+        employee_id, date, check_in_time, check_out_time, status, total_hours, overtime_hours
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING id
     `, [
-      employee_id, date, checkInTimestamp, checkOutTimestamp, finalStatus
+      employee_id, date, checkInTimestamp, checkOutTimestamp, finalStatus, totalHours, overtimeHours
     ]);
 
     // Fetch the created record
@@ -586,8 +588,8 @@ router.put('/:id', async (req: Request, res: Response) => {
     }
 
     // Calculate working hours if both clock times are provided
-    let totalHours = 0;
-    let overtimeHours = 0;
+    let totalHours = existingAttendance.total_hours;
+    let overtimeHours = existingAttendance.overtime_hours;
 
     const finalDate = date || new Date(existingAttendance.date).toISOString().split('T')[0];
 
@@ -605,19 +607,24 @@ router.put('/:id', async (req: Request, res: Response) => {
         break_end_time || existingAttendance.break_end_time
       );
       
-      // Calculate overtime (assuming 8 hours is standard work day)
-      overtimeHours = totalHours > 8 ? totalHours - 8  : 0;
+      // Calculate overtime
+      const inputDate = new Date(finalDate);
+      const dayOfWeek = inputDate.getDay();
+      const isWeekend = dayOfWeek === 0 || dayOfWeek === 6;
+      overtimeHours = await calculateOvertime(businessId!, totalHours, isWeekend, false);
     }
 
     // Update attendance record
     await dbRun(`
       UPDATE attendance SET
-        date = $1, check_in_time = $2, check_out_time = $3, status = $4, updated_at = NOW()
-      WHERE id = $5`, [
+        date = $1, check_in_time = $2, check_out_time = $3, status = $4, total_hours = $5, overtime_hours = $6, updated_at = NOW()
+      WHERE id = $7`, [
       finalDate,
       finalClockInTimestamp,
       finalClockOutTimestamp,
       status || existingAttendance.status,
+      totalHours,
+      overtimeHours,
       id
     ]);
 
@@ -687,8 +694,8 @@ router.get('/stats/monthly', async (req: Request, res: Response) => {
         COUNT(CASE WHEN a.status = 'absent' THEN 1 END) as absent_days,
         COUNT(CASE WHEN a.status = 'half_day' THEN 1 END) as half_days,
         COUNT(CASE WHEN a.status = 'late' THEN 1 END) as late_days,
-        ROUND(SUM(EXTRACT(EPOCH FROM (a.check_out_time - a.check_in_time)) / 3600), 2) as total_hours,
-        ROUND(SUM(GREATEST(0, (EXTRACT(EPOCH FROM (a.check_out_time - a.check_in_time)) / 3600) - 8)), 2) as total_overtime_hours
+        ROUND(SUM(a.total_hours), 2) as total_hours,
+        ROUND(SUM(a.overtime_hours), 2) as total_overtime_hours
       FROM employees e
       LEFT JOIN attendance a ON e.id = a.employee_id 
         AND to_char(a.date, 'MM') = $1 AND to_char(a.date, 'YYYY') = $2
@@ -742,8 +749,8 @@ router.get('/stats/summary', async (req: Request, res: Response) => {
         COUNT(CASE WHEN a.status = 'present' THEN 1 END) as present_count,
         COUNT(CASE WHEN a.status = 'absent' THEN 1 END) as absent_count,
         COUNT(CASE WHEN a.status = 'late' THEN 1 END) as late_count,
-        ROUND(AVG(EXTRACT(EPOCH FROM (a.check_out_time - a.check_in_time)) / 3600), 2) as avg_working_hours,
-        ROUND(SUM(GREATEST(0, (EXTRACT(EPOCH FROM (a.check_out_time - a.check_in_time)) / 3600) - 8)), 2) as total_overtime_hours
+        ROUND(AVG(a.total_hours), 2) as avg_working_hours,
+        ROUND(SUM(a.overtime_hours), 2) as total_overtime_hours
       FROM attendance a
       JOIN employees e ON a.employee_id = e.id
       WHERE e.business_id = $1 AND a.date BETWEEN $2 AND $3`;

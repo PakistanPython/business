@@ -551,13 +551,13 @@ export interface Attendance {
 
 export interface AttendanceStats {
   total_records: number;
-  present_days: number;
-  absent_days: number;
-  late_days: number;
-  half_days: number;
+  present_count: number;
+  absent_count: number;
+  late_count: number;
   total_hours: number;
-  overtime_hours: number;
-  average_hours_per_day: number;
+  total_overtime_hours: number;
+  avg_working_hours: number;
+  total_active_employees: number;
 }
 
 export interface AttendanceForm {
