@@ -39,6 +39,7 @@ export const AccountsReceivablePage: React.FC = () => {
   const [editingAccount, setEditingAccount] = useState<AccountsReceivable | null>(null);
   const [selectedAccount, setSelectedAccount] = useState<AccountsReceivable | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
+  const [debouncedSearchTerm, setDebouncedSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState<string>('all');
   const [overdueOnly, setOverdueOnly] = useState(false);
   
@@ -70,19 +71,26 @@ export const AccountsReceivablePage: React.FC = () => {
   });
 
   useEffect(() => {
+    const handler = setTimeout(() => {
+      setDebouncedSearchTerm(searchTerm);
+    }, 500);
+
+    return () => {
+      clearTimeout(handler);
+    };
+  }, [searchTerm]);
+
+  useEffect(() => {
     loadAccountsReceivable();
     loadStats();
-  }, [statusFilter, overdueOnly, searchTerm, pagination.page]);
+  }, [pagination.page]);
 
   const loadAccountsReceivable = async () => {
     try {
       setIsLoading(true);
       const params: AccountsReceivableQueryParams = {
         page: pagination.page,
-        limit: pagination.limit,
-        status: statusFilter !== 'all' ? statusFilter as any : undefined,
-        customer_name: searchTerm || undefined,
-        overdue_only: overdueOnly
+        limit: pagination.limit
       };
 
       const response = await accountsReceivableApi.getAll(params);
@@ -288,6 +296,19 @@ export const AccountsReceivablePage: React.FC = () => {
     return new Date(dueDate) < new Date() && status !== 'paid';
   };
 
+  const filteredAccounts = accounts.filter(account => {
+    const matchesSearch = debouncedSearchTerm 
+      ? account.customer_name.toLowerCase().includes(debouncedSearchTerm.toLowerCase()) ||
+        account.customer_email?.toLowerCase().includes(debouncedSearchTerm.toLowerCase())
+      : true;
+    
+    const matchesStatus = statusFilter !== 'all' ? account.status === statusFilter : true;
+    
+    const matchesOverdue = overdueOnly ? isOverdue(account.due_date, account.status) : true;
+
+    return matchesSearch && matchesStatus && matchesOverdue;
+  });
+
   if (isLoading) {
     return (
       <div className="flex items-center justify-center h-64">
@@ -416,14 +437,14 @@ export const AccountsReceivablePage: React.FC = () => {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {accounts.length === 0 ? (
+                {filteredAccounts.length === 0 ? (
                   <TableRow>
                     <TableCell colSpan={9} className="text-center py-6 text-gray-500">
                       No invoices found
                     </TableCell>
                   </TableRow>
                 ) : (
-                  accounts.map((account) => (
+                  filteredAccounts.map((account) => (
                     <TableRow key={account.id} className={isOverdue(account.due_date, account.status) ? 'bg-red-50' : ''}>
                       <TableCell className="font-medium">{account.id}</TableCell>
                       <TableCell>
