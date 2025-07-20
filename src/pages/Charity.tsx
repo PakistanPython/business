@@ -268,8 +268,8 @@ export const CharityPage: React.FC = () => {
                     <TableRow key={charity.id}>
                       <TableCell>
                         <div>
-                          <div className="font-medium">{charity.income_description || charity.description}</div>
-                          <div className="text-sm text-gray-500">{charity.recipient || 'N/A'}</div>
+                          <div className="font-medium">{charity.income_source || charity.recipient || 'N/A'}</div>
+                          <div className="text-sm text-gray-500">{charity.income_description || charity.description}</div>
                         </div>
                       </TableCell>
                       <TableCell className="font-medium">${Number(charity.amount_required).toFixed(2)}</TableCell>

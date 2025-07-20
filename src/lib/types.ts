@@ -99,6 +99,7 @@ export interface Charity {
   updated_at: string;
   income_amount?: number;
   income_description?: string;
+  income_source?: string;
   income_date?: string;
 }
 

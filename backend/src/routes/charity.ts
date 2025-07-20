@@ -61,19 +61,23 @@ router.get('/', [
     // Get charity records
     const charityRecords = await dbAll(
       `SELECT 
-        id, 
-        amount_required, 
-        COALESCE(amount_paid, 0) as amount_paid, 
-        status, 
-        description, 
-        recipient, 
-        created_at, 
-        updated_at,
-        (amount_required - COALESCE(amount_paid, 0)) as amount_remaining,
-        (COALESCE(amount_paid, 0) * 100 / amount_required) as progress
-       FROM charity 
-       ${whereClause} 
-       ORDER BY ${sortBy} ${sortOrder.toUpperCase()}
+        c.id, 
+        c.amount_required, 
+        COALESCE(c.amount_paid, 0) as amount_paid, 
+        c.status, 
+        c.description, 
+        c.recipient, 
+        c.created_at, 
+        c.updated_at,
+        (c.amount_required - COALESCE(c.amount_paid, 0)) as amount_remaining,
+        (COALESCE(c.amount_paid, 0) * 100 / c.amount_required) as progress,
+        i.description as income_description,
+        i.source as income_source,
+        i.date as income_date
+       FROM charity c
+       LEFT JOIN income i ON c.income_id = i.id
+       ${whereClause.replace('business_id', 'c.business_id')} 
+       ORDER BY c.${sortBy} ${sortOrder.toUpperCase()}
        LIMIT $${paramIndex++} OFFSET $${paramIndex++}`,
       [...whereParams, limit, offset]
     );
