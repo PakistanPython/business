@@ -152,7 +152,7 @@ router.post('/payment', [
         const { charity_id, payment_amount, payment_date, recipient, description } = req.body;
 
         const charityRecord = await dbGet(
-            'SELECT * FROM charity WHERE id = $1 AND business_id = $2',
+            'SELECT *, COALESCE(amount_paid, 0) as amount_paid FROM charity WHERE id = $1 AND business_id = $2',
             [charity_id, userId]
         );
 
@@ -160,7 +160,7 @@ router.post('/payment', [
             return res.status(404).json({ message: 'Charity record not found' });
         }
 
-        const newAmountPaid = charityRecord.amount_paid + payment_amount;
+        const newAmountPaid = Number(charityRecord.amount_paid) + payment_amount;
         const newStatus = newAmountPaid >= charityRecord.amount_required ? 'paid' : 'partial';
 
         await dbRun(
