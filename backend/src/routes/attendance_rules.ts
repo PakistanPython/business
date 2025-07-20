@@ -23,9 +23,16 @@ router.post('/', async (req: Request, res: Response) => {
     const businessId = req.user!.userId;
     const {
       rule_name,
-      late_threshold_minutes,
-      early_leave_threshold_minutes,
-      overtime_start_hour
+      late_grace_period,
+      late_penalty_type,
+      late_penalty_amount,
+      half_day_threshold,
+      overtime_threshold,
+      overtime_rate,
+      auto_clock_out,
+      auto_clock_out_time,
+      weekend_overtime,
+      holiday_overtime
     } = req.body;
 
     if (!rule_name) {
@@ -34,10 +41,14 @@ router.post('/', async (req: Request, res: Response) => {
 
     const result = await dbRun(`
       INSERT INTO attendance_rules (
-        business_id, rule_name, late_threshold_minutes, early_leave_threshold_minutes, overtime_start_hour
-      ) VALUES ($1, $2, $3, $4, $5) RETURNING id
+        business_id, rule_name, late_grace_period, late_penalty_type, late_penalty_amount,
+        half_day_threshold, overtime_threshold, overtime_rate, auto_clock_out,
+        auto_clock_out_time, weekend_overtime, holiday_overtime
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
     `, [
-      businessId, rule_name, late_threshold_minutes, early_leave_threshold_minutes, overtime_start_hour
+      businessId, rule_name, late_grace_period, late_penalty_type, late_penalty_amount,
+      half_day_threshold, overtime_threshold, overtime_rate, auto_clock_out,
+      auto_clock_out_time, weekend_overtime, holiday_overtime
     ]);
 
     const newRule = await dbGet('SELECT * FROM attendance_rules WHERE id = $1', [result.lastID]);
