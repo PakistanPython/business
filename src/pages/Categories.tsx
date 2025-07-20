@@ -120,15 +120,22 @@ export const CategoriesPage: React.FC = () => {
     }
   };
 
-  const handleEdit = (category: Category) => {
-    setEditingCategory(category);
-    setFormData({
-      name: category.name,
-      type: category.type,
-      color: category.color || '#3B82F6',
-      icon: category.icon || 'Tag'
-    });
-    setIsDialogOpen(true);
+  const handleEdit = async (category: Category) => {
+    try {
+      const response = await categoryApi.getById(category.id);
+      const fullCategory = response.data.data.category;
+      setEditingCategory(fullCategory);
+      setFormData({
+        name: fullCategory.name,
+        type: fullCategory.type,
+        color: fullCategory.color || '#3B82F6',
+        icon: fullCategory.icon || 'Tag'
+      });
+      setIsDialogOpen(true);
+    } catch (error) {
+      console.error('Error fetching category details:', error);
+      toast.error('Failed to fetch category details');
+    }
   };
 
   const handleDelete = async (category: Category) => {
@@ -409,9 +416,9 @@ export const CategoriesPage: React.FC = () => {
                         <div className="flex items-center space-x-3">
                           <div 
                             className="w-8 h-8 rounded-full flex items-center justify-center text-white"
-                            style={{ backgroundColor: category.color || '#3B82F6' }}
+                            style={{ backgroundColor: category.color }}
                           >
-                            {getIconComponent(category.icon || 'Tag')}
+                            {getIconComponent(category.icon)}
                           </div>
                           <span className="font-medium">{category.name}</span>
                         </div>

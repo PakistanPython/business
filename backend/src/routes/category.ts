@@ -158,15 +158,15 @@ router.post('/', [
 
     // Insert category record
     const result = await dbRun(
-      'INSERT INTO categories (business_id, name, type) VALUES ($1, $2, $3)',
-      [userId, name, type]
+      'INSERT INTO categories (business_id, name, type, color, icon) VALUES ($1, $2, $3, $4, $5)',
+      [userId, name, type, color, icon]
     );
 
     const categoryId = result.lastID;
 
     // Get the created category record
     const newCategory = await dbGet(
-      'SELECT * FROM categories WHERE id = ?',
+      'SELECT * FROM categories WHERE id = $1',
       [categoryId]
     );
 
@@ -253,17 +253,18 @@ router.put('/:id', [
 
     const updates: string[] = [];
     const values: any[] = [];
+    let paramIndex = 2;
 
     if (name !== undefined) {
-      updates.push('name = ?');
+      updates.push(`name = $${paramIndex++}`);
       values.push(name);
     }
     if (color !== undefined) {
-      updates.push('color = ?');
+      updates.push(`color = $${paramIndex++}`);
       values.push(color);
     }
     if (icon !== undefined) {
-      updates.push('icon = ?');
+      updates.push(`icon = $${paramIndex++}`);
       values.push(icon);
     }
 
@@ -274,7 +275,7 @@ router.put('/:id', [
       });
     }
 
-    values.push(categoryId);
+    values.unshift(categoryId);
 
     // Update category record
     await dbRun(
@@ -483,7 +484,7 @@ router.get('/usage/summary', async (req, res) => {
        FROM categories c
        LEFT JOIN (
          SELECT 
-           category,
+           c.name as category,
            'income' as type,
            COUNT(*) as transaction_count,
            SUM(amount) as total_amount

@@ -31,6 +31,8 @@ export interface Income {
   charity_percentage?: number;
   created_at: string;
   updated_at: string;
+  category_color?: string;
+  category_icon?: string;
 }
 
 export interface Expense {
@@ -43,6 +45,8 @@ export interface Expense {
   receipt_path?: string;
   created_at: string;
   updated_at: string;
+  category_color?: string;
+  category_icon?: string;
 }
 
 export interface Purchase {
@@ -55,6 +59,8 @@ export interface Purchase {
   receipt_path?: string;
   created_at: string;
   updated_at: string;
+  category_color?: string;
+  category_icon?: string;
 }
 
 export interface Sale {

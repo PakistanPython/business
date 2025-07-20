@@ -68,7 +68,7 @@ router.get('/', [
     // Get expense records
     const expenseRecords = await dbAll(
       `SELECT 
-        e.id, e.amount, e.description, c.name as category, e.payment_method, e.date, 
+        e.id, e.amount, e.description, c.name as category, c.color as category_color, c.icon as category_icon, e.payment_method, e.date, 
         e.created_at, e.updated_at
        FROM expenses e
        JOIN categories c ON e.category_id = c.id
@@ -121,7 +121,7 @@ router.get('/:id', async (req, res) => {
 
     const expense = await dbGet(
       `SELECT 
-        e.id, e.amount, e.description, c.name as category, e.payment_method, e.date, 
+        e.id, e.amount, e.description, c.name as category, c.color as category_color, c.icon as category_icon, e.payment_method, e.date, 
         e.created_at, e.updated_at
        FROM expenses e
        JOIN categories c ON e.category_id = c.id

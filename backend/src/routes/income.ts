@@ -68,7 +68,7 @@ router.get('/', [
     // Get income records
     const incomeRecords = await dbAll(
       `SELECT 
-        i.id, i.amount, i.description, c.name as category, i.date, i.source, i.charity_percentage,
+        i.id, i.amount, i.description, c.name as category, c.color as category_color, c.icon as category_icon, i.date, i.source, i.charity_percentage,
         i.created_at, i.updated_at
        FROM income i
        JOIN categories c ON i.category_id = c.id
@@ -121,7 +121,7 @@ router.get('/:id', async (req, res) => {
 
     const incomeRecord = await dbGet(
       `SELECT 
-        i.id, i.amount, i.description, c.name as category, i.date, i.source, i.charity_percentage,
+        i.id, i.amount, i.description, c.name as category, c.color as category_color, c.icon as category_icon, i.date, i.source, i.charity_percentage,
         i.created_at, i.updated_at
        FROM income i
        JOIN categories c ON i.category_id = c.id

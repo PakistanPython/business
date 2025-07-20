@@ -21,7 +21,17 @@ import {
   ShoppingCart,
   Landmark,
   Wallet,
-  Smartphone
+  Smartphone,
+  Tag,
+  Coffee,
+  Home,
+  Car,
+  ShoppingBag as ShoppingBagIcon,
+  Utensils,
+  Gamepad2,
+  Heart,
+  Briefcase,
+  Book
 } from 'lucide-react';
 import { purchaseApi, categoryApi } from '../lib/api';
 import { Purchase, PurchaseForm, Category } from '../lib/types';
@@ -160,6 +170,28 @@ export const PurchasesPage: React.FC = () => {
       style: 'currency',
       currency: 'USD',
     }).format(amount);
+  };
+
+  const getIconComponent = (iconName: string) => {
+    const iconOptions = [
+      { value: 'DollarSign', icon: DollarSign, label: 'Money' },
+      { value: 'Home', icon: Home, label: 'Home' },
+      { value: 'Car', icon: Car, label: 'Transportation' },
+      { value: 'ShoppingBag', icon: ShoppingBagIcon, label: 'Shopping' },
+      { value: 'Utensils', icon: Utensils, label: 'Food & Dining' },
+      { value: 'Coffee', icon: Coffee, label: 'Coffee & Drinks' },
+      { value: 'Gamepad2', icon: Gamepad2, label: 'Entertainment' },
+      { value: 'Heart', icon: Heart, label: 'Health & Fitness' },
+      { value: 'Briefcase', icon: Briefcase, label: 'Work & Business' },
+      { value: 'Book', icon: Book, label: 'Education' },
+      { value: 'Tag', icon: Tag, label: 'General' },
+    ];
+    const iconOption = iconOptions.find(option => option.value === iconName);
+    if (iconOption) {
+      const IconComponent = iconOption.icon;
+      return <IconComponent className="w-4 h-4" />;
+    }
+    return <Tag className="w-4 h-4" />;
   };
 
   const getPaymentMethodIcon = (method: string) => {
@@ -438,8 +470,11 @@ export const PurchasesPage: React.FC = () => {
                         {formatCurrency(item.amount)}
                       </TableCell>
                       <TableCell>
-                        <Badge variant="secondary">
-                          {item.category}
+                        <Badge variant="secondary" style={{ backgroundColor: item.category_color }}>
+                          <div className="flex items-center">
+                            {getIconComponent(item.category_icon)}
+                            <span className="ml-2">{item.category}</span>
+                          </div>
                         </Badge>
                       </TableCell>
                       <TableCell>

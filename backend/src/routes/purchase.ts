@@ -63,7 +63,7 @@ router.get('/', [
     // Get purchase records
     const purchaseRecords = await dbAll(
       `SELECT 
-        p.id, p.amount, p.description, c.name as category, p.payment_method, p.date, 
+        p.id, p.amount, p.description, c.name as category, c.color as category_color, c.icon as category_icon, p.payment_method, p.date, 
         p.created_at, p.updated_at
        FROM purchases p
        LEFT JOIN categories c ON p.category_id = c.id
@@ -116,7 +116,7 @@ router.get('/:id', async (req, res) => {
 
     const purchaseRecord = await dbGet(
       `SELECT 
-        p.id, p.amount, p.description, c.name as category, p.payment_method, p.date, 
+        p.id, p.amount, p.description, c.name as category, c.color as category_color, c.icon as category_icon, p.payment_method, p.date, 
         p.created_at, p.updated_at
        FROM purchases p
        LEFT JOIN categories c ON p.category_id = c.id
