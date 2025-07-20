@@ -319,7 +319,7 @@ export const AccountsReceivablePage: React.FC = () => {
               <DollarSign className="h-4 w-4 text-blue-600" />
             </CardHeader>
             <CardContent>
-              <div className="text-2xl font-bold text-blue-900">{formatCurrency(stats.total_outstanding)}</div>
+              <div className="text-2xl font-bold text-blue-900">{formatCurrency(stats.total_receivable)}</div>
               <p className="text-xs text-blue-600 mt-1">From {stats.total_invoices} invoices</p>
             </CardContent>
           </Card>
@@ -353,7 +353,7 @@ export const AccountsReceivablePage: React.FC = () => {
             </CardHeader>
             <CardContent>
               <div className="text-2xl font-bold text-purple-900">
-                {formatCurrency(stats.pending_amount || 0)}
+                {formatCurrency(stats.total_outstanding || 0)}
               </div>
               <p className="text-xs text-purple-600 mt-1">{stats.pending_invoices} pending invoices</p>
             </CardContent>

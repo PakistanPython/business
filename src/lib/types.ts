@@ -445,6 +445,7 @@ export interface AccountsReceivableStats {
   paid_invoices: number;
   overdue_invoices: number;
   total_amount: number;
+  total_receivable: number;
   total_paid: number;
   total_outstanding: number;
   overdue_amount: number;

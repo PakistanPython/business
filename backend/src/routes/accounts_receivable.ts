@@ -139,6 +139,12 @@ router.post('/', async (req: Request, res: Response) => {
       customer_name,
       amount,
       due_date,
+      customer_email,
+      customer_phone,
+      customer_address,
+      payment_terms,
+      description,
+      notes
     } = req.body;
 
     // Validate required fields
@@ -151,10 +157,10 @@ router.post('/', async (req: Request, res: Response) => {
     // Create account receivable
     const result = await dbRun(`
       INSERT INTO accounts_receivable (
-        business_id, customer_name, amount, due_date
-      ) VALUES ($1, $2, $3, $4) RETURNING id
+        business_id, customer_name, amount, due_date, customer_email, customer_phone, customer_address, payment_terms, description, notes
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10) RETURNING id
     `, [
-      businessId, customer_name, amount, due_date
+      businessId, customer_name, amount, due_date, customer_email, customer_phone, customer_address, payment_terms, description, notes
     ]);
 
     // Fetch the created record
@@ -303,14 +309,15 @@ router.get('/stats/summary', async (req: Request, res: Response) => {
     const summary = await dbGet(`
       SELECT
         COUNT(*) as total_invoices,
-        SUM(amount) as total_outstanding, -- Changed to total_amount
+        SUM(amount) as total_receivable,
         SUM(paid_amount) as total_paid,
-        SUM(amount - paid_amount) as pending_amount, -- Changed to total_outstanding - total_paid
+        SUM(amount - paid_amount) as total_outstanding,
         AVG(amount) as average_invoice_amount,
         COUNT(CASE WHEN due_date < NOW() AND status != 'paid' THEN 1 END) as overdue_invoices,
         SUM(CASE WHEN due_date < NOW() AND status != 'paid' THEN amount - paid_amount ELSE 0 END) as overdue_amount,
         COUNT(CASE WHEN status = 'paid' THEN 1 END) as paid_invoices,
-        COUNT(CASE WHEN status = 'pending' THEN 1 END) as pending_invoices
+        COUNT(CASE WHEN status = 'pending' OR status = 'partial' THEN 1 END) as pending_invoices,
+        SUM(CASE WHEN status = 'pending' OR status = 'partial' THEN amount - paid_amount ELSE 0 END) as pending_amount
       FROM accounts_receivable
       WHERE business_id = $1
     `, [businessId]);
