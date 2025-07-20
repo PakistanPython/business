@@ -470,12 +470,15 @@ export const PurchasesPage: React.FC = () => {
                         {formatCurrency(item.amount)}
                       </TableCell>
                       <TableCell>
-                        <Badge variant="secondary" style={{ backgroundColor: item.category_color }}>
-                          <div className="flex items-center">
+                        <div className="flex items-center space-x-3">
+                          <div 
+                            className="w-6 h-6 rounded-full flex items-center justify-center text-white"
+                            style={{ backgroundColor: item.category_color }}
+                          >
                             {getIconComponent(item.category_icon)}
-                            <span className="ml-2">{item.category}</span>
                           </div>
-                        </Badge>
+                          <span className="font-medium">{item.category}</span>
+                        </div>
                       </TableCell>
                       <TableCell>
                         <div className="flex items-center">
