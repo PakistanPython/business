@@ -143,7 +143,7 @@ router.post('/login', [
     }
 
     // Generate JWT token
-    const token = generateToken(user.id, user.username, user.email, user.user_type || 'business_owner', user.business_id);
+    const token = generateToken(user.id, user.username, user.email, user.user_type || 'business_owner', user.id);
 
     // Remove password from response
     const { password_hash, ...userWithoutPassword } = user;

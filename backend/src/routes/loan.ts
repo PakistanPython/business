@@ -26,8 +26,8 @@ router.get('/', [
     const status = req.query.status as string;
 
     // Build WHERE clause
-    let whereClause = 'WHERE employee_id IN (SELECT id FROM employees WHERE business_id = $1)';
-    const whereParams: any[] = [userId];
+    let whereClause = 'WHERE business_id = $1';
+    const whereParams: any[] = [req.user!.businessId];
     let paramIndex = 2;
 
     if (status) {
@@ -37,8 +37,7 @@ router.get('/', [
 
     const loans = await dbAll(
       `SELECT 
-        id, employee_id, amount, interest_rate, start_date, end_date, status, 
-        created_at, updated_at
+        id, lender_name, principal_amount, current_balance, interest_rate, monthly_payment, loan_type, start_date, due_date, status, created_at, updated_at
        FROM loans 
        ${whereClause} 
        ORDER BY status, start_date DESC`,
@@ -75,11 +74,10 @@ router.get('/:id', async (req, res) => {
 
     const loan = await dbGet(
       `SELECT 
-        id, employee_id, amount, interest_rate, start_date, end_date, status, 
-        created_at, updated_at
+        id, lender_name, principal_amount, current_balance, interest_rate, monthly_payment, loan_type, start_date, due_date, status, created_at, updated_at
        FROM loans 
-       WHERE id = $1 AND employee_id IN (SELECT id FROM employees WHERE business_id = $2)`,
-      [loanId, userId]
+       WHERE id = $1 AND business_id = $2`,
+      [loanId, req.user!.businessId]
     );
 
     if (!loan) {
@@ -104,58 +102,100 @@ router.get('/:id', async (req, res) => {
 
 // Create new loan
 router.post('/', [
-  body('employee_id').isInt({ min: 1 }),
-  body('amount').isFloat({ gt: 0 }),
-  body('interest_rate').optional().isFloat({ min: 0 }),
-  body('start_date').isISO8601().toDate(),
-  body('end_date').isISO8601().toDate(),
+    body('lender_name').notEmpty().withMessage('Lender name is required'),
+    body('principal_amount').isFloat({ gt: 0 }).withMessage('Principal amount must be positive'),
+    body('loan_type').isIn(['personal', 'business', 'mortgage', 'auto', 'other']),
+    body('start_date').isISO8601().withMessage('Invalid start date'),
+    body('due_date').optional({ checkFalsy: true }).isISO8601().withMessage('Invalid due date'),
+    body('interest_rate').optional().isFloat({ min: 0 }),
+    body('monthly_payment').optional().isFloat({ min: 0 }),
 ], async (req, res) => {
-  try {
     const errors = validationResult(req);
     if (!errors.isEmpty()) {
-      return res.status(400).json({
-        success: false,
-        message: 'Validation failed',
-        errors: errors.array()
-      });
+        return res.status(400).json({ success: false, message: 'Validation failed', errors: errors.array() });
     }
 
-    const { 
-      employee_id,
-      amount, 
-      interest_rate, 
-      start_date, 
-      end_date 
-    } = req.body;
+    try {
+        const {
+            lender_name,
+            principal_amount,
+            loan_type,
+            start_date,
+            due_date,
+            interest_rate,
+            monthly_payment,
+            current_balance
+        } = req.body;
+        
+        const business_id = req.user!.businessId;
 
-    // Insert loan record
-    const result = await dbRun(
-      `INSERT INTO loans 
-       (employee_id, amount, interest_rate, start_date, end_date, status) 
-       VALUES ($1, $2, $3, $4, $5, 'active') RETURNING id`,
-      [employee_id, amount, interest_rate, start_date, end_date]
-    );
+        if (!business_id) {
+            return res.status(400).json({ success: false, message: 'Business ID not found in token' });
+        }
 
-    const loanId = result.lastID;
+        const result = await dbRun(
+            `INSERT INTO loans (business_id, lender_name, principal_amount, current_balance, loan_type, start_date, due_date, interest_rate, monthly_payment, status)
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, 'active')`,
+            [business_id, lender_name, principal_amount, current_balance || principal_amount, loan_type, start_date, due_date, interest_rate, monthly_payment]
+        );
 
-    // Get the created loan record
-    const newLoan = await dbGet(
-      'SELECT * FROM loans WHERE id = $1',
-      [loanId]
-    );
+        res.status(201).json({
+            success: true,
+            message: 'Loan created successfully',
+            data: { id: result.lastID }
+        });
+    } catch (error) {
+        console.error('Error creating loan:', error);
+        res.status(500).json({ success: false, message: 'Internal server error' });
+    }
+});
 
-    res.status(201).json({
-      success: true,
-      message: 'Loan record created successfully',
-      data: { loan: newLoan }
-    });
-  } catch (error) {
-    console.error('Create loan error:', error);
-    res.status(500).json({
-      success: false,
-      message: 'Internal server error'
-    });
-  }
+// Record loan payment
+router.post('/:id/payment', [
+    body('amount').isFloat({ gt: 0 }).withMessage('Payment amount must be positive'),
+    body('payment_date').isISO8601().withMessage('Invalid payment date'),
+], async (req, res) => {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+        return res.status(400).json({ success: false, message: 'Validation failed', errors: errors.array() });
+    }
+
+    try {
+        const loanId = parseInt(req.params.id);
+        const { amount, payment_date, description } = req.body;
+        const business_id = req.user!.businessId;
+
+        if (!business_id) {
+            return res.status(400).json({ success: false, message: 'Business ID not found in token' });
+        }
+
+        // Check if loan exists and belongs to user
+        const loan = await dbGet(
+            'SELECT * FROM loans WHERE id = $1 AND business_id = $2',
+            [loanId, business_id]
+        );
+
+        if (!loan) {
+            return res.status(404).json({ success: false, message: 'Loan not found' });
+        }
+
+        const newBalance = loan.current_balance - amount;
+
+        await dbRun(
+            'UPDATE loans SET current_balance = $1, status = $2 WHERE id = $3',
+            [newBalance, newBalance <= 0 ? 'paid' : 'active', loanId]
+        );
+
+        await dbRun(
+            'INSERT INTO loan_payments (loan_id, amount, payment_date, description) VALUES ($1, $2, $3, $4)',
+            [loanId, amount, payment_date, description]
+        );
+
+        res.json({ success: true, message: 'Payment recorded successfully' });
+    } catch (error) {
+        console.error('Error recording payment:', error);
+        res.status(500).json({ success: false, message: 'Internal server error' });
+    }
 });
 
 // Update loan
@@ -188,8 +228,8 @@ router.put('/:id', [
 
     // Check if loan exists and belongs to user
     const existingLoan = await dbGet(
-      'SELECT id FROM loans WHERE id = $1 AND employee_id IN (SELECT id FROM employees WHERE business_id = $2)',
-      [loanId, userId]
+      'SELECT id FROM loans WHERE id = $1 AND business_id = $2',
+      [loanId, req.user!.businessId]
     );
 
     if (!existingLoan) {
@@ -276,8 +316,8 @@ router.delete('/:id', async (req, res) => {
 
     // Check if loan exists and belongs to user
     const existingLoan = await dbGet(
-      'SELECT id FROM loans WHERE id = $1 AND employee_id IN (SELECT id FROM employees WHERE business_id = $2)',
-      [loanId, userId]
+      'SELECT id FROM loans WHERE id = $1 AND business_id = $2',
+      [loanId, req.user!.businessId]
     );
 
     if (!existingLoan) {
