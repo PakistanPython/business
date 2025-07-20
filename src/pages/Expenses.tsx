@@ -18,7 +18,10 @@ import {
   Filter,
   Edit,
   Trash2,
-  Receipt
+  Receipt,
+  Landmark,
+  Wallet,
+  Smartphone
 } from 'lucide-react';
 import { expenseApi, categoryApi } from '../lib/api';
 import { Expense, ExpenseForm, Category } from '../lib/types';
@@ -91,18 +94,17 @@ export const ExpensesPage: React.FC = () => {
       if (editingExpense) {
         const response = await expenseApi.update(editingExpense.id, formData);
         savedExpense = response.data.data.expense;
-        setExpenses(prev => prev.map(exp => exp.id === savedExpense.id ? savedExpense : exp));
         toast.success('Expense updated successfully');
       } else {
         const response = await expenseApi.create(formData);
         savedExpense = response.data.data.expense;
-        setExpenses(prev => [savedExpense, ...prev]);
         toast.success('Expense added successfully');
       }
       
       setIsDialogOpen(false);
       setEditingExpense(null);
       resetForm();
+      loadData();
     } catch (error: any) {
       console.error('Error saving expense:', error);
       toast.error(error.response?.data?.message || 'Failed to save expense');
@@ -160,6 +162,24 @@ export const ExpensesPage: React.FC = () => {
       style: 'currency',
       currency: 'USD',
     }).format(amount);
+  };
+
+  const getPaymentMethodIcon = (method: string) => {
+    switch (method) {
+      case 'Credit Card':
+      case 'Debit Card':
+        return <CreditCard className="h-4 w-4 mr-2 text-gray-400" />;
+      case 'Bank Transfer':
+        return <Landmark className="h-4 w-4 mr-2 text-gray-400" />;
+      case 'Cash':
+      case 'Check':
+        return <Wallet className="h-4 w-4 mr-2 text-gray-400" />;
+      case 'Mobile Payment':
+      case 'PayPal':
+        return <Smartphone className="h-4 w-4 mr-2 text-gray-400" />;
+      default:
+        return <CreditCard className="h-4 w-4 mr-2 text-gray-400" />;
+    }
   };
 
   if (isLoading) {
@@ -423,7 +443,7 @@ export const ExpensesPage: React.FC = () => {
                       </TableCell>
                       <TableCell>
                         <div className="flex items-center">
-                          <CreditCard className="h-4 w-4 mr-2 text-gray-400" />
+                          {getPaymentMethodIcon(item.payment_method)}
                           {item.payment_method}
                         </div>
                       </TableCell>

@@ -68,7 +68,7 @@ router.get('/', [
     // Get expense records
     const expenseRecords = await dbAll(
       `SELECT 
-        e.id, e.amount, e.description, c.name as category, e.date, 
+        e.id, e.amount, e.description, c.name as category, e.payment_method, e.date, 
         e.created_at, e.updated_at
        FROM expenses e
        JOIN categories c ON e.category_id = c.id
@@ -121,7 +121,7 @@ router.get('/:id', async (req, res) => {
 
     const expense = await dbGet(
       `SELECT 
-        e.id, e.amount, e.description, c.name as category, e.date, 
+        e.id, e.amount, e.description, c.name as category, e.payment_method, e.date, 
         e.created_at, e.updated_at
        FROM expenses e
        JOIN categories c ON e.category_id = c.id
@@ -163,6 +163,10 @@ router.post('/', [
     .trim()
     .notEmpty()
     .withMessage('Category is required'),
+  body('payment_method')
+    .trim()
+    .notEmpty()
+    .withMessage('Payment method is required'),
   body('date')
     .isISO8601()
     .withMessage('Date must be valid ISO date')
@@ -178,7 +182,7 @@ router.post('/', [
     }
 
     const userId = req.user!.userId;
-    const { amount, description = null, category, date } = req.body;
+    const { amount, description = null, category, payment_method, date } = req.body;
 
     const categoryRecord = await dbGet(
       'SELECT id FROM categories WHERE name = $1 AND business_id = $2 AND type = \'expense\'',
@@ -192,8 +196,8 @@ router.post('/', [
     }
 
     const expenseResult = await dbRun(
-      'INSERT INTO expenses (business_id, amount, description, category_id, date) VALUES ($1, $2, $3, $4, $5) RETURNING id',
-      [userId, amount, description, categoryRecord.id, date]
+      'INSERT INTO expenses (business_id, amount, description, category_id, payment_method, date) VALUES ($1, $2, $3, $4, $5, $6) RETURNING id',
+      [userId, amount, description, categoryRecord.id, payment_method, date]
     );
 
     const expenseId = expenseResult.lastID;
@@ -233,6 +237,11 @@ router.put('/:id', [
     .trim()
     .notEmpty()
     .withMessage('Category cannot be empty'),
+  body('payment_method')
+    .optional()
+    .trim()
+    .notEmpty()
+    .withMessage('Payment method cannot be empty'),
   body('date')
     .optional()
     .isISO8601()
@@ -270,7 +279,7 @@ router.put('/:id', [
       });
     }
 
-    const { amount, description, category, date } = req.body;
+    const { amount, description, category, payment_method, date } = req.body;
 
     let categoryId = existingRecord.category_id;
     if (category) {
@@ -298,6 +307,10 @@ router.put('/:id', [
     if (description !== undefined) {
       updates.push(`description = $${paramIndex++}`);
       values.push(description);
+    }
+    if (payment_method !== undefined) {
+      updates.push(`payment_method = $${paramIndex++}`);
+      values.push(payment_method);
     }
     if (category) {
       updates.push(`category_id = $${paramIndex++}`);
