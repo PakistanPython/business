@@ -10,7 +10,13 @@ const runMigrations = async () => {
     await testConnection();
     console.log('Running migrations...');
 
-    // 1. Create migrations table if it doesn't exist
+    // 1. Drop all tables
+    await dbRun(`
+      DROP SCHEMA public CASCADE;
+      CREATE SCHEMA public;
+    `);
+
+    // 2. Create migrations table if it doesn't exist
     await dbRun(`
       CREATE TABLE IF NOT EXISTS migrations (
         id SERIAL PRIMARY KEY,
@@ -19,17 +25,17 @@ const runMigrations = async () => {
       )
     `);
 
-    // 2. Get all executed migrations
+    // 3. Get all executed migrations
     const executedMigrations = await dbAll('SELECT name FROM migrations');
     const executedMigrationNames = new Set(executedMigrations.map((m: any) => m.name));
 
-    // 3. Get all migration files
+    // 4. Get all migration files
     const migrationsDir = path.join(__dirname, 'migrations');
     const migrationFiles = fs.readdirSync(migrationsDir)
       .filter(file => file.endsWith('.ts') || file.endsWith('.js'))
       .sort();
 
-    // 4. Run pending migrations
+    // 5. Run pending migrations
     for (const file of migrationFiles) {
       if (!executedMigrationNames.has(file)) {
         try {

@@ -221,22 +221,6 @@ router.put('/:id', async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
     const businessId = req.user?.userId;
-    
-    const {
-      first_name,
-      last_name,
-      email,
-      phone,
-      address,
-      employment_type,
-      salary_type,
-      base_salary,
-      daily_wage,
-      hourly_rate,
-      department,
-      position,
-      status
-    } = req.body;
 
     // Check if employee exists and belongs to this business
     const existingEmployee = await dbGet(
@@ -248,6 +232,7 @@ router.put('/:id', async (req: Request, res: Response) => {
       return res.status(404).json({ error: 'Employee not found' });
     }
 
+    const { email } = req.body;
     // Check if email is being changed and already exists
     if (email && email !== existingEmployee.email) {
       const emailExists = await dbGet(
@@ -259,38 +244,40 @@ router.put('/:id', async (req: Request, res: Response) => {
       }
     }
 
-    // Update employee record
-    await dbRun(`
-      UPDATE employees SET
-        first_name = $1, last_name = $2, email = $3, phone = $4, address = $5,
-        employment_type = $6, salary_type = $7, base_salary = $8, daily_wage = $9,
-        hourly_rate = $10, department = $11, position = $12, status = $13,
-        updated_at = NOW()
-      WHERE id = $14 AND business_id = $15
-    `, [
-      first_name || existingEmployee.first_name,
-      last_name || existingEmployee.last_name,
-      email || existingEmployee.email,
-      phone || existingEmployee.phone,
-      address || existingEmployee.address,
-      employment_type || existingEmployee.employment_type,
-      salary_type || existingEmployee.salary_type,
-      base_salary || existingEmployee.base_salary,
-      daily_wage || existingEmployee.daily_wage,
-      hourly_rate || existingEmployee.hourly_rate,
-      department || existingEmployee.department,
-      position || existingEmployee.position,
-      status || existingEmployee.status,
-      id,
-      businessId
-    ]);
+    // Dynamically build the update query
+    const fieldsToUpdate: { [key: string]: any } = {};
+    const allowedFields = [
+      'first_name', 'last_name', 'email', 'phone', 'address', 'employment_type',
+      'salary_type', 'base_salary', 'daily_wage', 'hourly_rate', 'department',
+      'position', 'status'
+    ];
+
+    for (const field of allowedFields) {
+      if (req.body[field] !== undefined) {
+        fieldsToUpdate[field] = req.body[field];
+      }
+    }
+
+    if (Object.keys(fieldsToUpdate).length > 0) {
+      const setClauses = Object.keys(fieldsToUpdate)
+        .map((key, i) => `${key} = $${i + 1}`)
+        .join(', ');
+      
+      const params = Object.values(fieldsToUpdate);
+      params.push(id);
+      params.push(businessId);
+
+      await dbRun(`
+        UPDATE employees SET
+          ${setClauses},
+          updated_at = NOW()
+        WHERE id = $${params.length - 1} AND business_id = $${params.length}
+      `, params);
+    }
 
     // Fetch updated employee
     const updatedEmployee = await dbGet(`
-      SELECT 
-        e.*
-      FROM employees e
-      WHERE e.id = $16
+      SELECT * FROM employees WHERE id = $1
     `, [id]);
 
     res.json(updatedEmployee);

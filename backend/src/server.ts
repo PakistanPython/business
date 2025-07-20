@@ -25,6 +25,9 @@ import attendanceRoutes from './routes/attendance';
 import payrollRoutes from './routes/payroll';
 import accountsReceivableRoutes from './routes/accounts_receivable';
 import accountsPayableRoutes from './routes/accounts_payable';
+import workSchedulesRoutes from './routes/work_schedules';
+import leaveRoutes from './routes/leaves';
+import attendanceRulesRoutes from './routes/attendance_rules';
 
 const app = express();
 const PORT = process.env.PORT || 5000;
@@ -84,6 +87,9 @@ app.use('/api/attendance', attendanceRoutes);
 app.use('/api/payroll', payrollRoutes);
 app.use('/api/accounts-receivable', accountsReceivableRoutes);
 app.use('/api/accounts-payable', accountsPayableRoutes);
+app.use('/api/work-schedules', workSchedulesRoutes);
+app.use('/api/leaves', leaveRoutes);
+app.use('/api/attendance-rules', attendanceRulesRoutes);
 
 // Default route
 app.get('/', (req, res) => {

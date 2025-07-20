@@ -35,11 +35,11 @@ router.get('/summary', async (req, res) => {
     const incomeTotal = await dbGet('SELECT COALESCE(SUM(amount), 0) as total FROM income WHERE business_id = $1', [userId]);
     const expenseTotal = await dbGet('SELECT COALESCE(SUM(amount), 0) as total FROM expenses WHERE business_id = $1', [userId]);
     const purchaseTotal = await dbGet('SELECT COALESCE(SUM(amount), 0) as total FROM purchases WHERE business_id = $1', [userId]);
-    const salesTotal = await dbGet('SELECT COALESCE(SUM(amount), 0) as revenue, COALESCE(SUM(amount), 0) as profit FROM sales WHERE business_id = $1', [userId]);
+    const salesTotal = await dbGet('SELECT COALESCE(SUM(s.amount), 0) as revenue, COALESCE(SUM(s.amount - p.amount), 0) as profit FROM sales s JOIN purchases p ON s.purchase_id = p.id WHERE s.business_id = $1', [userId]);
     const purchaseCount = await dbGet('SELECT COUNT(*) as count FROM purchases WHERE business_id = $1', [userId]);
     const salesCount = await dbGet('SELECT COUNT(*) as count FROM sales WHERE business_id = $1', [userId]);
     const accountsBalance = await dbGet('SELECT COALESCE(SUM(balance), 0) as total FROM accounts WHERE business_id = $1', [userId]);
-    const activeLoans = await dbGet('SELECT COALESCE(SUM(amount), 0) as total FROM loans WHERE employee_id IN (SELECT id FROM employees WHERE business_id = $1) AND status = \'active\'', [userId]);
+    const activeLoans = await dbGet('SELECT COALESCE(SUM(current_balance), 0) as total FROM loans WHERE business_id = $1 AND status = \'active\'', [userId]);
     const charityRequired = await dbGet('SELECT COALESCE(SUM(amount_required), 0) as total FROM charity WHERE business_id = $1', [userId]);
     const charityPaid = await dbGet('SELECT COALESCE(SUM(amount_paid), 0) as total FROM charity WHERE business_id = $1', [userId]);
     const charityRemaining = await dbGet('SELECT COALESCE(SUM(amount_required - amount_paid), 0) as total FROM charity WHERE business_id = $1', [userId]);

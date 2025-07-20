@@ -1052,16 +1052,27 @@ export const EmployeesPage: React.FC = () => {
               />
             </div>
 
-            <div>
-              <Label htmlFor="password">Password *</Label>
-              <Input
-                id="password"
-                type="password"
-                value={formData.password || ''}
-                onChange={(e) => setFormData({ ...formData, password: e.target.value })}
-                required
+            <div className="flex items-center space-x-2">
+              <Switch
+                id="create_login"
+                checked={formData.create_login}
+                onCheckedChange={(checked) => setFormData({ ...formData, create_login: checked })}
               />
+              <Label htmlFor="create_login">Create Login Account</Label>
             </div>
+
+            {formData.create_login && (
+              <div>
+                <Label htmlFor="password">Password *</Label>
+                <Input
+                  id="password"
+                  type="password"
+                  value={formData.password || ''}
+                  onChange={(e) => setFormData({ ...formData, password: e.target.value })}
+                  required={formData.create_login}
+                />
+              </div>
+            )}
 
             <div className="grid grid-cols-2 gap-4">
               <div>

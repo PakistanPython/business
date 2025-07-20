@@ -62,7 +62,7 @@ export const dbRun = async (sql: string, params: any[] = []): Promise<{ lastID?:
   try {
     const result = await client.query(sql, params);
     return { 
-      lastID: result.rows[0]?.id || result.rowCount,
+      lastID: result.rows && result.rows.length > 0 ? result.rows[0].id : undefined,
       changes: result.rowCount || 0 
     };
   } finally {
