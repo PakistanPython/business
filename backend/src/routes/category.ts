@@ -486,7 +486,7 @@ router.get('/usage/summary', async (req, res) => {
          SELECT 
            c.name as category,
            'income' as type,
-           COUNT(*) as transaction_count,
+           CAST(COUNT(*) AS INTEGER) as transaction_count,
            SUM(amount) as total_amount
          FROM income i
          JOIN categories c ON i.category_id = c.id
@@ -498,7 +498,7 @@ router.get('/usage/summary', async (req, res) => {
          SELECT 
            c.name as category,
            'expense' as type,
-           COUNT(*) as transaction_count,
+           CAST(COUNT(*) AS INTEGER) as transaction_count,
            SUM(e.amount) as total_amount
          FROM expenses e
          JOIN categories c ON e.category_id = c.id
@@ -510,7 +510,7 @@ router.get('/usage/summary', async (req, res) => {
          SELECT
            c.name as category,
            'purchase' as type,
-           COUNT(*) as transaction_count,
+           CAST(COUNT(*) AS INTEGER) as transaction_count,
            SUM(p.amount) as total_amount
          FROM purchases p
          JOIN categories c ON p.category_id = c.id

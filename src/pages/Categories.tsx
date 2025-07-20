@@ -83,7 +83,7 @@ export const CategoriesPage: React.FC = () => {
   const loadCategories = async () => {
     try {
       setIsLoading(true);
-      const response = await categoryApi.getAll();
+      const response = await categoryApi.getUsageSummary();
       setCategories(response.data.data.categories || []);
     } catch (error) {
       console.error('Error loading categories:', error);
@@ -208,6 +208,7 @@ export const CategoriesPage: React.FC = () => {
 
   const incomeCategories = categories.filter(c => c.type === 'income');
   const expenseCategories = categories.filter(c => c.type === 'expense');
+  const purchaseCategories = categories.filter(c => c.type === 'purchase');
   const totalTransactions = categories.reduce((sum, c) => sum + (c.transaction_count || 0), 0);
   const totalAmount = categories.reduce((sum, c) => sum + (c.total_amount || 0), 0);
 
@@ -238,7 +239,7 @@ export const CategoriesPage: React.FC = () => {
       </div>
 
       {/* Summary Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-6">
         <Card className="bg-gradient-to-br from-blue-50 to-blue-100 border-blue-200">
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-sm font-medium text-blue-800">Total Categories</CardTitle>
@@ -274,18 +275,29 @@ export const CategoriesPage: React.FC = () => {
 
         <Card className="bg-gradient-to-br from-purple-50 to-purple-100 border-purple-200">
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium text-purple-800">Total Transactions</CardTitle>
-            <Activity className="h-4 w-4 text-purple-600" />
+            <CardTitle className="text-sm font-medium text-purple-800">Purchase Categories</CardTitle>
+            <ShoppingBag className="h-4 w-4 text-purple-600" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold text-purple-900">{totalTransactions}</div>
-            <p className="text-xs text-purple-600 mt-1">Across all categories</p>
+            <div className="text-2xl font-bold text-purple-900">{purchaseCategories.length}</div>
+            <p className="text-xs text-purple-600 mt-1">Purchase areas</p>
+          </CardContent>
+        </Card>
+
+        <Card className="bg-gradient-to-br from-indigo-50 to-indigo-100 border-indigo-200">
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-sm font-medium text-indigo-800">Total Transactions</CardTitle>
+            <Activity className="h-4 w-4 text-indigo-600" />
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold text-indigo-900">{totalTransactions}</div>
+            <p className="text-xs text-indigo-600 mt-1">Across all categories</p>
           </CardContent>
         </Card>
       </div>
 
       {/* Category Usage Overview */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         <Card>
           <CardHeader>
             <CardTitle className="flex items-center">
@@ -355,6 +367,43 @@ export const CategoriesPage: React.FC = () => {
                 ))}
               {expenseCategories.length === 0 && (
                 <div className="text-center text-gray-500 py-4">No expense categories found</div>
+              )}
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center">
+              <BarChart3 className="w-5 h-5 mr-2" />
+              Top Purchase Categories
+            </CardTitle>
+            <CardDescription>Most used purchase categories by transaction count</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="space-y-3">
+              {purchaseCategories
+                .sort((a, b) => (b.transaction_count || 0) - (a.transaction_count || 0))
+                .slice(0, 5)
+                .map((category) => (
+                  <div key={category.id} className="flex items-center justify-between">
+                    <div className="flex items-center space-x-3">
+                      <div 
+                        className="w-4 h-4 rounded-full flex items-center justify-center text-white text-xs"
+                        style={{ backgroundColor: category.color || '#8B5CF6' }}
+                      >
+                        {getIconComponent(category.icon || 'Tag')}
+                      </div>
+                      <span className="font-medium">{category.name}</span>
+                    </div>
+                    <div className="text-right">
+                      <div className="font-medium">{category.transaction_count || 0} transactions</div>
+                      <div className="text-sm text-gray-500">${(category.total_amount || 0).toFixed(2)}</div>
+                    </div>
+                  </div>
+                ))}
+              {purchaseCategories.length === 0 && (
+                <div className="text-center text-gray-500 py-4">No purchase categories found</div>
               )}
             </div>
           </CardContent>
