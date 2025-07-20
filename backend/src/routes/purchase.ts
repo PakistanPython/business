@@ -63,9 +63,10 @@ router.get('/', [
     // Get purchase records
     const purchaseRecords = await dbAll(
       `SELECT 
-        p.id, p.amount, p.description, p.date, 
+        p.id, p.amount, p.description, c.name as category, p.payment_method, p.date, 
         p.created_at, p.updated_at
        FROM purchases p
+       LEFT JOIN categories c ON p.category_id = c.id
        ${whereClause} 
        ORDER BY ${sortBy} ${sortOrder.toUpperCase()}
        LIMIT $${paramIndex++} OFFSET $${paramIndex++}`,
@@ -115,9 +116,10 @@ router.get('/:id', async (req, res) => {
 
     const purchaseRecord = await dbGet(
       `SELECT 
-        p.id, p.amount, p.description, p.date, 
+        p.id, p.amount, p.description, c.name as category, p.payment_method, p.date, 
         p.created_at, p.updated_at
        FROM purchases p
+       LEFT JOIN categories c ON p.category_id = c.id
        WHERE p.id = $1 AND p.business_id = $2`,
       [purchaseId, userId]
     );
@@ -152,6 +154,12 @@ router.post('/', [
     .trim()
     .isLength({ max: 500 })
     .withMessage('Description cannot exceed 500 characters'),
+  body('category')
+    .optional()
+    .trim(),
+  body('payment_method')
+    .optional()
+    .trim(),
   body('date')
     .isISO8601()
     .withMessage('Date must be valid ISO date')
@@ -167,11 +175,22 @@ router.post('/', [
     }
 
     const userId = req.user!.userId;
-    const { amount, description = null, date } = req.body;
+    const { amount, description = null, category, payment_method, date } = req.body;
+
+    let categoryId = null;
+    if (category) {
+      const categoryRecord = await dbGet(
+        'SELECT id FROM categories WHERE name = $1 AND business_id = $2 AND type = \'purchase\'',
+        [category, userId]
+      );
+      if (categoryRecord) {
+        categoryId = categoryRecord.id;
+      }
+    }
 
     const purchaseResult = await dbRun(
-      'INSERT INTO purchases (business_id, amount, description, date) VALUES ($1, $2, $3, $4) RETURNING id',
-      [userId, amount, description, date]
+      'INSERT INTO purchases (business_id, amount, description, category_id, payment_method, date) VALUES ($1, $2, $3, $4, $5, $6) RETURNING id',
+      [userId, amount, description, categoryId, payment_method, date]
     );
 
     const purchaseId = purchaseResult.lastID;
@@ -206,6 +225,12 @@ router.put('/:id', [
     .trim()
     .isLength({ max: 500 })
     .withMessage('Description cannot exceed 500 characters'),
+  body('category')
+    .optional()
+    .trim(),
+  body('payment_method')
+    .optional()
+    .trim(),
   body('date')
     .optional()
     .isISO8601()
@@ -232,7 +257,7 @@ router.put('/:id', [
     }
 
     const existingRecord = await dbGet(
-      'SELECT id, category_id FROM purchases WHERE id = $1 AND business_id = $2',
+      'SELECT id FROM purchases WHERE id = $1 AND business_id = $2',
       [purchaseId, userId]
     );
 
@@ -243,7 +268,18 @@ router.put('/:id', [
       });
     }
 
-    const { amount, description, date } = req.body;
+    const { amount, description, category, payment_method, date } = req.body;
+
+    let categoryId = existingRecord.category_id;
+    if (category) {
+      const categoryRecord = await dbGet(
+        'SELECT id FROM categories WHERE name = $1 AND business_id = $2 AND type = \'purchase\'',
+        [category, userId]
+      );
+      if (categoryRecord) {
+        categoryId = categoryRecord.id;
+      }
+    }
 
     const updates: string[] = [];
     const values: any[] = [];
@@ -256,6 +292,14 @@ router.put('/:id', [
     if (description !== undefined) {
       updates.push(`description = $${paramIndex++}`);
       values.push(description);
+    }
+    if (category) {
+      updates.push(`category_id = $${paramIndex++}`);
+      values.push(categoryId);
+    }
+    if (payment_method) {
+      updates.push(`payment_method = $${paramIndex++}`);
+      values.push(payment_method);
     }
     if (date !== undefined) {
       updates.push(`date = $${paramIndex++}`);
@@ -365,13 +409,14 @@ router.get('/stats/summary', async (req, res) => {
 
     const categoryStats = await dbAll(
       `SELECT 
-        'default' as category,
+        c.name as category,
         COUNT(*) as count,
         SUM(p.amount) as total_amount,
         AVG(p.amount) as average_amount
        FROM purchases p
+       LEFT JOIN categories c ON p.category_id = c.id
        WHERE p.business_id = $1 
-       GROUP BY category
+       GROUP BY c.name
        ORDER BY total_amount DESC`,
       [userId]
     );

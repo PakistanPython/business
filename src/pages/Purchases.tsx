@@ -18,7 +18,10 @@ import {
   Filter,
   Edit,
   Trash2,
-  ShoppingCart
+  ShoppingCart,
+  Landmark,
+  Wallet,
+  Smartphone
 } from 'lucide-react';
 import { purchaseApi, categoryApi } from '../lib/api';
 import { Purchase, PurchaseForm, Category } from '../lib/types';
@@ -157,6 +160,24 @@ export const PurchasesPage: React.FC = () => {
       style: 'currency',
       currency: 'USD',
     }).format(amount);
+  };
+
+  const getPaymentMethodIcon = (method: string) => {
+    switch (method) {
+      case 'Credit Card':
+      case 'Debit Card':
+        return <CreditCard className="h-4 w-4 mr-2 text-gray-400" />;
+      case 'Bank Transfer':
+        return <Landmark className="h-4 w-4 mr-2 text-gray-400" />;
+      case 'Cash':
+      case 'Check':
+        return <Wallet className="h-4 w-4 mr-2 text-gray-400" />;
+      case 'Mobile Payment':
+      case 'PayPal':
+        return <Smartphone className="h-4 w-4 mr-2 text-gray-400" />;
+      default:
+        return <CreditCard className="h-4 w-4 mr-2 text-gray-400" />;
+    }
   };
 
   if (isLoading) {
@@ -423,7 +444,7 @@ export const PurchasesPage: React.FC = () => {
                       </TableCell>
                       <TableCell>
                         <div className="flex items-center">
-                          <CreditCard className="h-4 w-4 mr-2 text-gray-400" />
+                          {getPaymentMethodIcon(item.payment_method)}
                           {item.payment_method}
                         </div>
                       </TableCell>
