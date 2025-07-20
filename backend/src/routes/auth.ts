@@ -11,7 +11,8 @@ const router = express.Router();
 router.post('/register', [
   body('username').isLength({ min: 3 }).withMessage('Username must be at least 3 characters'),
   body('email').isEmail().withMessage('Valid email is required'),
-  body('password').isLength({ min: 6 }).withMessage('Password must be at least 6 characters')
+  body('password').isLength({ min: 6 }).withMessage('Password must be at least 6 characters'),
+  body('business_name').isLength({ min: 1 }).withMessage('Business name is required')
 ], async (req, res) => {
   try {
     const errors = validationResult(req);
@@ -23,7 +24,7 @@ router.post('/register', [
       });
     }
 
-    const { username, email, password } = req.body;
+    const { username, email, password, business_name } = req.body;
 
     // Check if user already exists
     const existingUser = await dbGet(
@@ -42,12 +43,27 @@ router.post('/register', [
     const passwordHash = await bcrypt.hash(password, 12);
 
     // Create user
-    const result = await dbRun(
-      'INSERT INTO users (username, email, password_hash) VALUES ($1, $2, $3) RETURNING id',
-      [username, email, passwordHash]
+    const userResult = await dbRun(
+      'INSERT INTO users (username, email, password_hash, user_type) VALUES ($1, $2, $3, $4) RETURNING id',
+      [username, email, passwordHash, 'admin']
     );
 
-    const userId = result.lastID;
+    const userId = userResult.lastID;
+
+    // Create business
+    const businessResult = await dbRun(
+      'INSERT INTO businesses (name, owner_id) VALUES ($1, $2) RETURNING id',
+      [business_name, userId]
+    );
+    
+    const businessId = businessResult.lastID;
+
+    // Update user with business_id
+    await dbRun(
+      'UPDATE users SET business_id = $1 WHERE id = $2',
+      [businessId, userId]
+    );
+
 
     // Create default categories for the user
     const defaultCategories = [
@@ -67,24 +83,24 @@ router.post('/register', [
     for (const category of defaultCategories) {
       await dbRun(
         'INSERT INTO categories (business_id, name, type) VALUES ($1, $2, $3) RETURNING id',
-        [userId, category.name, category.type]
+        [businessId, category.name, category.type]
       );
     }
 
     // Create default cash account
     await dbRun(
       'INSERT INTO accounts (business_id, account_type, account_name, balance) VALUES ($1, $2, $3, $4) RETURNING id',
-      [userId, 'cash', 'Cash', 0]
+      [businessId, 'cash', 'Cash', 0]
     );
 
     // Get user data
     const user = await dbGet(
-      'SELECT id, username, email, created_at FROM users WHERE id = $1',
+      'SELECT u.id, u.username, u.email, u.user_type, u.business_id, b.name as business_name FROM users u JOIN businesses b ON u.business_id = b.id WHERE u.id = $1',
       [userId]
     );
 
     // Generate JWT token
-    const token = generateToken(user.id, user.username, user.email, user.user_type, user.business_id);
+    const token = generateToken(user.id, user.username, user.email, user.user_type, user.business_id, user.business_name);
 
     res.status(201).json({
       success: true,
@@ -122,7 +138,7 @@ router.post('/login', [
 
     // Find user by username or email
     const user = await dbGet(
-      'SELECT * FROM users WHERE (username = $1 OR email = $2) AND is_active = TRUE',
+      'SELECT u.*, b.name as business_name FROM users u LEFT JOIN businesses b ON u.business_id = b.id WHERE (u.username = $1 OR u.email = $2) AND u.is_active = TRUE',
       [login, login]
     );
 
@@ -143,7 +159,7 @@ router.post('/login', [
     }
 
     // Generate JWT token
-    const token = generateToken(user.id, user.username, user.email, user.user_type || 'business_owner', user.id);
+    const token = generateToken(user.id, user.username, user.email, user.user_type || 'admin', user.business_id, user.business_name);
 
     // Remove password from response
     const { password_hash, ...userWithoutPassword } = user;
@@ -171,7 +187,7 @@ router.get('/profile', authenticateToken, async (req, res) => {
     const userId = req.user!.userId;
 
     const user = await dbGet(
-      'SELECT id, username, email, user_type, business_id, created_at FROM users WHERE id = $1',
+      'SELECT u.id, u.username, u.email, u.user_type, u.business_id, b.name as business_name FROM users u LEFT JOIN businesses b ON u.business_id = b.id WHERE u.id = $1',
       [userId]
     );
 

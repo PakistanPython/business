@@ -12,15 +12,17 @@ export interface JWTPayload {
   email: string;
   userType: string;
   businessId?: number;
+  businessName?: string;
 }
 
-export const generateToken = (userId: number, username?: string, email?: string, userType?: string, businessId?: number): string => {
+export const generateToken = (userId: number, username?: string, email?: string, userType?: string, businessId?: number, businessName?: string): string => {
   const payload: JWTPayload = {
     userId,
     username: username || '',
     email: email || '',
     userType: userType || '',
-    businessId
+    businessId,
+    businessName
   };
   return jwt.sign(
     payload, 
@@ -49,7 +51,7 @@ export const refreshToken = (token: string): string => {
   try {
     const decoded = verifyToken(token);
     // Create new token with same payload
-    return generateToken(decoded.userId, decoded.username, decoded.email, decoded.userType, decoded.businessId);
+    return generateToken(decoded.userId, decoded.username, decoded.email, decoded.userType, decoded.businessId, decoded.businessName);
   } catch (error) {
     throw new Error('Unable to refresh token');
   }
