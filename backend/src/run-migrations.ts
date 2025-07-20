@@ -1,4 +1,4 @@
-import { pool, testConnection, dbRun, dbAll } from './config/database';
+import { pool, testConnection, dbRun, dbAll, db } from './config/database';
 import dotenv from 'dotenv';
 import fs from 'fs';
 import path from 'path';
@@ -36,7 +36,7 @@ const runMigrations = async () => {
           const migration = await import(path.join(migrationsDir, file));
           if (typeof migration.up === 'function') {
             console.log(`Running migration: ${file}`);
-            await migration.up();
+            await migration.up(db);
             await dbRun('INSERT INTO migrations (name) VALUES ($1)', [file]);
           }
         } catch (error: any) {

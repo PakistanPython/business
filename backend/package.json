@@ -9,7 +9,7 @@
     "dev": "nodemon src/server.ts",
     "clean": "rm -rf dist",
     "test": "echo \"Error: no test specified\" && exit 1",
-"migrate": "ts-node src/run-migrations.ts"
+    "migrate": "ts-node src/run-migrations.ts"
   },
   "keywords": [
     "business",
@@ -30,6 +30,7 @@
     "express-validator": "^7.2.1",
     "helmet": "^8.1.0",
     "jsonwebtoken": "^9.0.2",
+    "kysely": "^0.28.3",
     "morgan": "^1.10.0",
     "multer": "^2.0.1",
     "pg": "^8.16.3"

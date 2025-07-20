@@ -1,4 +1,5 @@
 import { Pool } from 'pg';
+import { Kysely, PostgresDialect } from 'kysely';
 import dotenv from 'dotenv';
 import path from 'path';
 
@@ -11,6 +12,10 @@ export const pool = new Pool({
   max: 20,
   idleTimeoutMillis: 30000,
   connectionTimeoutMillis: 10000,
+});
+
+export const db = new Kysely<any>({
+  dialect: new PostgresDialect({ pool }),
 });
 
 // Test the connection

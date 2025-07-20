@@ -12,8 +12,12 @@ router.get('/', authenticateToken, async (req, res) => {
     
     const rows = await dbAll(`
       SELECT 
-        s.*
+        s.*,
+        (s.selling_price - s.amount) as profit,
+        CASE WHEN s.amount > 0 THEN ((s.selling_price - s.amount) / s.amount) * 100 ELSE 0 END as profit_percentage,
+        p.description as purchase_description
       FROM sales s
+      LEFT JOIN purchases p ON s.purchase_id = p.id
       WHERE s.business_id = $1
       ORDER BY s.date DESC, s.created_at DESC
     `, [userId]);
@@ -95,10 +99,16 @@ router.get('/:id', authenticateToken, async (req, res) => {
 
 // Create new sale
 router.post('/', authenticateToken, [
+    body('purchase_id').optional().isInt(),
     body('amount').isFloat({ gt: 0 }),
+    body('selling_price').isFloat({ gt: 0 }),
     body('description').optional().isString(),
     body('customer_name').optional().isString(),
+    body('customer_contact').optional().isString(),
+    body('payment_method').isString(),
     body('date').isISO8601().toDate(),
+    body('status').isString(),
+    body('notes').optional().isString(),
 ], async (req, res) => {
   try {
     const errors = validationResult(req);
@@ -108,17 +118,23 @@ router.post('/', authenticateToken, [
 
     const userId = req.user?.userId;
     const {
+      purchase_id,
       amount,
+      selling_price,
       description,
       customer_name,
+      customer_contact,
+      payment_method,
       date,
+      status,
+      notes,
     } = req.body;
 
     const result = await dbRun(`
       INSERT INTO sales 
-      (business_id, amount, description, customer_name, date)
-      VALUES ($1, $2, $3, $4, $5) RETURNING id
-    `, [userId, amount, description, customer_name, date]);
+      (business_id, purchase_id, amount, selling_price, description, customer_name, customer_contact, payment_method, date, status, notes)
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11) RETURNING id
+    `, [userId, purchase_id, amount, selling_price, description, customer_name, customer_contact, payment_method, date, status, notes]);
 
     const saleId = result.lastID;
 
@@ -145,10 +161,16 @@ router.post('/', authenticateToken, [
 
 // Update sale
 router.put('/:id', authenticateToken, [
+    body('purchase_id').optional().isInt(),
     body('amount').optional().isFloat({ gt: 0 }),
+    body('selling_price').optional().isFloat({ gt: 0 }),
     body('description').optional().isString(),
     body('customer_name').optional().isString(),
+    body('customer_contact').optional().isString(),
+    body('payment_method').optional().isString(),
     body('date').optional().isISO8601().toDate(),
+    body('status').optional().isString(),
+    body('notes').optional().isString(),
 ], async (req, res) => {
   try {
     const errors = validationResult(req);
@@ -159,10 +181,16 @@ router.put('/:id', authenticateToken, [
     const userId = req.user?.userId;
     const saleId = req.params.id;
     const {
+      purchase_id,
       amount,
+      selling_price,
       description,
       customer_name,
+      customer_contact,
+      payment_method,
       date,
+      status,
+      notes,
     } = req.body;
 
     const existing = await dbGet(
@@ -181,9 +209,17 @@ router.put('/:id', authenticateToken, [
     const values: any[] = [];
     let paramIndex = 1;
 
+    if (purchase_id) {
+        updates.push(`purchase_id = $${paramIndex++}`);
+        values.push(purchase_id);
+    }
     if (amount) {
         updates.push(`amount = $${paramIndex++}`);
         values.push(amount);
+    }
+    if (selling_price) {
+        updates.push(`selling_price = $${paramIndex++}`);
+        values.push(selling_price);
     }
     if (description) {
         updates.push(`description = $${paramIndex++}`);
@@ -193,9 +229,25 @@ router.put('/:id', authenticateToken, [
         updates.push(`customer_name = $${paramIndex++}`);
         values.push(customer_name);
     }
+    if (customer_contact) {
+        updates.push(`customer_contact = $${paramIndex++}`);
+        values.push(customer_contact);
+    }
+    if (payment_method) {
+        updates.push(`payment_method = $${paramIndex++}`);
+        values.push(payment_method);
+    }
     if (date) {
         updates.push(`date = $${paramIndex++}`);
         values.push(date);
+    }
+    if (status) {
+        updates.push(`status = $${paramIndex++}`);
+        values.push(status);
+    }
+    if (notes) {
+        updates.push(`notes = $${paramIndex++}`);
+        values.push(notes);
     }
 
     if (updates.length === 0) {
