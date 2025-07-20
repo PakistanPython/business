@@ -53,6 +53,7 @@ export const LoansPage: React.FC = () => {
     amount: 0,
     payment_date: new Date().toISOString().split('T')[0],
     description: '',
+    payment_method: 'cash',
   });
 
   useEffect(() => {
@@ -176,6 +177,7 @@ export const LoansPage: React.FC = () => {
       amount: 0,
       payment_date: new Date().toISOString().split('T')[0],
       description: '',
+      payment_method: 'cash',
     });
   };
 
@@ -372,6 +374,7 @@ export const LoansPage: React.FC = () => {
                   <TableHead>Lender</TableHead>
                   <TableHead>Type</TableHead>
                   <TableHead>Principal</TableHead>
+                  <TableHead>Paid</TableHead>
                   <TableHead>Current Balance</TableHead>
                   <TableHead>Interest Rate</TableHead>
                   <TableHead>Progress</TableHead>
@@ -392,6 +395,7 @@ export const LoansPage: React.FC = () => {
                       <TableCell>{getLoanTypeBadge(loan.loan_type)}</TableCell>
                       {/* FIX: Convert to Number before .toFixed() */}
                       <TableCell>${Number(loan.principal_amount).toFixed(2)}</TableCell>
+                      <TableCell className="font-medium text-green-600">${(Number(loan.principal_amount) - Number(loan.current_balance)).toFixed(2)}</TableCell>
                       <TableCell className="font-medium text-red-600">${Number(loan.current_balance).toFixed(2)}</TableCell>
                       <TableCell>{loan.interest_rate ? `${Number(loan.interest_rate).toFixed(2)}%` : 'N/A'}</TableCell>
                       <TableCell>
