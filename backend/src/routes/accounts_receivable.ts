@@ -116,7 +116,7 @@ router.get('/:id', async (req: Request, res: Response) => {
     const businessId = req.user!.userId;
 
     const account = await dbGet(
-      'SELECT * FROM accounts_receivable WHERE id = $1 AND business_id = $2',
+      'SELECT *, amount - paid_amount as balance_amount FROM accounts_receivable WHERE id = $1 AND business_id = $2',
       [id, businessId]
     );
 
