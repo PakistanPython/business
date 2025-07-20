@@ -15,7 +15,7 @@ router.get('/', async (req, res) => {
 
     const accounts = await dbAll(
       `SELECT 
-        id, account_type, account_name, balance, 
+        id, account_type, account_name, balance, bank_name, account_number,
         created_at, updated_at
        FROM accounts 
        WHERE business_id = $1 
@@ -121,7 +121,7 @@ router.post('/', [
     }
 
     const userId = req.user!.userId;
-    const { account_type, account_name, balance = 0 } = req.body;
+    const { account_type, account_name, balance = 0, bank_name, account_number } = req.body;
 
     // Check for duplicate account name for the user
     const existingAccount = await dbGet(
@@ -138,8 +138,8 @@ router.post('/', [
 
     // Insert account record
     const result = await dbRun(
-      'INSERT INTO accounts (business_id, account_type, account_name, balance) VALUES ($1, $2, $3, $4) RETURNING id',
-      [userId, account_type, account_name, balance]
+      'INSERT INTO accounts (business_id, account_type, account_name, balance, bank_name, account_number) VALUES ($1, $2, $3, $4, $5, $6) RETURNING id',
+      [userId, account_type, account_name, balance, bank_name, account_number]
     );
 
     const accountId = result.lastID;
@@ -210,7 +210,7 @@ router.put('/:id', [
       });
     }
 
-    const { account_name, balance } = req.body;
+    const { account_name, balance, bank_name, account_number } = req.body;
 
     // Check for duplicate account name if changing name
     if (account_name) {
@@ -238,6 +238,14 @@ router.put('/:id', [
     if (balance !== undefined) {
       updates.push(`balance = $${paramIndex++}`);
       values.push(balance);
+    }
+    if (bank_name !== undefined) {
+      updates.push(`bank_name = $${paramIndex++}`);
+      values.push(bank_name);
+    }
+    if (account_number !== undefined) {
+      updates.push(`account_number = $${paramIndex++}`);
+      values.push(account_number);
     }
 
     if (updates.length === 0) {
@@ -361,7 +369,10 @@ router.post('/transfer', [
     const userId = req.user!.userId;
     const { from_account_id, to_account_id, amount, description, date } = req.body;
 
-    if (from_account_id === to_account_id) {
+    const fromId = parseInt(from_account_id);
+    const toId = parseInt(to_account_id);
+
+    if (fromId === toId) {
       return res.status(400).json({
         success: false,
         message: 'Cannot transfer to the same account'
@@ -373,7 +384,7 @@ router.post('/transfer', [
 
       const accounts = await dbAll(
         'SELECT id, account_name, balance FROM accounts WHERE id IN ($1, $2) AND business_id = $3',
-        [from_account_id, to_account_id, userId]
+        [fromId, toId, userId]
       );
 
       if (accounts.length !== 2) {
@@ -384,8 +395,8 @@ router.post('/transfer', [
         });
       }
 
-      const fromAccount = accounts.find((acc: any) => acc.id === from_account_id);
-      const toAccount = accounts.find((acc: any) => acc.id === to_account_id);
+      const fromAccount = accounts.find((acc: any) => acc.id === fromId);
+      const toAccount = accounts.find((acc: any) => acc.id === toId);
 
       if (parseFloat(fromAccount.balance) < parseFloat(amount)) {
         await dbRun('ROLLBACK');
@@ -396,18 +407,18 @@ router.post('/transfer', [
       }
 
       await dbRun(
-        'UPDATE accounts SET balance = balance - $1, updated_at = NOW() WHERE id = $2',
-        [amount, from_account_id]
+        'UPDATE accounts SET balance = balance - $1, updated_at = CURRENT_TIMESTAMP WHERE id = $2',
+        [amount, fromId]
       );
 
       await dbRun(
-        'UPDATE accounts SET balance = balance + $1, updated_at = NOW() WHERE id = $2',
-        [amount, to_account_id]
+        'UPDATE accounts SET balance = balance + $1, updated_at = CURRENT_TIMESTAMP WHERE id = $2',
+        [amount, toId]
       );
 
       const updatedAccounts = await dbAll(
         'SELECT id, account_name, balance FROM accounts WHERE id IN ($1, $2)',
-        [from_account_id, to_account_id]
+        [fromId, toId]
       );
 
       await dbRun('COMMIT');
@@ -417,8 +428,8 @@ router.post('/transfer', [
         message: 'Transfer completed successfully',
         data: {
           transfer: {
-            from_account: updatedAccounts.find((acc: any) => acc.id === from_account_id),
-            to_account: updatedAccounts.find((acc: any) => acc.id === to_account_id),
+            from_account: updatedAccounts.find((acc: any) => acc.id === fromId),
+            to_account: updatedAccounts.find((acc: any) => acc.id === toId),
             amount,
             description,
             date

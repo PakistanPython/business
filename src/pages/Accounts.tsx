@@ -46,7 +46,8 @@ export const AccountsPage: React.FC = () => {
     from_account_id: 0,
     to_account_id: 0,
     amount: 0,
-    description: ''
+    description: '',
+    date: new Date().toISOString().split('T')[0],
   });
 
   useEffect(() => {
@@ -158,7 +159,8 @@ export const AccountsPage: React.FC = () => {
       from_account_id: 0,
       to_account_id: 0,
       amount: 0,
-      description: ''
+      description: '',
+      date: new Date().toISOString().split('T')[0],
     });
   };
 
@@ -573,6 +575,16 @@ export const AccountsPage: React.FC = () => {
                   value={transferForm.description}
                   onChange={(e) => setTransferForm({...transferForm, description: e.target.value})}
                   placeholder="Reason for transfer..."
+                />
+              </div>
+              <div className="grid gap-2">
+                <Label htmlFor="transfer_date">Date *</Label>
+                <Input
+                  id="transfer_date"
+                  type="date"
+                  value={transferForm.date}
+                  onChange={(e) => setTransferForm({...transferForm, date: e.target.value})}
+                  required
                 />
               </div>
             </div>
