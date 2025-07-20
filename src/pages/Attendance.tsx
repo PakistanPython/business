@@ -229,7 +229,9 @@ export const AttendancePage: React.FC = () => {
     try {
       await clockInEmployee(employee.id);
       toast.success(`${employee.first_name} ${employee.last_name} clocked in successfully!`);
-      // Data will be refreshed automatically by the context
+      // Manually trigger refresh after action
+      await refreshTodayAttendance();
+      await refreshAttendance();
       fetchAttendanceRecords();
       fetchStats();
     } catch (error: any) {
@@ -242,7 +244,9 @@ export const AttendancePage: React.FC = () => {
     try {
       await clockOutEmployee(employee.id);
       toast.success(`${employee.first_name} ${employee.last_name} clocked out successfully!`);
-      // Data will be refreshed automatically by the context
+      // Manually trigger refresh after action
+      await refreshTodayAttendance();
+      await refreshAttendance();
       fetchAttendanceRecords();
       fetchStats();
     } catch (error: any) {
@@ -253,11 +257,17 @@ export const AttendancePage: React.FC = () => {
 
   const openEditDialog = (attendance: Attendance) => {
     setSelectedAttendance(attendance);
+    const formatToTimeInput = (isoString: string | null) => {
+      if (!isoString) return '';
+      // Converts "2024-07-21T10:30:00.000Z" to "10:30"
+      return new Date(isoString).toTimeString().slice(0, 5);
+    };
+
     setFormData({
       employee_id: attendance.employee_id.toString(),
       date: attendance.date,
-      clock_in_time: attendance.clock_in_time || '',
-      clock_out_time: attendance.clock_out_time || '',
+      clock_in_time: formatToTimeInput(attendance.clock_in_time),
+      clock_out_time: formatToTimeInput(attendance.clock_out_time),
       total_hours: attendance.total_hours?.toString() || '',
       overtime_hours: attendance.overtime_hours?.toString() || '0',
       break_hours: attendance.break_hours?.toString() || '0',
@@ -284,9 +294,9 @@ export const AttendancePage: React.FC = () => {
     }
   };
 
-  const formatTime = (timeString?: string) => {
+  const formatTime = (timeString?: string | null) => {
     if (!timeString) return '-';
-    return new Date(`2000-01-01T${timeString}`).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    return new Date(timeString).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
   };
 
   const formatDate = (dateString: string) => {
@@ -381,7 +391,7 @@ export const AttendancePage: React.FC = () => {
                 <Timer className="h-8 w-8 text-purple-600" />
                 <div className="ml-4">
                   <p className="text-sm font-medium text-gray-600">Total Hours</p>
-                  <p className="text-2xl font-bold text-gray-900">{stats.total_hours?.toFixed(1) || '0.0'}</p>
+                  <p className="text-2xl font-bold text-gray-900">{stats.total_hours ? parseFloat(stats.total_hours as any).toFixed(1) : '0.0'}</p>
                 </div>
               </div>
             </CardContent>
@@ -393,7 +403,7 @@ export const AttendancePage: React.FC = () => {
                 <Clock className="h-8 w-8 text-orange-600" />
                 <div className="ml-4">
                   <p className="text-sm font-medium text-gray-600">Overtime Hours</p>
-                  <p className="text-2xl font-bold text-gray-900">{stats.total_overtime_hours?.toFixed(1) || '0.0'}</p>
+                  <p className="text-2xl font-bold text-gray-900">{stats.total_overtime_hours ? parseFloat(stats.total_overtime_hours as any).toFixed(1) : '0.0'}</p>
                 </div>
               </div>
             </CardContent>
@@ -570,9 +580,9 @@ export const AttendancePage: React.FC = () => {
                   <TableCell>{formatTime(attendance.clock_out_time)}</TableCell>
                   <TableCell>
                     <div>
-                      <div className="font-medium">{attendance.total_hours?.toFixed(1) || '-'}h</div>
-                      {attendance.overtime_hours && attendance.overtime_hours > 0 && (
-                        <div className="text-sm text-blue-600">+{attendance.overtime_hours.toFixed(1)}h OT</div>
+                      <div className="font-medium">{attendance.total_hours ? parseFloat(attendance.total_hours as any).toFixed(1) : '-'}h</div>
+                      {attendance.overtime_hours && parseFloat(attendance.overtime_hours as any) > 0 && (
+                        <div className="text-sm text-blue-600">+{parseFloat(attendance.overtime_hours as any).toFixed(1)}h OT</div>
                       )}
                     </div>
                   </TableCell>

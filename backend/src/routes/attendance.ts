@@ -55,7 +55,7 @@ const determineAttendanceStatus = async (employeeId: number, businessId: number,
   // Get active attendance rule
   const rule = await dbGet(`
     SELECT * FROM attendance_rules 
-    WHERE business_id = $1 AND is_active = 1
+    WHERE business_id = $1 AND is_active = true
     ORDER BY created_at DESC LIMIT 1
   `, [businessId]);
   
@@ -85,7 +85,7 @@ const determineAttendanceStatus = async (employeeId: number, businessId: number,
 const calculateOvertime = async (businessId: number, totalHours: number, isWeekend: boolean, isHoliday: boolean): Promise<number> => {
   const rule = await dbGet(`
     SELECT * FROM attendance_rules 
-    WHERE business_id = $1 AND is_active = 1
+    WHERE business_id = $1 AND is_active = true
     ORDER BY created_at DESC LIMIT 1
   `, [businessId]);
   
@@ -127,7 +127,15 @@ router.get('/', async (req: Request, res: Response) => {
 
     let query = `
       SELECT 
-        a.*,
+        a.id,
+        a.employee_id,
+        a.date,
+        a.check_in_time AS clock_in_time,
+        a.check_out_time AS clock_out_time,
+        a.total_hours,
+        a.overtime_hours,
+        a.status,
+        a.notes,
         e.first_name,
         e.last_name,
         e.employee_code,
@@ -245,13 +253,21 @@ router.get('/today', async (req: Request, res: Response) => {
     
     const attendance = await dbGet(`
       SELECT 
-        a.*,
+        a.id,
+        a.employee_id,
+        a.date,
+        a.check_in_time AS clock_in_time,
+        a.check_out_time AS clock_out_time,
+        a.total_hours,
+        a.overtime_hours,
+        a.status,
+        a.notes,
         e.first_name,
         e.last_name,
         e.employee_code
       FROM attendance a
       JOIN employees e ON a.employee_id = e.id
-      WHERE a.employee_id = $1 AND e.business_id = $2 AND a.date = $3`, [actualEmployeeId, businessId, today]);
+      WHERE a.employee_id = $1 AND e.business_id = $2 AND a.date::date = $3`, [actualEmployeeId, businessId, today]);
 
     res.json(attendance || null);
   } catch (error) {
@@ -293,7 +309,7 @@ router.post('/clock-in', async (req: Request, res: Response) => {
 
     // Check if already clocked in today
     const existingAttendance = await dbGet(
-      'SELECT * FROM attendance WHERE employee_id = $1 AND date = $2',
+      'SELECT * FROM attendance WHERE employee_id = $1 AND date::date = $2',
       [actualEmployeeId, today]
     );
 
@@ -302,7 +318,7 @@ router.post('/clock-in', async (req: Request, res: Response) => {
     }
 
     // Get employee's current work schedule for the current day
-    const workSchedule = await dbGet(`
+    let workSchedule = await dbGet(`
       SELECT start_time, end_time FROM work_schedules 
       WHERE employee_id = $1 AND day_of_week = $2
     `, [actualEmployeeId, dayOfWeek]);
@@ -311,7 +327,18 @@ router.post('/clock-in', async (req: Request, res: Response) => {
     let attendanceType = 'regular';
     let lateMinutes = 0;
 
-    if (workSchedule) {
+    if (!workSchedule) {
+      // If no schedule exists, create a default one for this employee and day
+      const defaultStartTime = '09:00:00';
+      const defaultEndTime = '17:00:00';
+      await dbRun(`
+        INSERT INTO work_schedules (employee_id, day_of_week, start_time, end_time)
+        VALUES ($1, $2, $3, $4)
+      `, [actualEmployeeId, dayOfWeek, defaultStartTime, defaultEndTime]);
+      
+      // Use the default start time for calculation
+      expectedStartTime = defaultStartTime;
+    } else {
       expectedStartTime = workSchedule.start_time;
     }
 
@@ -327,13 +354,21 @@ router.post('/clock-in', async (req: Request, res: Response) => {
     const result = await dbRun(`
       INSERT INTO attendance (
         employee_id, date, check_in_time, status
-      ) VALUES ($1, $2, $3, 'present')
+      ) VALUES ($1, $2, $3, 'present') RETURNING id
     `, [actualEmployeeId, today, currentTimestamp]);
 
     // Fetch the created record
     const newAttendance = await dbGet(`
       SELECT 
-        a.*,
+        a.id,
+        a.employee_id,
+        a.date,
+        a.check_in_time AS clock_in_time,
+        a.check_out_time AS clock_out_time,
+        a.total_hours,
+        a.overtime_hours,
+        a.status,
+        a.notes,
         e.first_name,
         e.last_name,
         e.employee_code
@@ -381,7 +416,7 @@ router.post('/clock-out', async (req: Request, res: Response) => {
 
     // Check if clocked in today
     const attendance = await dbGet(
-      'SELECT * FROM attendance WHERE employee_id = $1 AND date = $2',
+      'SELECT * FROM attendance WHERE employee_id = $1 AND date::date = $2',
       [actualEmployeeId, today]
     );
 
@@ -436,7 +471,15 @@ router.post('/clock-out', async (req: Request, res: Response) => {
     // Fetch updated record
     const updatedAttendance = await dbGet(`
       SELECT 
-        a.*,
+        a.id,
+        a.employee_id,
+        a.date,
+        a.check_in_time AS clock_in_time,
+        a.check_out_time AS clock_out_time,
+        a.total_hours,
+        a.overtime_hours,
+        a.status,
+        a.notes,
         e.first_name,
         e.last_name,
         e.employee_code
@@ -485,7 +528,7 @@ router.post('/', async (req: Request, res: Response) => {
 
     // Check if attendance already exists for this date
     const existingAttendance = await dbGet(
-      'SELECT id FROM attendance WHERE employee_id = $1 AND date = $2',
+      'SELECT id FROM attendance WHERE employee_id = $1 AND date::date = $2',
       [employee_id, date]
     );
 
@@ -509,10 +552,21 @@ router.post('/', async (req: Request, res: Response) => {
       // Get employee's work schedule for calculating lateness
       const inputDate = new Date(date);
       const dayOfWeek = inputDate.getDay();
-      const workSchedule = await dbGet(`
+      let workSchedule = await dbGet(`
         SELECT start_time, end_time FROM work_schedules 
         WHERE employee_id = $1 AND day_of_week = $2
       `, [employee_id, dayOfWeek]);
+
+      if (!workSchedule) {
+        // If no schedule exists, create a default one for this employee and day
+        const defaultStartTime = '09:00:00';
+        const defaultEndTime = '17:00:00';
+        await dbRun(`
+          INSERT INTO work_schedules (employee_id, day_of_week, start_time, end_time)
+          VALUES ($1, $2, $3, $4)
+        `, [employee_id, dayOfWeek, defaultStartTime, defaultEndTime]);
+        workSchedule = { start_time: defaultStartTime, end_time: defaultEndTime };
+      }
 
       if (workSchedule) {
         if (workSchedule.start_time) {
@@ -545,7 +599,15 @@ router.post('/', async (req: Request, res: Response) => {
     // Fetch the created record
     const newAttendance = await dbGet(`
       SELECT 
-        a.*,
+        a.id,
+        a.employee_id,
+        a.date,
+        a.check_in_time AS clock_in_time,
+        a.check_out_time AS clock_out_time,
+        a.total_hours,
+        a.overtime_hours,
+        a.status,
+        a.notes,
         e.first_name,
         e.last_name,
         e.employee_code,
@@ -631,7 +693,15 @@ router.put('/:id', async (req: Request, res: Response) => {
     // Fetch updated record
     const updatedAttendance = await dbGet(`
       SELECT 
-        a.*,
+        a.id,
+        a.employee_id,
+        a.date,
+        a.check_in_time AS clock_in_time,
+        a.check_out_time AS clock_out_time,
+        a.total_hours,
+        a.overtime_hours,
+        a.status,
+        a.notes,
         e.first_name,
         e.last_name,
         e.employee_code,
