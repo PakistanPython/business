@@ -51,7 +51,12 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
           
           // Verify token is still valid in the background
           try {
-            const response = await authApi.getProfile();
+            let response;
+            if (user.user_type === 'employee') {
+              response = await authApi.getEmployeeProfile();
+            } else {
+              response = await authApi.getProfile();
+            }
             // Update user data with fresh data from API
             setAuthState(prev => ({
               ...prev,
@@ -60,7 +65,13 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
           } catch (error) {
             // Token is invalid, clear storage and log out
             console.error('Token verification failed, logging out:', error);
-            logout();
+            // Do not logout, just clear the state
+            setAuthState({
+              user: null,
+              token: null,
+              isAuthenticated: false,
+              isLoading: false,
+            });
           }
         } else {
           setAuthState({

@@ -340,14 +340,48 @@ router.post('/employee/login', [
     res.json({
       success: true,
       data: {
-        user: employeeWithoutPassword,
-        token,
-        user_type: 'employee'
+        user: { ...employeeWithoutPassword, user_type: 'employee' },
+        token
       },
       message: 'Employee login successful'
     });
   } catch (error) {
     console.error('Employee login error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Internal server error'
+    });
+  }
+});
+
+// Get employee profile (protected route)
+router.get('/employee/profile', authenticateToken, async (req, res) => {
+  try {
+    const employeeId = req.user!.userId;
+
+    const employee = await dbGet(
+      'SELECT * FROM employees WHERE id = $1',
+      [employeeId]
+    );
+
+    if (!employee) {
+      return res.status(404).json({
+        success: false,
+        message: 'Employee not found'
+      });
+    }
+    
+    // Remove password from response
+    const { password_hash, ...employeeWithoutPassword } = employee;
+
+    res.json({
+      success: true,
+      data: {
+        user: { ...employeeWithoutPassword, user_type: 'employee' }
+      }
+    });
+  } catch (error) {
+    console.error('Employee profile error:', error);
     res.status(500).json({
       success: false,
       message: 'Internal server error'

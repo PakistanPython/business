@@ -42,6 +42,7 @@ export const authApi = {
   login: (data: LoginForm) => api.post('/auth/login', data),
   loginEmployee: (data: LoginForm) => api.post('/auth/employee/login', data),
   getProfile: () => api.get('/auth/profile'),
+  getEmployeeProfile: () => api.get('/auth/employee/profile'),
   updateProfile: (data: any) => api.put('/auth/profile', data),
 };
 
