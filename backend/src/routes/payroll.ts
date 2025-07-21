@@ -446,7 +446,7 @@ router.put('/:id/status', async (req: Request, res: Response) => {
         e.employee_code
       FROM payroll p
       JOIN employees e ON p.employee_id = e.id
-      WHERE p.id = $5
+      WHERE p.id = $1
     `, [id]);
 
     res.json(updatedPayroll);
