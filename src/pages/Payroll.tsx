@@ -185,31 +185,51 @@ export const PayrollPage: React.FC = () => {
     setSubmitting(true);
 
     try {
+      let finalCalculatedData = calculatedData;
+
+      // If auto-calculating, ensure we have the latest data
+      if (formData.auto_calculate) {
+        try {
+          const response = await api.post('/payroll/calculate', {
+            employee_id: parseInt(formData.employee_id),
+            pay_period_start: formData.pay_period_start,
+            pay_period_end: formData.pay_period_end,
+          });
+          finalCalculatedData = response.data;
+        } catch (error) {
+          console.error('Error re-calculating payroll on submit:', error);
+          toast.error('Could not calculate payroll. Please try again.');
+          setSubmitting(false);
+          return;
+        }
+      }
+
       const payrollData: PayrollForm = {
         employee_id: parseInt(formData.employee_id),
         pay_period_start: formData.pay_period_start,
         pay_period_end: formData.pay_period_end,
-        basic_salary: formData.basic_salary ? parseFloat(formData.basic_salary) : undefined,
-        overtime_amount: formData.overtime_amount ? parseFloat(formData.overtime_amount) : undefined,
         bonuses: parseFloat(formData.bonuses) || 0,
         reimbursements: parseFloat(formData.reimbursements) || 0,
         tax_deduction: parseFloat(formData.tax_deduction) || 0,
         insurance_deduction: parseFloat(formData.insurance_deduction) || 0,
         other_deductions: parseFloat(formData.other_deductions) || 0,
-        total_working_days: formData.total_working_days ? parseInt(formData.total_working_days) : undefined,
-        total_present_days: formData.total_present_days ? parseInt(formData.total_present_days) : undefined,
-        total_overtime_hours: formData.total_overtime_hours ? parseFloat(formData.total_overtime_hours) : undefined,
         pay_method: formData.pay_method,
         notes: formData.notes,
         auto_calculate: formData.auto_calculate,
       };
 
-      if (formData.auto_calculate && calculatedData) {
-        payrollData.basic_salary = calculatedData.basicSalary;
-        payrollData.overtime_amount = calculatedData.overtimeAmount;
-        payrollData.total_working_days = calculatedData.totalWorkingDays;
-        payrollData.total_present_days = calculatedData.totalPresentDays;
-        payrollData.total_overtime_hours = calculatedData.totalOvertimeHours;
+      if (formData.auto_calculate && finalCalculatedData) {
+        payrollData.basic_salary = finalCalculatedData.basicSalary;
+        payrollData.overtime_amount = finalCalculatedData.overtimeAmount;
+        payrollData.total_working_days = finalCalculatedData.totalWorkingDays;
+        payrollData.total_present_days = finalCalculatedData.totalPresentDays;
+        payrollData.total_overtime_hours = finalCalculatedData.totalOvertimeHours;
+      } else if (!formData.auto_calculate) {
+        payrollData.basic_salary = formData.basic_salary ? parseFloat(formData.basic_salary) : 0;
+        payrollData.overtime_amount = formData.overtime_amount ? parseFloat(formData.overtime_amount) : 0;
+        payrollData.total_working_days = formData.total_working_days ? parseInt(formData.total_working_days) : 0;
+        payrollData.total_present_days = formData.total_present_days ? parseInt(formData.total_present_days) : 0;
+        payrollData.total_overtime_hours = formData.total_overtime_hours ? parseFloat(formData.total_overtime_hours) : 0;
       }
 
       await api.post('/payroll', payrollData);

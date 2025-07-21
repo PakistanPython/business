@@ -263,28 +263,16 @@ router.post('/', async (req: Request, res: Response) => {
       return res.status(400).json({ error: 'Payroll already exists for this period' });
     }
 
-    let basicSalary = 0;
-    let overtimeAmount = 0;
-    let totalWorkingDays = 0;
-    let totalPresentDays = 0;
-    let totalOvertimeHours = 0;
-
-    if (auto_calculate) {
-      // Auto-calculate based on attendance
-      const calculated = await calculatePayroll(employee_id, pay_period_start, pay_period_end);
-      basicSalary = calculated.basicSalary;
-      overtimeAmount = calculated.overtimeAmount;
-      totalWorkingDays = calculated.totalWorkingDays;
-      totalPresentDays = calculated.totalPresentDays;
-      totalOvertimeHours = calculated.totalOvertimeHours;
-    } else {
-      // Use provided values
-      basicSalary = req.body.basic_salary || 0;
-      overtimeAmount = req.body.overtime_amount || 0;
-      totalWorkingDays = req.body.total_working_days || 0;
-      totalPresentDays = req.body.total_present_days || 0;
-      totalOvertimeHours = req.body.total_overtime_hours || 0;
-    }
+    // When auto_calculate is true, the frontend performs the calculation and sends the data.
+    // When it's false, the user-entered data is sent.
+    // In both cases, we trust the data in the request body.
+    const {
+      basic_salary: basicSalary = 0,
+      overtime_amount: overtimeAmount = 0,
+      total_working_days: totalWorkingDays = 0,
+      total_present_days: totalPresentDays = 0,
+      total_overtime_hours: totalOvertimeHours = 0,
+    } = req.body;
 
     // Calculate totals
     const grossSalary = basicSalary + overtimeAmount + bonuses + reimbursements;
