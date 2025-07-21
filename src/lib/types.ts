@@ -581,8 +581,8 @@ export interface Payroll {
   pay_period_end: string;
   basic_salary: number;
   overtime_amount: number;
-  bonus: number;
-  allowances: number;
+  bonuses: number;
+  reimbursements: number;
   gross_salary: number;
   tax_deduction: number;
   insurance_deduction: number;
@@ -625,8 +625,8 @@ export interface PayrollForm {
   pay_period_end: string;
   basic_salary?: number;
   overtime_amount?: number;
-  bonus?: number;
-  allowances?: number;
+  bonuses?: number;
+  reimbursements?: number;
   tax_deduction?: number;
   insurance_deduction?: number;
   other_deductions?: number;

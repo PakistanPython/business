@@ -287,7 +287,7 @@ router.post('/', async (req: Request, res: Response) => {
     }
 
     // Calculate totals
-    const grossSalary = basicSalary + overtimeAmount + bonus + allowances;
+    const grossSalary = basicSalary + overtimeAmount + (req.body.bonuses || 0) + (req.body.reimbursements || 0);
     const totalDeductions = tax_deduction + insurance_deduction + other_deductions;
     const netSalary = grossSalary - totalDeductions;
 
@@ -295,11 +295,15 @@ router.post('/', async (req: Request, res: Response) => {
     const result = await dbRun(`
       INSERT INTO payroll (
         employee_id, pay_period_start, pay_period_end,
-        gross_salary, deductions, net_salary
-      ) VALUES ($1, $2, $3, $4, $5, $6) RETURNING id
+        gross_salary, deductions, net_salary,
+        total_working_days, total_present_days, total_overtime_hours,
+        bonuses, reimbursements, pay_method, notes
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13) RETURNING id
     `, [
       employee_id, pay_period_start, pay_period_end,
-      grossSalary, totalDeductions, netSalary
+      grossSalary, totalDeductions, netSalary,
+      totalWorkingDays, totalPresentDays, totalOvertimeHours,
+      req.body.bonuses || 0, req.body.reimbursements || 0, payment_method, notes
     ]);
 
     // Fetch the created record
@@ -312,7 +316,7 @@ router.post('/', async (req: Request, res: Response) => {
         e.department
       FROM payroll p
       JOIN employees e ON p.employee_id = e.id
-      WHERE p.id = $17
+      WHERE p.id = $1
     `, [result.lastID]);
 
     res.status(201).json(newPayroll);
@@ -587,9 +591,9 @@ router.get('/stats/summary', async (req: Request, res: Response) => {
     let query = `
       SELECT 
         COUNT(*) as total_payrolls,
-        COUNT(CASE WHEN status = 'draft' THEN 1 END) as draft_payrolls,
-        COUNT(CASE WHEN status = 'approved' THEN 1 END) as approved_payrolls,
-        COUNT(CASE WHEN status = 'paid' THEN 1 END) as paid_payrolls,
+        COUNT(CASE WHEN p.status = 'draft' THEN 1 END) as draft_payrolls,
+        COUNT(CASE WHEN p.status = 'approved' THEN 1 END) as approved_payrolls,
+        COUNT(CASE WHEN p.status = 'paid' THEN 1 END) as paid_payrolls,
         ROUND(CAST(SUM(gross_salary) AS numeric), 2) as total_gross_salary,
         ROUND(CAST(SUM(net_salary) AS numeric), 2) as total_net_salary,
         ROUND(CAST(SUM(deductions) AS numeric), 2) as total_deductions,
@@ -601,7 +605,7 @@ router.get('/stats/summary', async (req: Request, res: Response) => {
     const params: any[] = [businessId];
 
     if (pay_period_start && pay_period_end) {
-      query += ` AND pay_period_start >= $${params.length + 1} AND pay_period_end <= $${params.length + 2}`;
+      query += ` AND p.pay_period_start >= $${params.length + 1} AND p.pay_period_end <= $${params.length + 2}`;
       params.push(pay_period_start as string, pay_period_end as string);
     }
 

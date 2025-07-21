@@ -532,6 +532,7 @@ export const LoansPage: React.FC = () => {
                 />
               </div>
             </div>
+            
             <DialogFooter>
               <Button type="button" variant="outline" onClick={() => setIsDialogOpen(false)}>
                 Cancel

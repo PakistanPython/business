@@ -23,8 +23,8 @@ interface PayrollFormData {
   pay_period_end: string;
   basic_salary: string;
   overtime_amount: string;
-  bonus: string;
-  allowances: string;
+  bonuses: string;
+  reimbursements: string;
   tax_deduction: string;
   insurance_deduction: string;
   other_deductions: string;
@@ -49,8 +49,8 @@ const initialFormData: PayrollFormData = {
   pay_period_end: '',
   basic_salary: '',
   overtime_amount: '',
-  bonus: '0',
-  allowances: '0',
+  bonuses: '0',
+  reimbursements: '0',
   tax_deduction: '0',
   insurance_deduction: '0',
   other_deductions: '0',
@@ -147,8 +147,8 @@ export const PayrollPage: React.FC = () => {
         pay_period_end: formData.pay_period_end,
         basic_salary: formData.basic_salary ? parseFloat(formData.basic_salary) : undefined,
         overtime_amount: formData.overtime_amount ? parseFloat(formData.overtime_amount) : undefined,
-        bonus: parseFloat(formData.bonus) || 0,
-        allowances: parseFloat(formData.allowances) || 0,
+        bonuses: parseFloat(formData.bonuses) || 0,
+        reimbursements: parseFloat(formData.reimbursements) || 0,
         tax_deduction: parseFloat(formData.tax_deduction) || 0,
         insurance_deduction: parseFloat(formData.insurance_deduction) || 0,
         other_deductions: parseFloat(formData.other_deductions) || 0,
@@ -215,8 +215,8 @@ export const PayrollPage: React.FC = () => {
       const payrollData: Partial<PayrollForm> = {
         basic_salary: formData.basic_salary ? parseFloat(formData.basic_salary) : undefined,
         overtime_amount: formData.overtime_amount ? parseFloat(formData.overtime_amount) : undefined,
-        bonus: parseFloat(formData.bonus) || 0,
-        allowances: parseFloat(formData.allowances) || 0,
+        bonuses: parseFloat(formData.bonuses) || 0,
+        reimbursements: parseFloat(formData.reimbursements) || 0,
         tax_deduction: parseFloat(formData.tax_deduction) || 0,
         insurance_deduction: parseFloat(formData.insurance_deduction) || 0,
         other_deductions: parseFloat(formData.other_deductions) || 0,
@@ -281,8 +281,8 @@ export const PayrollPage: React.FC = () => {
       pay_period_end: payroll.pay_period_end,
       basic_salary: payroll.basic_salary.toString(),
       overtime_amount: payroll.overtime_amount.toString(),
-      bonus: payroll.bonus.toString(),
-      allowances: payroll.allowances.toString(),
+      bonuses: payroll.bonuses.toString(),
+      reimbursements: payroll.reimbursements.toString(),
       tax_deduction: payroll.tax_deduction.toString(),
       insurance_deduction: payroll.insurance_deduction.toString(),
       other_deductions: payroll.other_deductions.toString(),
@@ -652,26 +652,26 @@ export const PayrollPage: React.FC = () => {
                   />
                 </div>
                 <div>
-                  <Label htmlFor="bonus">Bonus</Label>
+                  <Label htmlFor="bonuses">Bonuses</Label>
                   <Input
-                    id="bonus"
+                    id="bonuses"
                     type="number"
                     step="0.01"
-                    value={formData.bonus}
-                    onChange={(e) => setFormData({ ...formData, bonus: e.target.value })}
+                    value={formData.bonuses}
+                    onChange={(e) => setFormData({ ...formData, bonuses: e.target.value })}
                   />
                 </div>
               </div>
 
               <div className="grid grid-cols-3 gap-4">
                 <div>
-                  <Label htmlFor="allowances">Allowances</Label>
+                  <Label htmlFor="reimbursements">Reimbursements</Label>
                   <Input
-                    id="allowances"
+                    id="reimbursements"
                     type="number"
                     step="0.01"
-                    value={formData.allowances}
-                    onChange={(e) => setFormData({ ...formData, allowances: e.target.value })}
+                    value={formData.reimbursements}
+                    onChange={(e) => setFormData({ ...formData, reimbursements: e.target.value })}
                   />
                 </div>
                 <div>
@@ -922,26 +922,26 @@ export const PayrollPage: React.FC = () => {
                   />
                 </div>
                 <div>
-                  <Label htmlFor="edit_bonus">Bonus</Label>
+                  <Label htmlFor="edit_bonuses">Bonuses</Label>
                   <Input
-                    id="edit_bonus"
+                    id="edit_bonuses"
                     type="number"
                     step="0.01"
-                    value={formData.bonus}
-                    onChange={(e) => setFormData({ ...formData, bonus: e.target.value })}
+                    value={formData.bonuses}
+                    onChange={(e) => setFormData({ ...formData, bonuses: e.target.value })}
                   />
                 </div>
               </div>
 
               <div className="grid grid-cols-3 gap-4">
                 <div>
-                  <Label htmlFor="edit_allowances">Allowances</Label>
+                  <Label htmlFor="edit_reimbursements">Reimbursements</Label>
                   <Input
-                    id="edit_allowances"
+                    id="edit_reimbursements"
                     type="number"
                     step="0.01"
-                    value={formData.allowances}
-                    onChange={(e) => setFormData({ ...formData, allowances: e.target.value })}
+                    value={formData.reimbursements}
+                    onChange={(e) => setFormData({ ...formData, reimbursements: e.target.value })}
                   />
                 </div>
                 <div>
