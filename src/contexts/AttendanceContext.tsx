@@ -181,7 +181,7 @@ export const AttendanceProvider: React.FC<AttendanceProviderProps> = ({ children
   const clockIn = async (data?: { location_latitude?: number; location_longitude?: number }) => {
     try {
       const response = await attendanceApi.clockIn(data || {});
-      await refreshTodayAttendance();
+      await Promise.all([refreshTodayAttendance(), refreshAttendance()]);
       return response.data;
     } catch (err: any) {
       console.error('Clock in error:', err);
@@ -192,7 +192,7 @@ export const AttendanceProvider: React.FC<AttendanceProviderProps> = ({ children
   const clockOut = async (data?: { location_latitude?: number; location_longitude?: number }) => {
     try {
       const response = await attendanceApi.clockOut(data || {});
-      await refreshTodayAttendance();
+      await Promise.all([refreshTodayAttendance(), refreshAttendance()]);
       return response.data;
     } catch (err: any) {
       console.error('Clock out error:', err);
@@ -203,7 +203,7 @@ export const AttendanceProvider: React.FC<AttendanceProviderProps> = ({ children
   const clockInEmployee = async (employeeId: number) => {
     try {
       const response = await attendanceApi.clockIn({ employee_id: employeeId });
-      await refreshTodayAttendance();
+      await Promise.all([refreshTodayAttendance(), refreshAttendance()]);
       return response.data;
     } catch (err: any) {
       console.error('Employee clock in error:', err);
@@ -214,7 +214,7 @@ export const AttendanceProvider: React.FC<AttendanceProviderProps> = ({ children
   const clockOutEmployee = async (employeeId: number) => {
     try {
       const response = await attendanceApi.clockOut({ employee_id: employeeId });
-      await refreshTodayAttendance();
+      await Promise.all([refreshTodayAttendance(), refreshAttendance()]);
       return response.data;
     } catch (err: any) {
       console.error('Employee clock out error:', err);

@@ -175,17 +175,13 @@ const EmployeePortal: React.FC = () => {
     }
   };
 
-  const formatTime = (timeString: string | null) => {
-    if (!timeString) return 'Not recorded';
-    return new Date(`2000-01-01T${timeString}`).toLocaleTimeString('en-US', {
-      hour: '2-digit',
-      minute: '2-digit',
-      hour12: true,
-    });
+  const formatTime = (timeString?: string | null) => {
+    if (!timeString) return '-';
+    return new Date(timeString).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
   };
 
   const formatDuration = (hours: number | null) => {
-    if (!hours) return 'N/A';
+    if (hours === null || isNaN(hours)) return '0h 0m';
     const totalMinutes = Math.round(hours * 60);
     const hrs = Math.floor(totalMinutes / 60);
     const mins = totalMinutes % 60;
@@ -582,7 +578,7 @@ const EmployeePortal: React.FC = () => {
                 <div className="flex flex-col md:flex-row gap-4 mt-8">
                   <Button
                     onClick={handleClockIn}
-                    disabled={isClockInDisabled || clockingIn}
+                    disabled={!!isClockInDisabled || clockingIn}
                     className={`flex-1 h-16 text-lg font-semibold transition-all duration-300 ${
                       isClockInDisabled 
                         ? 'bg-gray-400 cursor-not-allowed' 

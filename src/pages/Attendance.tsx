@@ -153,6 +153,7 @@ export const AttendancePage: React.FC = () => {
       fetchAttendanceRecords();
       fetchStats();
       refreshTodayAttendance();
+      refreshAttendance();
     } catch (error: any) {
       console.error('Error creating attendance:', error);
       toast.error(error.response?.data?.error || 'Failed to create attendance record');
@@ -185,6 +186,7 @@ export const AttendancePage: React.FC = () => {
       fetchAttendanceRecords();
       fetchStats();
       refreshTodayAttendance();
+      refreshAttendance();
     } catch (error: any) {
       console.error('Error updating attendance:', error);
       toast.error(error.response?.data?.error || 'Failed to update attendance record');
@@ -204,6 +206,7 @@ export const AttendancePage: React.FC = () => {
       fetchAttendanceRecords();
       fetchStats();
       refreshTodayAttendance();
+      refreshAttendance();
     } catch (error: any) {
       console.error('Error deleting attendance:', error);
       toast.error(error.response?.data?.error || 'Failed to delete attendance record');
