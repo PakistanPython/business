@@ -60,7 +60,7 @@ const calculatePayroll = async (employeeId: number, payPeriodStart: string, payP
     overtimeAmount: Math.round(overtimeAmount * 100) / 100,
     totalWorkingDays,
     totalPresentDays,
-    totalOvertimeHours: Math.round(totalOvertimeHours * 100) / 100
+    totalOvertimeHours: Math.round(totalOvertimeHours * 100) / 100,
   };
 };
 
@@ -226,14 +226,14 @@ router.post('/', async (req: Request, res: Response) => {
       employee_id,
       pay_period_start,
       pay_period_end,
-      bonus = 0,
-      allowances = 0,
+      bonuses = 0,
+      reimbursements = 0,
       tax_deduction = 0,
       insurance_deduction = 0,
       other_deductions = 0,
-      payment_method,
+      pay_method,
       notes,
-      auto_calculate = true
+      auto_calculate = true,
     } = req.body;
 
     // Validate required fields
@@ -287,7 +287,7 @@ router.post('/', async (req: Request, res: Response) => {
     }
 
     // Calculate totals
-    const grossSalary = basicSalary + overtimeAmount + (req.body.bonuses || 0) + (req.body.reimbursements || 0);
+    const grossSalary = basicSalary + overtimeAmount + bonuses + reimbursements;
     const totalDeductions = tax_deduction + insurance_deduction + other_deductions;
     const netSalary = grossSalary - totalDeductions;
 
@@ -297,13 +297,13 @@ router.post('/', async (req: Request, res: Response) => {
         employee_id, pay_period_start, pay_period_end,
         gross_salary, deductions, net_salary,
         total_working_days, total_present_days, total_overtime_hours,
-        bonuses, reimbursements, pay_method, notes
-      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13) RETURNING id
+        bonuses, reimbursements, pay_method, notes, status
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, 'draft') RETURNING id
     `, [
       employee_id, pay_period_start, pay_period_end,
       grossSalary, totalDeductions, netSalary,
       totalWorkingDays, totalPresentDays, totalOvertimeHours,
-      req.body.bonuses || 0, req.body.reimbursements || 0, payment_method, notes
+      bonuses, reimbursements, pay_method, notes
     ]);
 
     // Fetch the created record
@@ -334,16 +334,13 @@ router.put('/:id', async (req: Request, res: Response) => {
     const {
       basic_salary,
       overtime_amount,
-      bonus,
-      allowances,
+      bonuses,
+      reimbursements,
       tax_deduction,
       insurance_deduction,
       other_deductions,
-      total_working_days,
-      total_present_days,
-      total_overtime_hours,
-      payment_method,
-      notes
+      pay_method,
+      notes,
     } = req.body;
 
     // Check if payroll record exists and belongs to this business
@@ -364,26 +361,38 @@ router.put('/:id', async (req: Request, res: Response) => {
     // Use existing values if not provided
     const finalBasicSalary = basic_salary ?? existingPayroll.basic_salary;
     const finalOvertimeAmount = overtime_amount ?? existingPayroll.overtime_amount;
-    const finalBonus = bonus ?? existingPayroll.bonus;
-    const finalAllowances = allowances ?? existingPayroll.allowances;
+    const finalBonuses = bonuses ?? existingPayroll.bonuses;
+    const finalReimbursements = reimbursements ?? existingPayroll.reimbursements;
     const finalTaxDeduction = tax_deduction ?? existingPayroll.tax_deduction;
     const finalInsuranceDeduction = insurance_deduction ?? existingPayroll.insurance_deduction;
     const finalOtherDeductions = other_deductions ?? existingPayroll.other_deductions;
 
     // Recalculate totals
-    const grossSalary = finalBasicSalary + finalOvertimeAmount + finalBonus + finalAllowances;
+    const grossSalary = finalBasicSalary + finalOvertimeAmount + finalBonuses + finalReimbursements;
     const totalDeductions = finalTaxDeduction + finalInsuranceDeduction + finalOtherDeductions;
     const netSalary = grossSalary - totalDeductions;
 
     // Update payroll record
     await dbRun(`
       UPDATE payroll SET
-        gross_salary = $1, deductions = $2, net_salary = $3,
+        gross_salary = $1,
+        deductions = $2,
+        net_salary = $3,
+        bonuses = $4,
+        reimbursements = $5,
+        pay_method = $6,
+        notes = $7,
         updated_at = NOW()
-      WHERE id = $4
+      WHERE id = $8
     `, [
-      grossSalary, totalDeductions, netSalary,
-      id
+      grossSalary,
+      totalDeductions,
+      netSalary,
+      finalBonuses,
+      finalReimbursements,
+      pay_method ?? existingPayroll.pay_method,
+      notes ?? existingPayroll.notes,
+      id,
     ]);
 
     // Fetch updated record
@@ -545,17 +554,21 @@ router.post('/bulk-create', async (req: Request, res: Response) => {
 
         // Calculate totals
         const grossSalary = basicSalary + overtimeAmount;
-        const netSalary = grossSalary; // No deductions in bulk create
+        const totalDeductions = 0; // No deductions in bulk create
+        const netSalary = grossSalary - totalDeductions;
 
         // Create payroll record
         const result = await dbRun(`
           INSERT INTO payroll (
             employee_id, pay_period_start, pay_period_end,
-            gross_salary, net_salary
-          ) VALUES ($1, $2, $3, $4, $5) RETURNING id
+            gross_salary, deductions, net_salary,
+            total_working_days, total_present_days, total_overtime_hours,
+            status
+          ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, 'draft') RETURNING id
         `, [
           employeeId, pay_period_start, pay_period_end,
-          grossSalary, netSalary
+          grossSalary, totalDeductions, netSalary,
+          totalWorkingDays, totalPresentDays, totalOvertimeHours,
         ]);
 
         results.push({
@@ -579,6 +592,23 @@ router.post('/bulk-create', async (req: Request, res: Response) => {
   } catch (error) {
     console.error('Error creating bulk payroll:', error);
     res.status(500).json({ error: 'Failed to create bulk payroll' });
+  }
+});
+
+// POST /api/payroll/calculate - Calculate payroll based on attendance
+router.post('/calculate', async (req: Request, res: Response) => {
+  try {
+    const { employee_id, pay_period_start, pay_period_end } = req.body;
+
+    if (!employee_id || !pay_period_start || !pay_period_end) {
+      return res.status(400).json({ error: 'Employee ID, pay period start, and pay period end are required' });
+    }
+
+    const calculated = await calculatePayroll(employee_id, pay_period_start, pay_period_end);
+    res.json(calculated);
+  } catch (error) {
+    console.error('Error calculating payroll:', error);
+    res.status(500).json({ error: 'Failed to calculate payroll' });
   }
 });
 

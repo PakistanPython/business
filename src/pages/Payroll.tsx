@@ -31,7 +31,7 @@ interface PayrollFormData {
   total_working_days: string;
   total_present_days: string;
   total_overtime_hours: string;
-  payment_method: string;
+  pay_method: string;
   notes: string;
   auto_calculate: boolean;
 }
@@ -57,7 +57,7 @@ const initialFormData: PayrollFormData = {
   total_working_days: '',
   total_present_days: '',
   total_overtime_hours: '',
-  payment_method: 'bank_transfer',
+  pay_method: 'bank_transfer',
   notes: '',
   auto_calculate: true,
 };
@@ -88,6 +88,50 @@ export const PayrollPage: React.FC = () => {
   const [formData, setFormData] = useState<PayrollFormData>(initialFormData);
   const [bulkFormData, setBulkFormData] = useState<BulkPayrollFormData>(initialBulkFormData);
   const [submitting, setSubmitting] = useState(false);
+  const [calculatedData, setCalculatedData] = useState<any>(null);
+
+  useEffect(() => {
+    if (formData.auto_calculate && formData.employee_id && formData.pay_period_start && formData.pay_period_end) {
+      const calculate = async () => {
+        try {
+          const response = await api.post('/payroll/calculate', {
+            employee_id: parseInt(formData.employee_id),
+            pay_period_start: formData.pay_period_start,
+            pay_period_end: formData.pay_period_end,
+          });
+          setCalculatedData(response.data);
+        } catch (error) {
+          console.error('Error calculating payroll:', error);
+          setCalculatedData(null);
+        }
+      };
+      calculate();
+    } else {
+      setCalculatedData(null);
+    }
+  }, [formData.auto_calculate, formData.employee_id, formData.pay_period_start, formData.pay_period_end]);
+
+  useEffect(() => {
+    if (calculatedData) {
+      setFormData((prev) => ({
+        ...prev,
+        basic_salary: calculatedData.basicSalary?.toString() || '',
+        overtime_amount: calculatedData.overtimeAmount?.toString() || '',
+        total_working_days: calculatedData.totalWorkingDays?.toString() || '',
+        total_present_days: calculatedData.totalPresentDays?.toString() || '',
+        total_overtime_hours: calculatedData.totalOvertimeHours?.toString() || '',
+      }));
+    } else {
+      setFormData((prev) => ({
+        ...prev,
+        basic_salary: '',
+        overtime_amount: '',
+        total_working_days: '',
+        total_present_days: '',
+        total_overtime_hours: '',
+      }));
+    }
+  }, [calculatedData]);
 
   useEffect(() => {
     fetchPayrollRecords();
@@ -155,10 +199,18 @@ export const PayrollPage: React.FC = () => {
         total_working_days: formData.total_working_days ? parseInt(formData.total_working_days) : undefined,
         total_present_days: formData.total_present_days ? parseInt(formData.total_present_days) : undefined,
         total_overtime_hours: formData.total_overtime_hours ? parseFloat(formData.total_overtime_hours) : undefined,
-        payment_method: formData.payment_method,
+        pay_method: formData.pay_method,
         notes: formData.notes,
         auto_calculate: formData.auto_calculate,
       };
+
+      if (formData.auto_calculate && calculatedData) {
+        payrollData.basic_salary = calculatedData.basicSalary;
+        payrollData.overtime_amount = calculatedData.overtimeAmount;
+        payrollData.total_working_days = calculatedData.totalWorkingDays;
+        payrollData.total_present_days = calculatedData.totalPresentDays;
+        payrollData.total_overtime_hours = calculatedData.totalOvertimeHours;
+      }
 
       await api.post('/payroll', payrollData);
       toast.success('Payroll record created successfully!');
@@ -223,7 +275,7 @@ export const PayrollPage: React.FC = () => {
         total_working_days: formData.total_working_days ? parseInt(formData.total_working_days) : undefined,
         total_present_days: formData.total_present_days ? parseInt(formData.total_present_days) : undefined,
         total_overtime_hours: formData.total_overtime_hours ? parseFloat(formData.total_overtime_hours) : undefined,
-        payment_method: formData.payment_method,
+        pay_method: formData.pay_method,
         notes: formData.notes,
       };
 
@@ -289,7 +341,7 @@ export const PayrollPage: React.FC = () => {
       total_working_days: payroll.total_working_days.toString(),
       total_present_days: payroll.total_present_days.toString(),
       total_overtime_hours: payroll.total_overtime_hours.toString(),
-      payment_method: payroll.payment_method || 'bank_transfer',
+      pay_method: payroll.pay_method || 'bank_transfer',
       notes: payroll.notes || '',
       auto_calculate: false,
     });
@@ -511,7 +563,7 @@ export const PayrollPage: React.FC = () => {
                       {payroll.total_present_days}/{payroll.total_working_days} days
                     </div>
                   </TableCell>
-                  <TableCell>{formatCurrency(payroll.total_deductions)}</TableCell>
+                  <TableCell>{formatCurrency(payroll.deductions)}</TableCell>
                   <TableCell>
                     <div className="font-medium text-green-600">
                       {formatCurrency(payroll.net_salary)}
@@ -749,8 +801,8 @@ export const PayrollPage: React.FC = () => {
 
             <div className="grid grid-cols-2 gap-4">
               <div>
-                <Label htmlFor="payment_method">Payment Method</Label>
-                <Select value={formData.payment_method} onValueChange={(value) => setFormData({ ...formData, payment_method: value })}>
+                <Label htmlFor="pay_method">Payment Method</Label>
+                <Select value={formData.pay_method} onValueChange={(value) => setFormData({ ...formData, pay_method: value })}>
                   <SelectTrigger>
                     <SelectValue />
                   </SelectTrigger>
@@ -1016,8 +1068,8 @@ export const PayrollPage: React.FC = () => {
 
             <div className="grid grid-cols-2 gap-4">
               <div>
-                <Label htmlFor="edit_payment_method">Payment Method</Label>
-                <Select value={formData.payment_method} onValueChange={(value) => setFormData({ ...formData, payment_method: value })}>
+                <Label htmlFor="edit_pay_method">Payment Method</Label>
+                <Select value={formData.pay_method} onValueChange={(value) => setFormData({ ...formData, pay_method: value })}>
                   <SelectTrigger>
                     <SelectValue />
                   </SelectTrigger>

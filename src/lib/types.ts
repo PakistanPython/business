@@ -588,13 +588,14 @@ export interface Payroll {
   insurance_deduction: number;
   other_deductions: number;
   total_deductions: number;
+  deductions: number;
   net_salary: number;
   total_working_days: number;
   total_present_days: number;
   total_overtime_hours: number;
   status: 'draft' | 'approved' | 'paid';
   payment_date?: string;
-  payment_method?: string;
+  pay_method?: string;
   notes?: string;
   created_at: string;
   updated_at?: string;
@@ -633,7 +634,7 @@ export interface PayrollForm {
   total_working_days?: number;
   total_present_days?: number;
   total_overtime_hours?: number;
-  payment_method?: string;
+  pay_method?: string;
   notes?: string;
   auto_calculate?: boolean;
 }
