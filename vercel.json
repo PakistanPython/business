@@ -2,35 +2,36 @@
   "version": 2,
   "builds": [
     {
-      "src": "backend/dist/server_sqlite.js",
-      "use": "@vercel/node"
-    },
-    {
       "src": "package.json",
       "use": "@vercel/static-build",
       "config": {
         "distDir": "dist"
       }
+    },
+    {
+      "src": "backend/src/server.ts",
+      "use": "@vercel/node"
     }
   ],
   "routes": [
     {
       "src": "/api/(.*)",
-      "dest": "/backend/dist/server_sqlite.js"
+      "dest": "/backend/src/server.ts"
+    },
+    {
+      "src": "/assets/(.*)",
+      "headers": { "cache-control": "s-maxage=31536000,immutable" },
+      "dest": "/assets/$1"
     },
     {
       "src": "/(.*)",
-      "dest": "/dist/$1"
+      "status": 200,
+      "dest": "/index.html"
     }
   ],
   "env": {
     "NODE_ENV": "production",
-    "JWT_SECRET": "@jwt_secret",
+    "JWT_SECRET": "a36d4faee35c282d0a48c6341604394fcd9f90cc703960b0de80fadbf475b7f3",
     "FRONTEND_URL": "https://my-business-app.vercel.app"
-  },
-  "functions": {
-    "backend/dist/server_sqlite.js": {
-      "maxDuration": 30
-    }
   }
 }

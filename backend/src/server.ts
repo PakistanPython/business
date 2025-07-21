@@ -42,20 +42,29 @@ const limiter = rateLimit({
 });
 
 // Dynamic CORS configuration
-const corsOrigin = process.env.NODE_ENV === 'production' 
-  ? process.env.FRONTEND_URL || 'https://your-frontend-domain.com'
-  : process.env.FRONTEND_URL || 'http://localhost:5173';
+const allowedOrigins = [
+  'http://localhost:5173',
+  process.env.FRONTEND_URL || 'https://my-business-app.vercel.app'
+];
+
+const corsOptions = {
+  origin: (origin, callback) => {
+    if (!origin || allowedOrigins.includes(origin) || (origin && origin.endsWith('.vercel.app'))) {
+      callback(null, true);
+    } else {
+      callback(new Error('Not allowed by CORS'));
+    }
+  },
+  credentials: true,
+  optionsSuccessStatus: 200
+};
 
 // Middleware
 app.use(helmet({
   crossOriginResourcePolicy: { policy: "cross-origin" },
   crossOriginEmbedderPolicy: false
 }));
-app.use(cors({
-  origin: corsOrigin,
-  credentials: true,
-  optionsSuccessStatus: 200
-}));
+app.use(cors(corsOptions));
 app.use(morgan('combined'));
 app.use(compression() as any);
 app.use(limiter);
@@ -141,7 +150,6 @@ const startServer = async () => {
       console.log(`🚀 Server running on http://localhost:${PORT}`);
       console.log(`📊 Environment: ${process.env.NODE_ENV || 'development'}`);
       console.log(`💾 Database: SQLite`);
-      console.log(`🌐 CORS Origin: ${corsOrigin}`);
     });
   } catch (error) {
     console.error('Failed to start server:', error);
