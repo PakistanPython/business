@@ -32,6 +32,7 @@ import {
   Book
 } from 'lucide-react';
 import { categoryApi } from '../lib/api';
+import { usePreferences } from '../contexts/PreferencesContext';
 import { Category, CategoryForm } from '../lib/types';
 import toast from 'react-hot-toast';
 
@@ -63,6 +64,7 @@ const colorOptions = [
 ];
 
 export const CategoriesPage: React.FC = () => {
+  const { formatCurrency } = usePreferences();
   const [categories, setCategories] = useState<Category[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isDialogOpen, setIsDialogOpen] = useState(false);
@@ -324,7 +326,7 @@ export const CategoriesPage: React.FC = () => {
                     </div>
                     <div className="text-right">
                       <div className="font-medium">{category.transaction_count || 0} transactions</div>
-                      <div className="text-sm text-gray-500">${(category.total_amount || 0).toFixed(2)}</div>
+                      <div className="text-sm text-gray-500">{formatCurrency(category.total_amount || 0)}</div>
                     </div>
                   </div>
                 ))}
@@ -361,7 +363,7 @@ export const CategoriesPage: React.FC = () => {
                     </div>
                     <div className="text-right">
                       <div className="font-medium">{category.transaction_count || 0} transactions</div>
-                      <div className="text-sm text-gray-500">${(category.total_amount || 0).toFixed(2)}</div>
+                      <div className="text-sm text-gray-500">{formatCurrency(category.total_amount || 0)}</div>
                     </div>
                   </div>
                 ))}
@@ -398,7 +400,7 @@ export const CategoriesPage: React.FC = () => {
                     </div>
                     <div className="text-right">
                       <div className="font-medium">{category.transaction_count || 0} transactions</div>
-                      <div className="text-sm text-gray-500">${(category.total_amount || 0).toFixed(2)}</div>
+                      <div className="text-sm text-gray-500">{formatCurrency(category.total_amount || 0)}</div>
                     </div>
                   </div>
                 ))}
@@ -480,7 +482,7 @@ export const CategoriesPage: React.FC = () => {
                         </div>
                       </TableCell>
                       <TableCell className="font-medium">
-                        ${(category.total_amount || 0).toFixed(2)}
+                        {formatCurrency(category.total_amount || 0)}
                       </TableCell>
                       <TableCell>{new Date(category.created_at).toLocaleDateString()}</TableCell>
                       <TableCell>

@@ -17,6 +17,7 @@ import {
   LineChart
 } from 'lucide-react';
 import { api, dashboardApi } from '../lib/api';
+import { usePreferences } from '../contexts/PreferencesContext';
 import { AnalyticsData, DashboardSummary, MonthlyData, TrendData, CategoryStats, CharityOverview, Payroll } from '../lib/types';
 import toast from 'react-hot-toast';
 import { ResponsiveContainer, LineChart as RechartsLineChart, CartesianGrid, XAxis, YAxis, Tooltip, Legend, Line, BarChart, Bar, PieChart as RechartsPieChart, Pie, Cell } from 'recharts';
@@ -24,16 +25,8 @@ import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import Papa from 'papaparse';
 
-// A helper function to safely format numbers to strings
-const formatToFixed = (value: string | number | undefined | null, digits: number = 2): string => {
-  const num = Number(value);
-  if (isNaN(num)) {
-    return '0.00';
-  }
-  return num.toFixed(digits);
-};
-
 export const AnalyticsPage: React.FC = () => {
+  const { formatCurrency } = usePreferences();
   const [analyticsData, setAnalyticsData] = useState<AnalyticsData | null>(null);
   const [dashboardSummary, setDashboardSummary] = useState<DashboardSummary | null>(null);
   const [monthlyData, setMonthlyData] = useState<MonthlyData[] | null>(null);
@@ -203,7 +196,7 @@ export const AnalyticsPage: React.FC = () => {
               <div key={index} className="space-y-1">
                 <div className="flex justify-between text-sm">
                   <span className="text-gray-600 truncate">{item.label}</span>
-                  <span className="font-medium">${item.value.toFixed(2)}</span>
+                  <span className="font-medium">{formatCurrency(item.value)}</span>
                 </div>
                 <div className="w-full bg-gray-200 rounded-full h-2">
                   <div className="bg-blue-600 h-2 rounded-full transition-all duration-300" style={{ width: `${percentage}%` }}/>
@@ -230,7 +223,7 @@ export const AnalyticsPage: React.FC = () => {
       </CardHeader>
       <CardContent>
         <div className="text-2xl font-bold">
-          {typeof value === 'number' ? `$${formatToFixed(value)}` : value}
+          {value}
         </div>
         {subtitle && <p className="text-xs opacity-70 mt-1">{subtitle}</p>}
       </CardContent>
@@ -313,21 +306,21 @@ export const AnalyticsPage: React.FC = () => {
       <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
         <MetricCard
           title="Net Worth"
-          value={Number(summary.net_worth)}
+          value={formatCurrency(summary.net_worth)}
           icon={<TrendingUp className="h-4 w-4 text-emerald-600" />}
           color="bg-gradient-to-br from-emerald-50 to-emerald-100 border-emerald-200"
           subtitle="Assets minus liabilities"
         />
         <MetricCard
           title="Monthly Income"
-          value={Number(monthlyData?.[currentMonthIndex]?.monthly_income) || 0}
+          value={formatCurrency(monthlyData?.[currentMonthIndex]?.monthly_income || 0)}
           icon={<DollarSign className="h-4 w-4 text-blue-600" />}
           color="bg-gradient-to-br from-blue-50 to-blue-100 border-blue-200"
           subtitle="Current month"
         />
         <MetricCard
           title="Monthly Expenses"
-          value={Number(monthlyData?.[currentMonthIndex]?.monthly_expenses) || 0}
+          value={formatCurrency(monthlyData?.[currentMonthIndex]?.monthly_expenses || 0)}
           icon={<CreditCard className="h-4 w-4 text-red-600" />}
           color="bg-gradient-to-br from-red-50 to-red-100 border-red-200"
           subtitle="Current month"
@@ -348,10 +341,10 @@ export const AnalyticsPage: React.FC = () => {
             <CardTitle className="text-green-800 flex items-center"><Wallet className="w-5 h-5 mr-2" />Assets Overview</CardTitle>
           </CardHeader>
           <CardContent className="space-y-3">
-            <div className="flex justify-between"><span className="text-green-700">Total Income</span><span className="font-bold text-green-900">${formatToFixed(summary.total_income)}</span></div>
-            <div className="flex justify-between"><span className="text-green-700">Account Balances</span><span className="font-bold text-green-900">${formatToFixed(summary.total_accounts_balance)}</span></div>
-            <div className="flex justify-between"><span className="text-green-700">Available Cash</span><span className="font-bold text-green-900">${formatToFixed(summary.available_cash)}</span></div>
-            <div className="flex justify-between border-t border-green-200 pt-2 mt-2"><span className="font-semibold text-green-800">Total Assets</span><span className="font-bold text-green-900">${formatToFixed(Number(summary.total_income) + Number(summary.total_accounts_balance) + Number(summary.available_cash))}</span></div>
+            <div className="flex justify-between"><span className="text-green-700">Total Income</span><span className="font-bold text-green-900">{formatCurrency(summary.total_income)}</span></div>
+            <div className="flex justify-between"><span className="text-green-700">Account Balances</span><span className="font-bold text-green-900">{formatCurrency(summary.total_accounts_balance)}</span></div>
+            <div className="flex justify-between"><span className="text-green-700">Available Cash</span><span className="font-bold text-green-900">{formatCurrency(summary.available_cash)}</span></div>
+            <div className="flex justify-between border-t border-green-200 pt-2 mt-2"><span className="font-semibold text-green-800">Total Assets</span><span className="font-bold text-green-900">{formatCurrency(Number(summary.total_income) + Number(summary.total_accounts_balance) + Number(summary.available_cash))}</span></div>
           </CardContent>
         </Card>
 
@@ -360,10 +353,10 @@ export const AnalyticsPage: React.FC = () => {
             <CardTitle className="text-red-800 flex items-center"><CreditCard className="w-5 h-5 mr-2" />Liabilities Overview</CardTitle>
           </CardHeader>
           <CardContent className="space-y-3">
-            <div className="flex justify-between"><span className="text-red-700">Total Expenses</span><span className="font-bold text-red-900">${formatToFixed(summary.total_expenses)}</span></div>
-            <div className="flex justify-between"><span className="text-red-700">Active Loans</span><span className="font-bold text-red-900">${formatToFixed(summary.total_active_loans)}</span></div>
-            <div className="flex justify-between"><span className="text-red-700">Charity Due</span><span className="font-bold text-red-900">${formatToFixed(summary.total_charity_remaining)}</span></div>
-            <div className="flex justify-between border-t border-red-200 pt-2 mt-2"><span className="font-semibold text-red-800">Total Liabilities</span><span className="font-bold text-red-900">${formatToFixed(Number(summary.total_expenses) + Number(summary.total_active_loans) + Number(summary.total_charity_remaining))}</span></div>
+            <div className="flex justify-between"><span className="text-red-700">Total Expenses</span><span className="font-bold text-red-900">{formatCurrency(summary.total_expenses)}</span></div>
+            <div className="flex justify-between"><span className="text-red-700">Active Loans</span><span className="font-bold text-red-900">{formatCurrency(summary.total_active_loans)}</span></div>
+            <div className="flex justify-between"><span className="text-red-700">Charity Due</span><span className="font-bold text-red-900">{formatCurrency(summary.total_charity_remaining)}</span></div>
+            <div className="flex justify-between border-t border-red-200 pt-2 mt-2"><span className="font-semibold text-red-800">Total Liabilities</span><span className="font-bold text-red-900">{formatCurrency(Number(summary.total_expenses) + Number(summary.total_active_loans) + Number(summary.total_charity_remaining))}</span></div>
           </CardContent>
         </Card>
 
@@ -372,10 +365,10 @@ export const AnalyticsPage: React.FC = () => {
             <CardTitle className="text-blue-800 flex items-center"><Heart className="w-5 h-5 mr-2" />Charity Overview</CardTitle>
           </CardHeader>
           <CardContent className="space-y-3">
-            <div className="flex justify-between"><span className="text-blue-700">Total Required</span><span className="font-bold text-blue-900">${formatToFixed(summary.total_charity_required)}</span></div>
-            <div className="flex justify-between"><span className="text-blue-700">Amount Paid</span><span className="font-bold text-blue-900">${formatToFixed(summary.total_charity_paid)}</span></div>
+            <div className="flex justify-between"><span className="text-blue-700">Total Required</span><span className="font-bold text-blue-900">{formatCurrency(summary.total_charity_required)}</span></div>
+            <div className="flex justify-between"><span className="text-blue-700">Amount Paid</span><span className="font-bold text-blue-900">{formatCurrency(summary.total_charity_paid)}</span></div>
             <div className="flex justify-between"><span className="text-blue-700">Completion Rate</span><span className="font-bold text-blue-900">{Number(summary.total_charity_required) > 0 ? ((Number(summary.total_charity_paid) / Number(summary.total_charity_required)) * 100).toFixed(1) : '100.0'}%</span></div>
-            <div className="flex justify-between border-t border-blue-200 pt-2 mt-2"><span className="font-semibold text-blue-800">Total Charity</span><span className="font-bold text-blue-900">${formatToFixed(Number(summary.total_charity_required) + Number(summary.total_charity_paid))}</span></div>
+            <div className="flex justify-between border-t border-blue-200 pt-2 mt-2"><span className="font-semibold text-blue-800">Total Charity</span><span className="font-bold text-blue-900">{formatCurrency(Number(summary.total_charity_required) + Number(summary.total_charity_paid))}</span></div>
           </CardContent>
         </Card>
       </div>
@@ -387,10 +380,10 @@ export const AnalyticsPage: React.FC = () => {
             <CardTitle className="text-cyan-800 flex items-center"><ArrowUp className="w-5 h-5 mr-2" />Cash In</CardTitle>
           </CardHeader>
           <CardContent className="space-y-3">
-            <div className="flex justify-between"><span className="text-cyan-700">Total Income</span><span className="font-bold text-cyan-900">${formatToFixed(summary.total_income)}</span></div>
-            <div className="flex justify-between"><span className="text-cyan-700">Total Loan</span><span className="font-bold text-cyan-900">${formatToFixed(summary.total_active_loans)}</span></div>
-            <div className="flex justify-between"><span className="text-cyan-700">Total Sale</span><span className="font-bold text-cyan-900">${formatToFixed(summary.total_sales_revenue)}</span></div>
-            <div className="flex justify-between border-t border-cyan-200 pt-2 mt-2"><span className="font-semibold text-cyan-800">Total Cash In</span><span className="font-bold text-cyan-900">${formatToFixed(totalCashIn)}</span></div>
+            <div className="flex justify-between"><span className="text-cyan-700">Total Income</span><span className="font-bold text-cyan-900">{formatCurrency(summary.total_income)}</span></div>
+            <div className="flex justify-between"><span className="text-cyan-700">Total Loan</span><span className="font-bold text-cyan-900">{formatCurrency(summary.total_active_loans)}</span></div>
+            <div className="flex justify-between"><span className="text-cyan-700">Total Sale</span><span className="font-bold text-cyan-900">{formatCurrency(summary.total_sales_revenue)}</span></div>
+            <div className="flex justify-between border-t border-cyan-200 pt-2 mt-2"><span className="font-semibold text-cyan-800">Total Cash In</span><span className="font-bold text-cyan-900">{formatCurrency(totalCashIn)}</span></div>
           </CardContent>
         </Card>
         <Card className="bg-gradient-to-br from-orange-50 to-orange-100 border-orange-200">
@@ -398,12 +391,12 @@ export const AnalyticsPage: React.FC = () => {
             <CardTitle className="text-orange-800 flex items-center"><ArrowDown className="w-5 h-5 mr-2" />Cash Out</CardTitle>
           </CardHeader>
           <CardContent className="space-y-3">
-            <div className="flex justify-between"><span className="text-orange-700">Total Expenses</span><span className="font-bold text-orange-900">${formatToFixed(summary.total_expenses)}</span></div>
-            <div className="flex justify-between"><span className="text-orange-700">Total Purchase</span><span className="font-bold text-orange-900">${formatToFixed(summary.total_purchases)}</span></div>
-            <div className="flex justify-between"><span className="text-orange-700">Total Charity</span><span className="font-bold text-orange-900">${formatToFixed(summary.total_charity_paid)}</span></div>
-            <div className="flex justify-between"><span className="text-orange-700">Total Receivable</span><span className="font-bold text-orange-900">${formatToFixed(summary.total_ar_outstanding)}</span></div>
-            <div className="flex justify-between"><span className="text-orange-700">Total Net Salary</span><span className="font-bold text-orange-900">${formatToFixed(totalNetSalary)}</span></div>
-            <div className="flex justify-between border-t border-orange-200 pt-2 mt-2"><span className="font-semibold text-orange-800">Total Cash Out</span><span className="font-bold text-orange-900">${formatToFixed(totalCashOut)}</span></div>
+            <div className="flex justify-between"><span className="text-orange-700">Total Expenses</span><span className="font-bold text-orange-900">{formatCurrency(summary.total_expenses)}</span></div>
+            <div className="flex justify-between"><span className="text-orange-700">Total Purchase</span><span className="font-bold text-orange-900">{formatCurrency(summary.total_purchases)}</span></div>
+            <div className="flex justify-between"><span className="text-orange-700">Total Charity</span><span className="font-bold text-orange-900">{formatCurrency(summary.total_charity_paid)}</span></div>
+            <div className="flex justify-between"><span className="text-orange-700">Total Receivable</span><span className="font-bold text-orange-900">{formatCurrency(summary.total_ar_outstanding)}</span></div>
+            <div className="flex justify-between"><span className="text-orange-700">Total Net Salary</span><span className="font-bold text-orange-900">{formatCurrency(totalNetSalary)}</span></div>
+            <div className="flex justify-between border-t border-orange-200 pt-2 mt-2"><span className="font-semibold text-orange-800">Total Cash Out</span><span className="font-bold text-orange-900">{formatCurrency(totalCashOut)}</span></div>
           </CardContent>
         </Card>
         <Card className="bg-gradient-to-br from-indigo-50 to-indigo-100 border-indigo-200">
@@ -411,9 +404,9 @@ export const AnalyticsPage: React.FC = () => {
             <CardTitle className="text-indigo-800 flex items-center"><Wallet className="w-5 h-5 mr-2" />Cash In Hand</CardTitle>
           </CardHeader>
           <CardContent className="space-y-3">
-            <div className="flex justify-between"><span className="text-indigo-700">Total Cash In</span><span className="font-bold text-indigo-900">${formatToFixed(totalCashIn)}</span></div>
-            <div className="flex justify-between"><span className="text-indigo-700">Total Cash Out</span><span className="font-bold text-indigo-900">${formatToFixed(totalCashOut)}</span></div>
-            <div className="flex justify-between border-t border-indigo-200 pt-2 mt-2"><span className="font-semibold text-indigo-800">Available Cash</span><span className="font-bold text-indigo-900">${formatToFixed(availableCash)}</span></div>
+            <div className="flex justify-between"><span className="text-indigo-700">Total Cash In</span><span className="font-bold text-indigo-900">{formatCurrency(totalCashIn)}</span></div>
+            <div className="flex justify-between"><span className="text-indigo-700">Total Cash Out</span><span className="font-bold text-indigo-900">{formatCurrency(totalCashOut)}</span></div>
+            <div className="flex justify-between border-t border-indigo-200 pt-2 mt-2"><span className="font-semibold text-indigo-800">Available Cash</span><span className="font-bold text-indigo-900">{formatCurrency(availableCash)}</span></div>
           </CardContent>
         </Card>
       </div>

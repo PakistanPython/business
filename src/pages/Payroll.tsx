@@ -13,6 +13,7 @@ import { Switch } from '../components/ui/switch';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '../components/ui/table';
 import { Separator } from '../components/ui/separator';
 import { useAuth } from '../contexts/AuthContext';
+import { usePreferences } from '../contexts/PreferencesContext';
 import { api } from '../lib/api';
 import { Payroll, PayrollStats, PayrollForm, Employee, BulkPayrollForm } from '../lib/types';
 import toast from 'react-hot-toast';
@@ -71,6 +72,7 @@ const initialBulkFormData: BulkPayrollFormData = {
 
 export const PayrollPage: React.FC = () => {
   const { user } = useAuth();
+  const { formatCurrency } = usePreferences();
   const [payrollRecords, setPayrollRecords] = useState<Payroll[]>([]);
   const [employees, setEmployees] = useState<Employee[]>([]);
   const [stats, setStats] = useState<PayrollStats | null>(null);
@@ -387,20 +389,6 @@ export const PayrollPage: React.FC = () => {
     }
   };
 
-
-  const formatCurrency = (amount: number | null | undefined) => {
-    const value = Number(amount);
-    if (isNaN(value)) {
-      return new Intl.NumberFormat('en-US', {
-        style: 'currency',
-        currency: 'USD',
-      }).format(0);
-    }
-    return new Intl.NumberFormat('en-US', {
-      style: 'currency',
-      currency: 'USD',
-    }).format(value);
-  };
 
   const formatDate = (dateString: string) => {
     return new Date(dateString).toLocaleDateString();
