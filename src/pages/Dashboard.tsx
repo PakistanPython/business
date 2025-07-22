@@ -253,18 +253,6 @@ export const Dashboard: React.FC = () => {
           <p className="text-gray-600">Welcome back! Here's your financial overview.</p>
         </div>
         <div className="flex space-x-3">
-          <Button asChild>
-            <Link to="/income">Add Income</Link>
-          </Button>
-          <Button variant="outline" asChild>
-            <Link to="/expenses">Add Expense</Link>
-          </Button>
-          <Button variant="outline" asChild>
-            <Link to="/purchases">Add Purchase</Link>
-          </Button>
-          <Button asChild className="bg-green-600 hover:bg-green-700">
-            <Link to="/sales">Add Sale</Link>
-          </Button>
         </div>
       </div>
 
@@ -334,9 +322,7 @@ export const Dashboard: React.FC = () => {
                       <p className={`text-xs ${
                         stat.changeType === 'positive' 
                           ? 'text-green-600' 
-                          : stat.changeType === 'negative' 
-                            ? 'text-red-600' 
-                            : 'text-gray-600'
+                          : 'text-gray-600'
                       }`}>
                         {stat.change}
                       </p>
