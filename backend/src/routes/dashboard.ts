@@ -202,7 +202,10 @@ router.get('/summary', async (req, res) => {
 router.get('/analytics', [
   query('period').optional().isIn(['week', 'month', 'quarter', 'year']).withMessage('Invalid period'),
   query('year').optional().isInt({ min: 2000, max: 2100 }).withMessage('Invalid year'),
-  query('time_range').optional().isIn(['3months', '6months', '12months', '24months', 'current_year']).withMessage('Invalid time range')
+  query('time_range').optional({ checkFalsy: true }).isIn(['3months', '6months', '12months', '24months', 'current_year', 'last_year', 'all_time']).withMessage('Invalid time range'),
+  query('month').optional().isInt({ min: 1, max: 12 }).withMessage('Invalid month'),
+  query('start_date').optional().isISO8601().withMessage('Invalid start date'),
+  query('end_date').optional().isISO8601().withMessage('Invalid end date')
 ], async (req, res) => {
   try {
     const errors = validationResult(req);
@@ -218,11 +221,20 @@ router.get('/analytics', [
     const period = req.query.period as string || 'month';
     const year = parseInt(req.query.year as string) || new Date().getFullYear();
     const timeRange = req.query.time_range as string;
+    const month = req.query.month as string;
+    const startDate = req.query.start_date as string;
+    const endDate = req.query.end_date as string;
 
     let dateFilter = '';
     let groupBy = '';
 
-    if (timeRange) {
+    if (startDate && endDate) {
+      dateFilter = `AND date BETWEEN '${startDate}' AND '${endDate}'`;
+      groupBy = `to_char(date, 'YYYY-MM-DD')`;
+    } else if (month) {
+      dateFilter = `AND to_char(date, 'YYYY-MM') = '${year}-${String(month).padStart(2, '0')}'`;
+      groupBy = `to_char(date, 'YYYY-MM-DD')`;
+    } else if (timeRange) {
       let intervalMonths = 0;
       switch (timeRange) {
         case '3months': intervalMonths = 3; break;
@@ -231,6 +243,14 @@ router.get('/analytics', [
         case '24months': intervalMonths = 24; break;
         case 'current_year':
           dateFilter = `AND to_char(date, 'YYYY') = to_char(CURRENT_DATE, 'YYYY')`;
+          groupBy = `to_char(date, 'YYYY-MM')`;
+          break;
+        case 'last_year':
+          dateFilter = `AND to_char(date, 'YYYY') = to_char(CURRENT_DATE - INTERVAL '1 year', 'YYYY')`;
+          groupBy = `to_char(date, 'YYYY-MM')`;
+          break;
+        case 'all_time':
+          dateFilter = ``;
           groupBy = `to_char(date, 'YYYY-MM')`;
           break;
       }

@@ -39,18 +39,48 @@ export const AnalyticsPage: React.FC = () => {
   const [charityOverview, setCharityOverview] = useState<CharityOverview[] | null>(null);
 
   const [isLoading, setIsLoading] = useState(true);
-  const [timeRange, setTimeRange] = useState('current_year');
+  const [timeRange, setTimeRange] = useState('all_time');
+  const [year, setYear] = useState(new Date().getFullYear());
+  const [month, setMonth] = useState<number | null>(null);
+  const [startDate, setStartDate] = useState<string | null>(null);
+  const [endDate, setEndDate] = useState<string | null>(null);
 
   useEffect(() => {
     loadAnalyticsData();
     loadDashboardSummary(); // Load summary data separately
-  }, [timeRange]);
+  }, [timeRange, year, month, startDate, endDate]);
+
+  const handleTimeRangeChange = (value: string) => {
+    setTimeRange(value);
+    setMonth(null);
+    setStartDate(null);
+    setEndDate(null);
+  };
+
+  const handleMonthChange = (value: string) => {
+    setMonth(Number(value));
+    setTimeRange('');
+    setStartDate(null);
+    setEndDate(null);
+  };
+
+  const handleStartDateChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    setStartDate(e.target.value);
+    setTimeRange('');
+    setMonth(null);
+  };
+
+  const handleEndDateChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    setEndDate(e.target.value);
+    setTimeRange('');
+    setMonth(null);
+  };
 
   const loadAnalyticsData = async () => {
     try {
       setIsLoading(true);
       setAnalyticsData(null); 
-      const response = await dashboardApi.getAnalytics({ time_range: timeRange });
+      const response = await dashboardApi.getAnalytics({ time_range: timeRange, year, month, start_date: startDate, end_date: endDate });
       setAnalyticsData(response.data.data);
     } catch (error) {
       console.error('Error loading analytics:', error);
@@ -182,18 +212,37 @@ export const AnalyticsPage: React.FC = () => {
           <p className="text-gray-600 mt-2">Comprehensive financial insights and trends</p>
         </div>
         <div className="flex gap-2">
-          <Select value={timeRange} onValueChange={setTimeRange}>
+          <Select value={timeRange} onValueChange={handleTimeRangeChange}>
             <SelectTrigger className="w-40 bg-white">
               <SelectValue placeholder="Time Range" />
             </SelectTrigger>
             <SelectContent>
+              <SelectItem value="all_time">All Time</SelectItem>
               <SelectItem value="current_year">Current Year</SelectItem>
+              <SelectItem value="last_year">Last Year</SelectItem>
               <SelectItem value="3months">Last 3 Months</SelectItem>
               <SelectItem value="6months">Last 6 Months</SelectItem>
               <SelectItem value="12months">Last 12 Months</SelectItem>
               <SelectItem value="24months">Last 24 Months</SelectItem>
             </SelectContent>
           </Select>
+          <Select value={month?.toString() || ''} onValueChange={handleMonthChange}>
+            <SelectTrigger className="w-40 bg-white">
+              <SelectValue placeholder="Month" />
+            </SelectTrigger>
+            <SelectContent>
+              {Array.from({ length: 12 }, (_, i) => (
+                <SelectItem key={i} value={(i + 1).toString()}>
+                  {new Date(0, i).toLocaleString('default', { month: 'long' })}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          <div className="flex items-center gap-2">
+            <input type="date" value={startDate || ''} onChange={handleStartDateChange} className="bg-white border border-gray-300 rounded-md px-2 py-1" />
+            <span>-</span>
+            <input type="date" value={endDate || ''} onChange={handleEndDateChange} className="bg-white border border-gray-300 rounded-md px-2 py-1" />
+          </div>
           <Button onClick={exportData} variant="outline">
             <Download className="w-4 h-4 mr-2" />
             Export
@@ -274,7 +323,7 @@ export const AnalyticsPage: React.FC = () => {
         <Card>
           <CardHeader>
             <CardTitle className="flex items-center"><LineChart className="w-5 h-5 mr-2" />Income vs Expenses Trend</CardTitle>
-            <CardDescription>{timeRange === 'current_year' ? 'Current Year' : `Last ${timeRange === '3months' ? '3' : timeRange === '6months' ? '6' : timeRange === '12months' ? '12' : '24'} Months`}</CardDescription>
+            <CardDescription>{timeRange === 'all_time' ? 'All Time' : timeRange === 'current_year' ? 'Current Year' : timeRange === 'last_year' ? 'Last Year' : `Last ${timeRange === '3months' ? '3' : timeRange === '6months' ? '6' : timeRange === '12months' ? '12' : '24'} Months`}</CardDescription>
           </CardHeader>
           <CardContent>
             <ResponsiveContainer width="100%" height={300}>
@@ -313,7 +362,7 @@ export const AnalyticsPage: React.FC = () => {
         <Card>
           <CardHeader>
             <CardTitle className="flex items-center"><BarChart3 className="w-5 h-5 mr-2" />Monthly Income</CardTitle>
-            <CardDescription>{timeRange === 'current_year' ? 'Income over the current year' : `Income over the last ${timeRange === '3months' ? '3' : timeRange === '6months' ? '6' : timeRange === '12months' ? '12' : '24'} months`}</CardDescription>
+            <CardDescription>{timeRange === 'all_time' ? 'Income over all time' : timeRange === 'current_year' ? 'Income over the current year' : timeRange === 'last_year' ? 'Income over the last year' : `Income over the last ${timeRange === '3months' ? '3' : timeRange === '6months' ? '6' : timeRange === '12months' ? '12' : '24'} months`}</CardDescription>
           </CardHeader>
           <CardContent>
             <ResponsiveContainer width="100%" height={300}>
@@ -332,7 +381,7 @@ export const AnalyticsPage: React.FC = () => {
         <Card>
           <CardHeader>
             <CardTitle className="flex items-center"><BarChart3 className="w-5 h-5 mr-2" />Monthly Expenses</CardTitle>
-            <CardDescription>{timeRange === 'current_year' ? 'Expenses over the current year' : `Expenses over the last ${timeRange === '3months' ? '3' : timeRange === '6months' ? '6' : timeRange === '12months' ? '12' : '24'} months`}</CardDescription>
+            <CardDescription>{timeRange === 'all_time' ? 'Expenses over all time' : timeRange === 'current_year' ? 'Expenses over the current year' : timeRange === 'last_year' ? 'Expenses over the last year' : `Expenses over the last ${timeRange === '3months' ? '3' : timeRange === '6months' ? '6' : timeRange === '12months' ? '12' : '24'} months`}</CardDescription>
           </CardHeader>
           <CardContent>
             <ResponsiveContainer width="100%" height={300}>
@@ -352,7 +401,7 @@ export const AnalyticsPage: React.FC = () => {
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center"><BarChart3 className="w-5 h-5 mr-2" />Monthly Purchases</CardTitle>
-          <CardDescription>{timeRange === 'current_year' ? 'Purchases over the current year' : `Purchases over the last ${timeRange === '3months' ? '3' : timeRange === '6months' ? '6' : timeRange === '12months' ? '12' : '24'} months`}</CardDescription>
+          <CardDescription>{timeRange === 'all_time' ? 'Purchases over all time' : timeRange === 'current_year' ? 'Purchases over the current year' : timeRange === 'last_year' ? 'Purchases over the last year' : `Purchases over the last ${timeRange === '3months' ? '3' : timeRange === '6months' ? '6' : timeRange === '12months' ? '12' : '24'} months`}</CardDescription>
         </CardHeader>
         <CardContent>
           <ResponsiveContainer width="100%" height={300}>
