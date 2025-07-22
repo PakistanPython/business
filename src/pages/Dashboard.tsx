@@ -24,7 +24,7 @@ import {
 import { dashboardApi } from '../lib/api';
 import { DashboardData, AnalyticsData, DashboardSummary } from '../lib/types';
 import { Link } from 'react-router-dom';
-
+import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
 export const Dashboard: React.FC = () => {
   const [dashboardOverviewData, setDashboardOverviewData] = useState<DashboardData | null>(null);
   const [analyticsPageData, setAnalyticsPageData] = useState<AnalyticsData | null>(null);
@@ -349,13 +349,17 @@ export const Dashboard: React.FC = () => {
             </CardDescription>
           </CardHeader>
           <CardContent>
-            <div className="h-[300px] flex items-center justify-center bg-gray-50 rounded-lg">
-              <div className="text-center">
-                <BarChart3 className="h-12 w-12 text-gray-400 mx-auto mb-2" />
-                <p className="text-gray-500">Chart will be rendered here</p>
-                <p className="text-sm text-gray-400">Integration with chart library needed</p>
-              </div>
-            </div>
+            <ResponsiveContainer width="100%" height={300}>
+              <BarChart data={dashboardOverviewData?.trend_data}>
+                <CartesianGrid strokeDasharray="3 3" />
+                <XAxis dataKey="month_label" />
+                <YAxis />
+                <Tooltip />
+                <Legend />
+                <Bar dataKey="income" fill="#82ca9d" />
+                <Bar dataKey="expenses" fill="#8884d8" />
+              </BarChart>
+            </ResponsiveContainer>
           </CardContent>
         </Card>
 

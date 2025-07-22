@@ -109,11 +109,14 @@ router.get('/summary', async (req, res) => {
 
     // Get recent transactions
     const recentTransactions = await dbAll(`
-      SELECT 
-        id, amount, description, date, created_at
-      FROM income 
-      WHERE business_id = $1 
-      ORDER BY created_at DESC 
+      SELECT id, amount, description, date, created_at, 'income' as transaction_type
+      FROM income
+      WHERE business_id = $1
+      UNION ALL
+      SELECT id, amount, description, date, created_at, 'expense' as transaction_type
+      FROM expenses
+      WHERE business_id = $1
+      ORDER BY created_at DESC
       LIMIT 10
     `, [userId]);
 
