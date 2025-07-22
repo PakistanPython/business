@@ -19,6 +19,7 @@ import {
 import { dashboardApi } from '../lib/api';
 import { AnalyticsData, DashboardSummary, MonthlyData, TrendData, CategoryStats, CharityOverview } from '../lib/types';
 import toast from 'react-hot-toast';
+import { ResponsiveContainer, LineChart as RechartsLineChart, CartesianGrid, XAxis, YAxis, Tooltip, Legend, Line, BarChart, Bar, PieChart as RechartsPieChart, Pie, Cell } from 'recharts';
 
 // A helper function to safely format numbers to strings
 const formatToFixed = (value: string | number | undefined | null, digits: number = 2): string => {
@@ -170,6 +171,8 @@ export const AnalyticsPage: React.FC = () => {
     ? ((Number(summary.total_income) - Number(summary.total_expenses)) / Number(summary.total_income)) * 100 
     : 0;
 
+  const currentMonthIndex = new Date().getMonth();
+
   return (
     <div className="space-y-6 p-6">
       {/* Header */}
@@ -208,14 +211,14 @@ export const AnalyticsPage: React.FC = () => {
         />
         <MetricCard
           title="Monthly Income"
-          value={Number(monthlyData[monthlyData.length - 1]?.monthly_income) || 0}
+          value={Number(monthlyData?.[currentMonthIndex]?.monthly_income) || 0}
           icon={<DollarSign className="h-4 w-4 text-blue-600" />}
           color="bg-gradient-to-br from-blue-50 to-blue-100 border-blue-200"
           subtitle="Current month"
         />
         <MetricCard
           title="Monthly Expenses"
-          value={Number(monthlyData[monthlyData.length - 1]?.monthly_expenses) || 0}
+          value={Number(monthlyData?.[currentMonthIndex]?.monthly_expenses) || 0}
           icon={<CreditCard className="h-4 w-4 text-red-600" />}
           color="bg-gradient-to-br from-red-50 to-red-100 border-red-200"
           subtitle="Current month"
@@ -273,7 +276,17 @@ export const AnalyticsPage: React.FC = () => {
             <CardDescription>Last {timeRange === '3months' ? '3' : timeRange === '6months' ? '6' : timeRange === '12months' ? '12' : '24'} Months</CardDescription>
           </CardHeader>
           <CardContent>
-            <SimpleChart data={trendData} title="Income vs Expenses" />
+            <ResponsiveContainer width="100%" height={300}>
+              <RechartsLineChart data={trendData}>
+                <CartesianGrid strokeDasharray="3 3" />
+                <XAxis dataKey="month_label" />
+                <YAxis />
+                <Tooltip />
+                <Legend />
+                <Line type="monotone" dataKey="income" stroke="#82ca9d" />
+                <Line type="monotone" dataKey="expenses" stroke="#8884d8" />
+              </RechartsLineChart>
+            </ResponsiveContainer>
           </CardContent>
         </Card>
 
@@ -283,7 +296,14 @@ export const AnalyticsPage: React.FC = () => {
             <CardDescription>Breakdown of spending by category</CardDescription>
           </CardHeader>
           <CardContent>
-            <SimpleChart data={topExpenseCategories} title="Expense Categories" />
+            <ResponsiveContainer width="100%" height={300}>
+              <RechartsPieChart>
+                <Pie data={topExpenseCategories} dataKey="total_amount" nameKey="category" cx="50%" cy="50%" outerRadius={100} fill="#8884d8" label>
+                  {topExpenseCategories?.map((entry, index) => <Cell key={`cell-${index}`} fill={['#8884d8', '#82ca9d', '#ffc658', '#ff8042', '#0088FE', '#00C49F', '#FFBB28', '#FF8042'][index % 8]} />)}
+                </Pie>
+                <Tooltip />
+              </RechartsPieChart>
+            </ResponsiveContainer>
           </CardContent>
         </Card>
       </div>
@@ -295,7 +315,16 @@ export const AnalyticsPage: React.FC = () => {
             <CardDescription>Income over the last {timeRange === '3months' ? '3' : timeRange === '6months' ? '6' : timeRange === '12months' ? '12' : '24'} months</CardDescription>
           </CardHeader>
           <CardContent>
-            <SimpleChart data={analyticsData.income_analytics} title="Monthly Income" />
+            <ResponsiveContainer width="100%" height={300}>
+              <BarChart data={analyticsData.income_analytics}>
+                <CartesianGrid strokeDasharray="3 3" />
+                <XAxis dataKey="period" />
+                <YAxis />
+                <Tooltip />
+                <Legend />
+                <Bar dataKey="total_amount" fill="#82ca9d" />
+              </BarChart>
+            </ResponsiveContainer>
           </CardContent>
         </Card>
 
@@ -305,7 +334,16 @@ export const AnalyticsPage: React.FC = () => {
             <CardDescription>Expenses over the last {timeRange === '3months' ? '3' : timeRange === '6months' ? '6' : timeRange === '12months' ? '12' : '24'} months</CardDescription>
           </CardHeader>
           <CardContent>
-            <SimpleChart data={analyticsData.expense_analytics} title="Monthly Expenses" />
+            <ResponsiveContainer width="100%" height={300}>
+              <BarChart data={analyticsData.expense_analytics}>
+                <CartesianGrid strokeDasharray="3 3" />
+                <XAxis dataKey="period" />
+                <YAxis />
+                <Tooltip />
+                <Legend />
+                <Bar dataKey="total_amount" fill="#8884d8" />
+              </BarChart>
+            </ResponsiveContainer>
           </CardContent>
         </Card>
       </div>
@@ -316,7 +354,18 @@ export const AnalyticsPage: React.FC = () => {
           <CardDescription>Income, Expenses, and Profit over time</CardDescription>
         </CardHeader>
         <CardContent>
-          <SimpleChart data={analyticsData.profit_analysis} title="Profit Analysis" />
+          <ResponsiveContainer width="100%" height={300}>
+            <BarChart data={analyticsData.profit_analysis}>
+              <CartesianGrid strokeDasharray="3 3" />
+              <XAxis dataKey="period" />
+              <YAxis />
+              <Tooltip />
+              <Legend />
+              <Bar dataKey="income" fill="#82ca9d" />
+              <Bar dataKey="expenses" fill="#8884d8" />
+              <Bar dataKey="profit" fill="#ffc658" />
+            </BarChart>
+          </ResponsiveContainer>
         </CardContent>
       </Card>
     </div>
