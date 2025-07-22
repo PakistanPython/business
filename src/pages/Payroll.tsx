@@ -139,6 +139,12 @@ export const PayrollPage: React.FC = () => {
     fetchStats();
   }, [statusFilter, employeeFilter, periodFilter, searchTerm]);
 
+  useEffect(() => {
+    if (stats) {
+      console.log('Stats object:', stats);
+    }
+  }, [stats]);
+
   const fetchPayrollRecords = async () => {
     try {
       const params = new URLSearchParams();
@@ -381,11 +387,19 @@ export const PayrollPage: React.FC = () => {
     }
   };
 
-  const formatCurrency = (amount: number) => {
+
+  const formatCurrency = (amount: number | null | undefined) => {
+    const value = Number(amount);
+    if (isNaN(value)) {
+      return new Intl.NumberFormat('en-US', {
+        style: 'currency',
+        currency: 'USD',
+      }).format(0);
+    }
     return new Intl.NumberFormat('en-US', {
       style: 'currency',
       currency: 'USD',
-    }).format(amount);
+    }).format(value);
   };
 
   const formatDate = (dateString: string) => {
@@ -400,6 +414,8 @@ export const PayrollPage: React.FC = () => {
     
     return searchMatch;
   });
+
+  const totalNetSalary = filteredPayrollRecords.reduce((sum, record) => sum + record.net_salary, 0);
 
   if (loading) {
     return (
@@ -458,7 +474,7 @@ export const PayrollPage: React.FC = () => {
                 <Clock className="h-8 w-8 text-yellow-600" />
                 <div className="ml-4">
                   <p className="text-sm font-medium text-gray-600">Pending</p>
-                  <p className="text-2xl font-bold text-gray-900">{stats.draft_payrolls + stats.approved_payrolls}</p>
+                  <p className="text-2xl font-bold text-gray-900">{stats.draft_payrolls}</p>
                 </div>
               </div>
             </CardContent>
@@ -482,7 +498,7 @@ export const PayrollPage: React.FC = () => {
                 <DollarSign className="h-8 w-8 text-purple-600" />
                 <div className="ml-4">
                   <p className="text-sm font-medium text-gray-600">Total Net Salary</p>
-                  <p className="text-2xl font-bold text-gray-900">{formatCurrency(stats.total_net_salary)}</p>
+                  <p className="text-2xl font-bold text-gray-900">{formatCurrency(totalNetSalary)}</p>
                 </div>
               </div>
             </CardContent>

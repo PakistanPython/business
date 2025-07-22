@@ -612,10 +612,10 @@ router.get('/stats/summary', async (req: Request, res: Response) => {
         COUNT(CASE WHEN p.status = 'draft' THEN 1 END) as draft_payrolls,
         COUNT(CASE WHEN p.status = 'approved' THEN 1 END) as approved_payrolls,
         COUNT(CASE WHEN p.status = 'paid' THEN 1 END) as paid_payrolls,
-        ROUND(CAST(SUM(gross_salary) AS numeric), 2) as total_gross_salary,
-        ROUND(CAST(SUM(net_salary) AS numeric), 2) as total_net_salary,
-        ROUND(CAST(SUM(deductions) AS numeric), 2) as total_deductions,
-        ROUND(CAST(AVG(net_salary) AS numeric), 2) as avg_net_salary
+        COALESCE(ROUND(CAST(SUM(gross_salary) AS numeric), 2), 0) as total_gross_salary,
+        COALESCE(ROUND(CAST(SUM(net_salary) AS numeric), 2), 0) as total_net_salary,
+        COALESCE(ROUND(CAST(SUM(deductions) AS numeric), 2), 0) as total_deductions,
+        COALESCE(ROUND(CAST(AVG(net_salary) AS numeric), 2), 0) as avg_net_salary
       FROM payroll p
       JOIN employees e ON p.employee_id = e.id
       WHERE e.business_id = $1
