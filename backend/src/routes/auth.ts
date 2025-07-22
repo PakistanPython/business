@@ -249,9 +249,10 @@ router.put('/profile', [
     // Update user
     const updates: string[] = [];
     const values: any[] = [];
+    let placeholderIndex = 1;
 
     if (email) {
-      updates.push('email = ?');
+      updates.push(`email = $${placeholderIndex++}`);
       values.push(email);
     }
 
@@ -266,7 +267,7 @@ router.put('/profile', [
     values.push(userId);
 
     await dbRun(
-      `UPDATE users SET ${updates.join(', ')} WHERE id = $1`,
+      `UPDATE users SET ${updates.join(', ')} WHERE id = $${placeholderIndex}`,
       values
     );
 
