@@ -342,6 +342,7 @@ export const AnalyticsPage: React.FC = () => {
             <div className="flex justify-between"><span className="text-green-700">Total Income</span><span className="font-bold text-green-900">${formatToFixed(summary.total_income)}</span></div>
             <div className="flex justify-between"><span className="text-green-700">Account Balances</span><span className="font-bold text-green-900">${formatToFixed(summary.total_accounts_balance)}</span></div>
             <div className="flex justify-between"><span className="text-green-700">Available Cash</span><span className="font-bold text-green-900">${formatToFixed(summary.available_cash)}</span></div>
+            <div className="flex justify-between border-t border-green-200 pt-2 mt-2"><span className="font-semibold text-green-800">Total Assets</span><span className="font-bold text-green-900">${formatToFixed(Number(summary.total_income) + Number(summary.total_accounts_balance) + Number(summary.available_cash))}</span></div>
           </CardContent>
         </Card>
 
@@ -353,6 +354,7 @@ export const AnalyticsPage: React.FC = () => {
             <div className="flex justify-between"><span className="text-red-700">Total Expenses</span><span className="font-bold text-red-900">${formatToFixed(summary.total_expenses)}</span></div>
             <div className="flex justify-between"><span className="text-red-700">Active Loans</span><span className="font-bold text-red-900">${formatToFixed(summary.total_active_loans)}</span></div>
             <div className="flex justify-between"><span className="text-red-700">Charity Due</span><span className="font-bold text-red-900">${formatToFixed(summary.total_charity_remaining)}</span></div>
+            <div className="flex justify-between border-t border-red-200 pt-2 mt-2"><span className="font-semibold text-red-800">Total Liabilities</span><span className="font-bold text-red-900">${formatToFixed(Number(summary.total_expenses) + Number(summary.total_active_loans) + Number(summary.total_charity_remaining))}</span></div>
           </CardContent>
         </Card>
 
@@ -364,6 +366,39 @@ export const AnalyticsPage: React.FC = () => {
             <div className="flex justify-between"><span className="text-blue-700">Total Required</span><span className="font-bold text-blue-900">${formatToFixed(summary.total_charity_required)}</span></div>
             <div className="flex justify-between"><span className="text-blue-700">Amount Paid</span><span className="font-bold text-blue-900">${formatToFixed(summary.total_charity_paid)}</span></div>
             <div className="flex justify-between"><span className="text-blue-700">Completion Rate</span><span className="font-bold text-blue-900">{Number(summary.total_charity_required) > 0 ? ((Number(summary.total_charity_paid) / Number(summary.total_charity_required)) * 100).toFixed(1) : '100.0'}%</span></div>
+            <div className="flex justify-between border-t border-blue-200 pt-2 mt-2"><span className="font-semibold text-blue-800">Total Charity</span><span className="font-bold text-blue-900">${formatToFixed(Number(summary.total_charity_required) + Number(summary.total_charity_paid))}</span></div>
+          </CardContent>
+        </Card>
+      </div>
+
+      {/* Cash Flow Overview */}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+        <Card className="bg-gradient-to-br from-cyan-50 to-cyan-100 border-cyan-200">
+          <CardHeader>
+            <CardTitle className="text-cyan-800 flex items-center"><ArrowUp className="w-5 h-5 mr-2" />Cash In</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            <div className="flex justify-between"><span className="text-cyan-700">Total Income</span><span className="font-bold text-cyan-900">${formatToFixed(summary.total_income)}</span></div>
+            <div className="flex justify-between"><span className="text-cyan-700">Total Loan</span><span className="font-bold text-cyan-900">${formatToFixed(summary.total_active_loans)}</span></div>
+            <div className="flex justify-between"><span className="text-cyan-700">Total Sale</span><span className="font-bold text-cyan-900">${formatToFixed(summary.total_sales_revenue)}</span></div>
+            <div className="flex justify-between border-t border-cyan-200 pt-2 mt-2"><span className="font-semibold text-cyan-800">Total Cash In</span><span className="font-bold text-cyan-900">${formatToFixed(Number(summary.total_income) + Number(summary.total_active_loans) + Number(summary.total_sales_revenue))}</span></div>
+          </CardContent>
+        </Card>
+        <Card className="bg-gradient-to-br from-orange-50 to-orange-100 border-orange-200">
+          <CardHeader>
+            <CardTitle className="text-orange-800 flex items-center"><ArrowDown className="w-5 h-5 mr-2" />Cash Out</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            <div className="flex justify-between"><span className="text-orange-700">Total Expenses</span><span className="font-bold text-orange-900">${formatToFixed(summary.total_expenses)}</span></div>
+          </CardContent>
+        </Card>
+        <Card className="bg-gradient-to-br from-indigo-50 to-indigo-100 border-indigo-200">
+          <CardHeader>
+            <CardTitle className="text-indigo-800 flex items-center"><Wallet className="w-5 h-5 mr-2" />Cash In Hand</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            <div className="flex justify-between"><span className="text-indigo-700">Available Cash</span><span className="font-bold text-indigo-900">${formatToFixed(summary.available_cash)}</span></div>
+            <div className="flex justify-between border-t border-indigo-200 pt-2 mt-2"><span className="font-semibold text-indigo-800">Total</span><span className="font-bold text-indigo-900">${formatToFixed(Number(summary.total_income) - Number(summary.total_expenses))}</span></div>
           </CardContent>
         </Card>
       </div>
