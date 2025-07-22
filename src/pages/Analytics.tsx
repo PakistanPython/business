@@ -16,8 +16,8 @@ import {
   PieChart,
   LineChart
 } from 'lucide-react';
-import { dashboardApi } from '../lib/api';
-import { AnalyticsData, DashboardSummary, MonthlyData, TrendData, CategoryStats, CharityOverview } from '../lib/types';
+import { api, dashboardApi } from '../lib/api';
+import { AnalyticsData, DashboardSummary, MonthlyData, TrendData, CategoryStats, CharityOverview, Payroll } from '../lib/types';
 import toast from 'react-hot-toast';
 import { ResponsiveContainer, LineChart as RechartsLineChart, CartesianGrid, XAxis, YAxis, Tooltip, Legend, Line, BarChart, Bar, PieChart as RechartsPieChart, Pie, Cell } from 'recharts';
 import jsPDF from 'jspdf';
@@ -40,6 +40,7 @@ export const AnalyticsPage: React.FC = () => {
   const [trendData, setTrendData] = useState<TrendData[] | null>(null);
   const [topExpenseCategories, setTopExpenseCategories] = useState<CategoryStats[] | null>(null);
   const [charityOverview, setCharityOverview] = useState<CharityOverview[] | null>(null);
+  const [payrollRecords, setPayrollRecords] = useState<Payroll[]>([]);
 
   const [isLoading, setIsLoading] = useState(true);
   const [timeRange, setTimeRange] = useState('all_time');
@@ -142,6 +143,11 @@ export const AnalyticsPage: React.FC = () => {
       setTrendData(response.data.data.trend_data);
       setTopExpenseCategories(response.data.data.top_expense_categories);
       setCharityOverview(response.data.data.charity_overview);
+
+      // Fetch payroll records
+      const payrollResponse = await api.get('/payroll?status=paid');
+      setPayrollRecords(payrollResponse.data.payroll || []);
+
     } catch (error) {
       console.error('Error loading dashboard summary:', error);
       toast.error('Failed to load dashboard summary data');
@@ -240,6 +246,7 @@ export const AnalyticsPage: React.FC = () => {
   }
 
   const summary = dashboardSummary;
+  const totalNetSalary = payrollRecords.reduce((sum, record) => sum + record.net_salary, 0);
 
   const savingsRate = Number(summary.total_income) > 0 
     ? ((Number(summary.total_income) - Number(summary.total_expenses)) / Number(summary.total_income)) * 100 
@@ -393,7 +400,8 @@ export const AnalyticsPage: React.FC = () => {
             <div className="flex justify-between"><span className="text-orange-700">Total Purchase</span><span className="font-bold text-orange-900">${formatToFixed(summary.total_purchases)}</span></div>
             <div className="flex justify-between"><span className="text-orange-700">Total Charity</span><span className="font-bold text-orange-900">${formatToFixed(summary.total_charity_paid)}</span></div>
             <div className="flex justify-between"><span className="text-orange-700">Total Receivable</span><span className="font-bold text-orange-900">${formatToFixed(summary.total_ar_outstanding)}</span></div>
-            <div className="flex justify-between border-t border-orange-200 pt-2 mt-2"><span className="font-semibold text-orange-800">Total Cash Out</span><span className="font-bold text-orange-900">${formatToFixed(Number(summary.total_expenses) + Number(summary.total_purchases) + Number(summary.total_charity_paid) + Number(summary.total_ar_outstanding))}</span></div>
+            <div className="flex justify-between"><span className="text-orange-700">Total Net Salary</span><span className="font-bold text-orange-900">${formatToFixed(totalNetSalary)}</span></div>
+            <div className="flex justify-between border-t border-orange-200 pt-2 mt-2"><span className="font-semibold text-orange-800">Total Cash Out</span><span className="font-bold text-orange-900">${formatToFixed(Number(summary.total_expenses) + Number(summary.total_purchases) + Number(summary.total_charity_paid) + Number(summary.total_ar_outstanding) + Number(totalNetSalary))}</span></div>
           </CardContent>
         </Card>
         <Card className="bg-gradient-to-br from-indigo-50 to-indigo-100 border-indigo-200">
