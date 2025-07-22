@@ -99,7 +99,7 @@ router.get('/:id', authenticateToken, async (req, res) => {
 
 // Create new sale
 router.post('/', authenticateToken, [
-    body('purchase_id').optional().isInt(),
+    body('purchase_id').notEmpty().isInt(),
     body('amount').isFloat({ gt: 0 }),
     body('selling_price').isFloat({ gt: 0 }),
     body('description').optional().isString(),

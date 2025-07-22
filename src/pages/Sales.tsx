@@ -102,7 +102,7 @@ export const SalesPage: React.FC = () => {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     
-    if (!formData.amount || !formData.selling_price || !formData.payment_method) {
+    if (!formData.purchase_id || !formData.amount || !formData.selling_price || !formData.payment_method) {
       toast.error('Please fill in all required fields');
       return;
     }
@@ -188,15 +188,6 @@ export const SalesPage: React.FC = () => {
 
   const handleSelectChange = (name: string, value: string) => {
     if (name === 'purchase_id') {
-      if (value === 'none') {
-        setFormData(prev => ({
-          ...prev,
-          purchase_id: undefined,
-          amount: 0,
-          description: ''
-        }));
-        return;
-      }
       const selectedPurchase = availablePurchases.find(p => p.id === Number(value));
       if (selectedPurchase) {
         setFormData(prev => ({
@@ -283,16 +274,15 @@ export const SalesPage: React.FC = () => {
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 {/* Purchase Selection */}
                 <div className="md:col-span-2">
-                  <Label htmlFor="purchase_id">Related Purchase (Optional)</Label>
+                  <Label htmlFor="purchase_id">Related Purchase *</Label>
                   <Select 
-                    value={formData.purchase_id?.toString() || 'none'} 
+                    value={formData.purchase_id?.toString() || ''} 
                     onValueChange={(value) => handleSelectChange('purchase_id', value)}
                   >
                     <SelectTrigger>
                       <SelectValue placeholder="Select a purchase item" />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="none">No related purchase</SelectItem>
                       {availablePurchases.map((purchase) => (
                         <SelectItem key={purchase.id} value={purchase.id.toString()}>
                           {purchase.description} - {formatCurrency(purchase.amount)} ({purchase.date})
