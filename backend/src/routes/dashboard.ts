@@ -27,6 +27,10 @@ router.get('/summary', async (req, res) => {
       total_charity_required: 0,
       total_charity_paid: 0,
       total_charity_remaining: 0,
+      total_ar_outstanding: 0,
+      total_ar_overdue: 0,
+      ar_invoices_count: 0,
+      ar_overdue_count: 0,
       net_worth: 0,
       available_cash: 0
     };
@@ -43,6 +47,8 @@ router.get('/summary', async (req, res) => {
     const charityRequired = await dbGet('SELECT COALESCE(SUM(amount_required), 0) as total FROM charity WHERE business_id = $1', [userId]);
     const charityPaid = await dbGet('SELECT COALESCE(SUM(amount_paid), 0) as total FROM charity WHERE business_id = $1', [userId]);
     const charityRemaining = await dbGet('SELECT COALESCE(SUM(amount_required - amount_paid), 0) as total FROM charity WHERE business_id = $1', [userId]);
+    const arOutstanding = await dbGet('SELECT COALESCE(SUM(amount - paid_amount), 0) as total, COUNT(*) as count FROM accounts_receivable WHERE business_id = $1 AND status != \'paid\'', [userId]);
+    const arOverdue = await dbGet('SELECT COALESCE(SUM(amount - paid_amount), 0) as total, COUNT(*) as count FROM accounts_receivable WHERE business_id = $1 AND received = FALSE AND due_date < CURRENT_DATE', [userId]);
 
     summary.total_income = parseFloat(incomeTotal.total || 0);
     summary.total_expenses = parseFloat(expenseTotal.total || 0);
@@ -56,6 +62,10 @@ router.get('/summary', async (req, res) => {
     summary.total_charity_required = parseFloat(charityRequired.total || 0);
     summary.total_charity_paid = parseFloat(charityPaid.total || 0);
     summary.total_charity_remaining = parseFloat(charityRemaining.total || 0);
+    summary.total_ar_outstanding = parseFloat(arOutstanding.total || 0);
+    summary.total_ar_overdue = parseFloat(arOverdue.total || 0);
+    summary.ar_invoices_count = parseInt(arOutstanding.count || 0);
+    summary.ar_overdue_count = parseInt(arOverdue.count || 0);
     summary.net_worth = summary.total_income - summary.total_expenses;
     summary.available_cash = summary.total_accounts_balance - summary.total_active_loans;
 
