@@ -15,6 +15,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '../components/ui/tabs'
 import { useAuth } from '../contexts/AuthContext';
 import { api } from '../lib/api';
 import toast from 'react-hot-toast';
+import { usePreferences } from '../contexts/PreferencesContext';
 
 interface Employee {
   id: number;
@@ -257,6 +258,7 @@ const initialAttendanceRuleFormData: AttendanceRuleFormData = {
 };
 
 export const EmployeesPage: React.FC = () => {
+  const { formatCurrency } = usePreferences();
   const { user } = useAuth();
   const [employees, setEmployees] = useState<Employee[]>([]);
   const [stats, setStats] = useState<EmployeeStats | null>(null);
@@ -724,7 +726,7 @@ export const EmployeesPage: React.FC = () => {
                       <TableCell>{getEmploymentTypeBadge(employee.employment_type)}</TableCell>
                       <TableCell>
                         <div>
-                          <div className="font-medium">${(employee.base_salary || 0).toLocaleString()}</div>
+                          <div className="font-medium">{formatCurrency(employee.base_salary || 0)}</div>
                           <div className="text-sm text-gray-500">{employee.salary_type}</div>
                         </div>
                       </TableCell>

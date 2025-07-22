@@ -22,7 +22,7 @@ import {
   Save,
   RefreshCw
 } from 'lucide-react';
-import { authApi } from '../lib/api';
+import { authApi, preferencesApi } from '../lib/api';
 import { useAuth } from '../contexts/AuthContext';
 import { User as UserType } from '../lib/types';
 import toast from 'react-hot-toast';
@@ -69,8 +69,21 @@ export const ProfilePage: React.FC = () => {
         full_name: user.full_name
       });
       loadUserStats();
+      loadUserPreferences();
     }
   }, [user]);
+
+  const loadUserPreferences = async () => {
+    try {
+      const response = await preferencesApi.get();
+      if (response.data.success) {
+        setPreferences(response.data.data);
+      }
+    } catch (error) {
+      console.error('Error loading user preferences:', error);
+      toast.error('Failed to load preferences');
+    }
+  };
 
   const loadUserStats = async () => {
     try {
@@ -132,6 +145,23 @@ export const ProfilePage: React.FC = () => {
     } catch (error: any) {
       console.error('Error changing password:', error);
       toast.error('Failed to change password');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handlePreferencesUpdate = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setIsLoading(true);
+
+    try {
+      const response = await preferencesApi.update(preferences);
+      if (response.data.success) {
+        toast.success('Preferences saved successfully');
+      }
+    } catch (error: any) {
+      console.error('Error saving preferences:', error);
+      toast.error(error.response?.data?.message || 'Failed to save preferences');
     } finally {
       setIsLoading(false);
     }
@@ -424,6 +454,7 @@ export const ProfilePage: React.FC = () => {
                         <option value="EUR">EUR (€)</option>
                         <option value="GBP">GBP (£)</option>
                         <option value="JPY">JPY (¥)</option>
+                        <option value="PKR">PKR (₨)</option>
                       </select>
                     </div>
                     <div className="space-y-2">
@@ -480,10 +511,12 @@ export const ProfilePage: React.FC = () => {
                   </div>
                 </div>
 
-                <Button className="bg-blue-600 hover:bg-blue-700">
-                  <Save className="w-4 h-4 mr-2" />
-                  Save Preferences
-                </Button>
+                <form onSubmit={handlePreferencesUpdate}>
+                  <Button type="submit" disabled={isLoading} className="bg-blue-600 hover:bg-blue-700">
+                    {isLoading ? <RefreshCw className="w-4 h-4 mr-2 animate-spin" /> : <Save className="w-4 h-4 mr-2" />}
+                    Save Preferences
+                  </Button>
+                </form>
               </CardContent>
             </Card>
           )}

@@ -36,8 +36,10 @@ import {
 import { expenseApi, categoryApi } from '../lib/api';
 import { Expense, ExpenseForm, Category } from '../lib/types';
 import toast from 'react-hot-toast';
+import { usePreferences } from '../contexts/PreferencesContext';
 
 export const ExpensesPage: React.FC = () => {
+  const { formatCurrency } = usePreferences();
   const [expenses, setExpenses] = useState<Expense[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -166,13 +168,6 @@ export const ExpensesPage: React.FC = () => {
   });
 
   const totalExpenses = filteredExpenses.reduce((sum, item) => sum + (Number(item.amount) || 0), 0);
-
-  const formatCurrency = (amount: number) => {
-    return new Intl.NumberFormat('en-US', {
-      style: 'currency',
-      currency: 'USD',
-    }).format(amount);
-  };
 
   const getIconComponent = (iconName: string) => {
     const iconOptions = [

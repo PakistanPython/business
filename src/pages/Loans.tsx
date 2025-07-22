@@ -28,8 +28,10 @@ import {
 import { loanApi } from '../lib/api';
 import { Loan, LoanForm } from '../lib/types';
 import toast from 'react-hot-toast';
+import { usePreferences } from '../contexts/PreferencesContext';
 
 export const LoansPage: React.FC = () => {
+  const { formatCurrency } = usePreferences();
   const [loans, setLoans] = useState<Loan[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isDialogOpen, setIsDialogOpen] = useState(false);
@@ -287,7 +289,7 @@ export const LoansPage: React.FC = () => {
             <TrendingDown className="h-4 w-4 text-red-600" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold text-red-900">${totalBalance.toFixed(2)}</div>
+            <div className="text-2xl font-bold text-red-900">{formatCurrency(totalBalance)}</div>
             <p className="text-xs text-red-600 mt-1">Current balance</p>
           </CardContent>
         </Card>
@@ -298,7 +300,7 @@ export const LoansPage: React.FC = () => {
             <DollarSign className="h-4 w-4 text-blue-600" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold text-blue-900">${totalPrincipal.toFixed(2)}</div>
+            <div className="text-2xl font-bold text-blue-900">{formatCurrency(totalPrincipal)}</div>
             <p className="text-xs text-blue-600 mt-1">Original loan amounts</p>
           </CardContent>
         </Card>
@@ -309,7 +311,7 @@ export const LoansPage: React.FC = () => {
             <CheckCircle className="h-4 w-4 text-green-600" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold text-green-900">${totalPaid.toFixed(2)}</div>
+            <div className="text-2xl font-bold text-green-900">{formatCurrency(totalPaid)}</div>
             <p className="text-xs text-green-600 mt-1">Amount repaid</p>
           </CardContent>
         </Card>
@@ -394,9 +396,9 @@ export const LoansPage: React.FC = () => {
                       <TableCell className="font-medium">{loan.lender_name}</TableCell>
                       <TableCell>{getLoanTypeBadge(loan.loan_type)}</TableCell>
                       {/* FIX: Convert to Number before .toFixed() */}
-                      <TableCell>${Number(loan.principal_amount).toFixed(2)}</TableCell>
-                      <TableCell className="font-medium text-green-600">${(Number(loan.principal_amount) - Number(loan.current_balance)).toFixed(2)}</TableCell>
-                      <TableCell className="font-medium text-red-600">${Number(loan.current_balance).toFixed(2)}</TableCell>
+                      <TableCell>{formatCurrency(Number(loan.principal_amount))}</TableCell>
+                      <TableCell className="font-medium text-green-600">{formatCurrency(Number(loan.principal_amount) - Number(loan.current_balance))}</TableCell>
+                      <TableCell className="font-medium text-red-600">{formatCurrency(Number(loan.current_balance))}</TableCell>
                       <TableCell>{loan.interest_rate ? `${Number(loan.interest_rate).toFixed(2)}%` : 'N/A'}</TableCell>
                       <TableCell>
                         <div className="flex items-center space-x-2">
@@ -567,7 +569,7 @@ export const LoansPage: React.FC = () => {
                 />
                 {selectedLoan && (
                   <p className="text-sm text-gray-500">
-                    Current balance: ${Number(selectedLoan.current_balance).toFixed(2)}
+                    Current balance: {formatCurrency(Number(selectedLoan.current_balance))}
                   </p>
                 )}
               </div>

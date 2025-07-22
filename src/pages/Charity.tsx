@@ -21,8 +21,10 @@ import { charityApi } from '../lib/api';
 import { Charity, CharityPaymentForm } from '../lib/types';
 import toast from 'react-hot-toast';
 import { useAppStore } from '../lib/store';
+import { usePreferences } from '../contexts/PreferencesContext';
 
 export const CharityPage: React.FC = () => {
+  const { formatCurrency } = usePreferences();
   const { charityDataNeedsRefresh, resetCharityRefresh } = useAppStore();
   const [charities, setCharities] = useState<Charity[]>([]);
   const [summary, setSummary] = useState({ total_required: 0, total_paid: 0, total_remaining: 0 });
@@ -171,7 +173,7 @@ export const CharityPage: React.FC = () => {
             <Heart className="h-4 w-4 text-green-600" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold text-green-900">${(Number(summary.total_required) || 0).toFixed(2)}</div>
+            <div className="text-2xl font-bold text-green-900">{formatCurrency(Number(summary.total_required) || 0)}</div>
             <p className="text-xs text-green-600 mt-1">Total charity obligations</p>
           </CardContent>
         </Card>
@@ -182,7 +184,7 @@ export const CharityPage: React.FC = () => {
             <CheckCircle className="h-4 w-4 text-blue-600" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold text-blue-900">${(Number(summary.total_paid) || 0).toFixed(2)}</div>
+            <div className="text-2xl font-bold text-blue-900">{formatCurrency(Number(summary.total_paid) || 0)}</div>
             <p className="text-xs text-blue-600 mt-1">Payments made</p>
           </CardContent>
         </Card>
@@ -193,7 +195,7 @@ export const CharityPage: React.FC = () => {
             <Clock className="h-4 w-4 text-yellow-600" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold text-yellow-900">${(Number(summary.total_remaining) || 0).toFixed(2)}</div>
+            <div className="text-2xl font-bold text-yellow-900">{formatCurrency(Number(summary.total_remaining) || 0)}</div>
             <p className="text-xs text-yellow-600 mt-1">Amount still due</p>
           </CardContent>
         </Card>
@@ -272,9 +274,9 @@ export const CharityPage: React.FC = () => {
                           <div className="text-sm text-gray-500">{charity.income_description || charity.description}</div>
                         </div>
                       </TableCell>
-                      <TableCell className="font-medium">${Number(charity.amount_required).toFixed(2)}</TableCell>
-                      <TableCell className="text-green-600">${Number(charity.amount_paid).toFixed(2)}</TableCell>
-                      <TableCell className="text-red-600">${Number(charity.amount_remaining).toFixed(2)}</TableCell>
+                      <TableCell className="font-medium">{formatCurrency(Number(charity.amount_required))}</TableCell>
+                      <TableCell className="text-green-600">{formatCurrency(Number(charity.amount_paid))}</TableCell>
+                      <TableCell className="text-red-600">{formatCurrency(Number(charity.amount_remaining))}</TableCell>
                       <TableCell>
                         <div className="flex items-center space-x-2">
                           <Progress value={getProgressPercentage(charity)} className="w-16" />
@@ -344,7 +346,7 @@ export const CharityPage: React.FC = () => {
                 />
                 {selectedCharity && (
                   <p className="text-sm text-gray-500">
-                    Remaining: ${Number(selectedCharity.amount_remaining).toFixed(2)}
+                    Remaining: {formatCurrency(Number(selectedCharity.amount_remaining))}
                   </p>
                 )}
               </div>

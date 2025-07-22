@@ -3,6 +3,7 @@ import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-d
 import { Toaster } from 'react-hot-toast';
 import { AuthProvider } from './contexts/AuthContext';
 import { AttendanceProvider } from './contexts/AttendanceContext';
+import { PreferencesProvider } from './contexts/PreferencesContext';
 import { ProtectedRoute } from './components/ProtectedRoute';
 import UserRedirectRoute from './components/UserRedirectRoute';
 import { ErrorBoundary } from './components/ErrorBoundary';
@@ -32,10 +33,11 @@ function App() {
   return (
     <ErrorBoundary>
       <AuthProvider>
-        <AttendanceProvider>
-          <Router>
-          <div className="App">
-            <Routes>
+        <PreferencesProvider>
+          <AttendanceProvider>
+            <Router>
+              <div className="App">
+                <Routes>
               {/* Public routes */}
               <Route path="/login" element={<LoginForm />} />
               <Route path="/register" element={<RegisterForm />} />
@@ -83,13 +85,14 @@ function App() {
                   </UserRedirectRoute>
                 </ProtectedRoute>
               } />
-            </Routes>
-            
-            {/* Toast notifications */}
-            <Toaster />
-          </div>
-          </Router>
-        </AttendanceProvider>
+                </Routes>
+                
+                {/* Toast notifications */}
+                <Toaster />
+              </div>
+            </Router>
+          </AttendanceProvider>
+        </PreferencesProvider>
       </AuthProvider>
     </ErrorBoundary>
   );

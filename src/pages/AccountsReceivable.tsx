@@ -28,8 +28,10 @@ import {
 import { accountsReceivableApi } from '../lib/api';
 import { AccountsReceivable, AccountsReceivableForm, PaymentForm, AccountsReceivableQueryParams, AccountsReceivableStats } from '../lib/types';
 import toast from 'react-hot-toast';
+import { usePreferences } from '../contexts/PreferencesContext';
 
 export const AccountsReceivablePage: React.FC = () => {
+  const { formatCurrency } = usePreferences();
   const [accounts, setAccounts] = useState<AccountsReceivable[]>([]);
   const [stats, setStats] = useState<AccountsReceivableStats | null>(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -283,13 +285,6 @@ export const AccountsReceivablePage: React.FC = () => {
         <span className="ml-1 capitalize">{status}</span>
       </Badge>
     );
-  };
-
-  const formatCurrency = (amount: number) => {
-    return new Intl.NumberFormat('en-US', {
-      style: 'currency',
-      currency: 'USD',
-    }).format(amount);
   };
 
   const isOverdue = (dueDate: string, status: string) => {

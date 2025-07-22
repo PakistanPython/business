@@ -25,7 +25,10 @@ import { dashboardApi } from '../lib/api';
 import { DashboardData, AnalyticsData, DashboardSummary } from '../lib/types';
 import { Link } from 'react-router-dom';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
+import { usePreferences } from '../contexts/PreferencesContext';
+
 export const Dashboard: React.FC = () => {
+  const { formatCurrency } = usePreferences();
   const [dashboardOverviewData, setDashboardOverviewData] = useState<DashboardData | null>(null);
   const [analyticsPageData, setAnalyticsPageData] = useState<AnalyticsData | null>(null);
   const [payrollStats, setPayrollStats] = useState<any>(null);
@@ -75,13 +78,6 @@ export const Dashboard: React.FC = () => {
       </div>
     );
   }
-
-  const formatCurrency = (amount: number) => {
-    return new Intl.NumberFormat('en-PK', {
-      style: 'currency',
-      currency: 'PKR',
-    }).format(amount);
-  };
 
   const summary = dashboardOverviewData?.summary;
 

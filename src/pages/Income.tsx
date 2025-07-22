@@ -33,8 +33,10 @@ import { incomeApi, categoryApi } from '../lib/api';
 import { Income, IncomeForm, Category } from '../lib/types';
 import toast from 'react-hot-toast';
 import { useAppStore } from '../lib/store';
+import { usePreferences } from '../contexts/PreferencesContext';
 
 export const IncomePage: React.FC = () => {
+  const { formatCurrency } = usePreferences();
   const { triggerCharityRefresh } = useAppStore();
   const [income, setIncome] = useState<Income[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
@@ -150,13 +152,6 @@ export const IncomePage: React.FC = () => {
   });
 
   const totalIncome = filteredIncome.reduce((sum, item) => sum + Number(item.amount), 0);
-
-  const formatCurrency = (amount: number) => {
-    return new Intl.NumberFormat('en-US', {
-      style: 'currency',
-      currency: 'USD',
-    }).format(amount);
-  };
 
   const getIconComponent = (iconName: string) => {
     const iconOptions = [

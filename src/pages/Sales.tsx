@@ -26,8 +26,10 @@ import {
 import { saleApi, categoryApi, purchaseApi } from '../lib/api';
 import { Sale, SaleForm, Category, Purchase } from '../lib/types';
 import toast from 'react-hot-toast';
+import { usePreferences } from '../contexts/PreferencesContext';
 
 export const SalesPage: React.FC = () => {
+  const { formatCurrency } = usePreferences();
   const [sales, setSales] = useState<Sale[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
   const [availablePurchases, setAvailablePurchases] = useState<Purchase[]>([]);
@@ -210,13 +212,6 @@ export const SalesPage: React.FC = () => {
     
     return matchesSearch && matchesStatus;
   });
-
-  const formatCurrency = (amount: number) => {
-    return new Intl.NumberFormat('en-PK', {
-      style: 'currency',
-      currency: 'PKR',
-    }).format(amount);
-  };
 
   const formatPercentage = (percentage: number) => {
     return `${percentage.toFixed(2)}%`;

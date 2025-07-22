@@ -226,3 +226,8 @@ export const accountsPayableApi = {
   getStats: () => api.get('/accounts-payable/stats/summary'),
   getVendorStats: () => api.get('/accounts-payable/stats/vendors'),
 };
+
+export const preferencesApi = {
+  get: () => api.get('/preferences'),
+  update: (data: any) => api.put('/preferences', data),
+};
