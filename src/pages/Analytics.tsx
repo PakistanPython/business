@@ -206,14 +206,14 @@ export const AnalyticsPage: React.FC = () => {
   return (
     <div className="space-y-6 p-6">
       {/* Header */}
-      <div className="flex justify-between items-center">
+      <div className="flex flex-col md:flex-row justify-between items-start md:items-center">
         <div>
           <h1 className="text-3xl font-bold text-gray-900">Financial Analytics</h1>
           <p className="text-gray-600 mt-2">Comprehensive financial insights and trends</p>
         </div>
-        <div className="flex gap-2">
+        <div className="flex flex-wrap gap-2 mt-4 md:mt-0">
           <Select value={timeRange} onValueChange={handleTimeRangeChange}>
-            <SelectTrigger className="w-40 bg-white">
+            <SelectTrigger className="w-full md:w-40 bg-white">
               <SelectValue placeholder="Time Range" />
             </SelectTrigger>
             <SelectContent>
@@ -227,7 +227,7 @@ export const AnalyticsPage: React.FC = () => {
             </SelectContent>
           </Select>
           <Select value={month?.toString() || ''} onValueChange={handleMonthChange}>
-            <SelectTrigger className="w-40 bg-white">
+            <SelectTrigger className="w-full md:w-40 bg-white">
               <SelectValue placeholder="Month" />
             </SelectTrigger>
             <SelectContent>
