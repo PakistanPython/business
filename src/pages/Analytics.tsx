@@ -88,10 +88,24 @@ export const AnalyticsPage: React.FC = () => {
     }
 
     if (format === 'csv') {
-      const csv = Papa.unparse({
-        fields: ['Metric', 'Value'],
-        data: Object.entries(dashboardSummary).map(([key, value]) => ({ Metric: key, Value: value })),
-      });
+      let csv = '';
+      const addSection = (title: string, data: any) => {
+        csv += `${title}\n`;
+        csv += Papa.unparse(data);
+        csv += '\n\n';
+      };
+
+      addSection('Summary Metrics', Object.entries(dashboardSummary).map(([key, value]) => ({ Metric: key, Value: value })));
+      if (monthlyData) addSection('Monthly Data', monthlyData);
+      if (trendData) addSection('Trend Data', trendData);
+      if (topExpenseCategories) addSection('Top Expense Categories', topExpenseCategories);
+      if (charityOverview) addSection('Charity Overview', charityOverview);
+      if (payrollRecords) addSection('Payroll Records', payrollRecords);
+      if (analyticsData.income_analytics) addSection('Income Analytics', analyticsData.income_analytics);
+      if (analyticsData.expense_analytics) addSection('Expense Analytics', analyticsData.expense_analytics);
+      if (analyticsData.purchase_analytics) addSection('Purchase Analytics', analyticsData.purchase_analytics);
+      if (analyticsData.profit_analysis) addSection('Profitability Analysis', analyticsData.profit_analysis);
+
       const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
