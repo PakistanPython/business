@@ -415,7 +415,9 @@ export const PayrollPage: React.FC = () => {
     return searchMatch;
   });
 
-  const totalNetSalary = filteredPayrollRecords.reduce((sum, record) => sum + record.net_salary, 0);
+  const totalNetSalary = filteredPayrollRecords
+    .filter(record => record.status === 'paid')
+    .reduce((sum, record) => sum + record.net_salary, 0);
 
   if (loading) {
     return (
