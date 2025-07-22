@@ -402,7 +402,7 @@ export const AnalyticsPage: React.FC = () => {
           </CardHeader>
           <CardContent className="space-y-3">
             <div className="flex justify-between"><span className="text-indigo-700">Available Cash</span><span className="font-bold text-indigo-900">${formatToFixed(summary.available_cash)}</span></div>
-            <div className="flex justify-between border-t border-indigo-200 pt-2 mt-2"><span className="font-semibold text-indigo-800">Total</span><span className="font-bold text-indigo-900">${formatToFixed(Number(summary.total_income) - Number(summary.total_expenses))}</span></div>
+            <div className="flex justify-between border-t border-indigo-200 pt-2 mt-2"><span className="font-semibold text-indigo-800">Total</span><span className="font-bold text-indigo-900">${formatToFixed(summary.available_cash)}</span></div>
           </CardContent>
         </Card>
       </div>
