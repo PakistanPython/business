@@ -29,6 +29,7 @@ interface SidebarProps {
 
 const navigation = [
   { name: 'Dashboard', href: '/dashboard', icon: LayoutDashboard },
+  { name: 'Analytics', href: '/analytics', icon: BarChart3 },
   { name: 'Income', href: '/income', icon: TrendingUp },
   { name: 'Expenses', href: '/expenses', icon: TrendingDown },
   { name: 'Purchases', href: '/purchases', icon: ShoppingCart },
@@ -40,7 +41,6 @@ const navigation = [
   { name: 'Employees', href: '/employees', icon: Users },
   { name: 'Attendance', href: '/attendance', icon: Clock },
   { name: 'Payroll', href: '/payroll', icon: DollarSign },
-  { name: 'Analytics', href: '/analytics', icon: BarChart3 },
   { name: 'Categories', href: '/categories', icon: Settings },
 ];
 
