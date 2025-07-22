@@ -20,6 +20,9 @@ import { dashboardApi } from '../lib/api';
 import { AnalyticsData, DashboardSummary, MonthlyData, TrendData, CategoryStats, CharityOverview } from '../lib/types';
 import toast from 'react-hot-toast';
 import { ResponsiveContainer, LineChart as RechartsLineChart, CartesianGrid, XAxis, YAxis, Tooltip, Legend, Line, BarChart, Bar, PieChart as RechartsPieChart, Pie, Cell } from 'recharts';
+import jsPDF from 'jspdf';
+import autoTable from 'jspdf-autotable';
+import Papa from 'papaparse';
 
 // A helper function to safely format numbers to strings
 const formatToFixed = (value: string | number | undefined | null, digits: number = 2): string => {
@@ -74,6 +77,47 @@ export const AnalyticsPage: React.FC = () => {
     setEndDate(e.target.value);
     setTimeRange('');
     setMonth(null);
+  };
+
+  const handleExport = (format: 'pdf' | 'csv' | 'json') => {
+    if (!analyticsData || !dashboardSummary) {
+      toast.error('No data to export');
+      return;
+    }
+
+    if (format === 'json') {
+      exportData();
+      return;
+    }
+
+    if (format === 'csv') {
+      const csv = Papa.unparse({
+        fields: ['Metric', 'Value'],
+        data: Object.entries(dashboardSummary).map(([key, value]) => ({ Metric: key, Value: value })),
+      });
+      const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `financial_analytics_${new Date().toISOString().split('T')[0]}.csv`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+      toast.success('Analytics data exported as CSV');
+      return;
+    }
+
+    if (format === 'pdf') {
+      const doc = new jsPDF();
+      doc.text('Financial Analytics', 20, 10);
+      autoTable(doc, {
+        head: [['Metric', 'Value']],
+        body: Object.entries(dashboardSummary).map(([key, value]) => [key, value]),
+      });
+      doc.save(`financial_analytics_${new Date().toISOString().split('T')[0]}.pdf`);
+      toast.success('Analytics data exported as PDF');
+    }
   };
 
   const loadAnalyticsData = async () => {
@@ -243,10 +287,16 @@ export const AnalyticsPage: React.FC = () => {
             <span>-</span>
             <input type="date" value={endDate || ''} onChange={handleEndDateChange} className="bg-white border border-gray-300 rounded-md px-2 py-1" />
           </div>
-          <Button onClick={exportData} variant="outline">
-            <Download className="w-4 h-4 mr-2" />
-            Export
-          </Button>
+          <Select onValueChange={(value) => handleExport(value as any)}>
+            <SelectTrigger className="w-full md:w-40 bg-white">
+              <SelectValue placeholder="Export" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="pdf">Export as PDF</SelectItem>
+              <SelectItem value="csv">Export as CSV</SelectItem>
+              <SelectItem value="json">Export as JSON</SelectItem>
+            </SelectContent>
+          </Select>
         </div>
       </div>
 
