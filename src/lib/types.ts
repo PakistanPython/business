@@ -252,6 +252,7 @@ export interface AnalyticsData {
   year: number;
   income_analytics: AnalyticsRecord[];
   expense_analytics: AnalyticsRecord[];
+  purchase_analytics: AnalyticsRecord[];
   profit_analysis: ProfitAnalysisRecord[];
 }
 

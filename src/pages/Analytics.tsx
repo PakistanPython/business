@@ -39,7 +39,7 @@ export const AnalyticsPage: React.FC = () => {
   const [charityOverview, setCharityOverview] = useState<CharityOverview[] | null>(null);
 
   const [isLoading, setIsLoading] = useState(true);
-  const [timeRange, setTimeRange] = useState('6months');
+  const [timeRange, setTimeRange] = useState('current_year');
 
   useEffect(() => {
     loadAnalyticsData();
@@ -187,6 +187,7 @@ export const AnalyticsPage: React.FC = () => {
               <SelectValue placeholder="Time Range" />
             </SelectTrigger>
             <SelectContent>
+              <SelectItem value="current_year">Current Year</SelectItem>
               <SelectItem value="3months">Last 3 Months</SelectItem>
               <SelectItem value="6months">Last 6 Months</SelectItem>
               <SelectItem value="12months">Last 12 Months</SelectItem>
@@ -273,7 +274,7 @@ export const AnalyticsPage: React.FC = () => {
         <Card>
           <CardHeader>
             <CardTitle className="flex items-center"><LineChart className="w-5 h-5 mr-2" />Income vs Expenses Trend</CardTitle>
-            <CardDescription>Last {timeRange === '3months' ? '3' : timeRange === '6months' ? '6' : timeRange === '12months' ? '12' : '24'} Months</CardDescription>
+            <CardDescription>{timeRange === 'current_year' ? 'Current Year' : `Last ${timeRange === '3months' ? '3' : timeRange === '6months' ? '6' : timeRange === '12months' ? '12' : '24'} Months`}</CardDescription>
           </CardHeader>
           <CardContent>
             <ResponsiveContainer width="100%" height={300}>
@@ -308,11 +309,11 @@ export const AnalyticsPage: React.FC = () => {
         </Card>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+      <div className="grid grid-cols-1 gap-6">
         <Card>
           <CardHeader>
             <CardTitle className="flex items-center"><BarChart3 className="w-5 h-5 mr-2" />Monthly Income</CardTitle>
-            <CardDescription>Income over the last {timeRange === '3months' ? '3' : timeRange === '6months' ? '6' : timeRange === '12months' ? '12' : '24'} months</CardDescription>
+            <CardDescription>{timeRange === 'current_year' ? 'Income over the current year' : `Income over the last ${timeRange === '3months' ? '3' : timeRange === '6months' ? '6' : timeRange === '12months' ? '12' : '24'} months`}</CardDescription>
           </CardHeader>
           <CardContent>
             <ResponsiveContainer width="100%" height={300}>
@@ -331,7 +332,7 @@ export const AnalyticsPage: React.FC = () => {
         <Card>
           <CardHeader>
             <CardTitle className="flex items-center"><BarChart3 className="w-5 h-5 mr-2" />Monthly Expenses</CardTitle>
-            <CardDescription>Expenses over the last {timeRange === '3months' ? '3' : timeRange === '6months' ? '6' : timeRange === '12months' ? '12' : '24'} months</CardDescription>
+            <CardDescription>{timeRange === 'current_year' ? 'Expenses over the current year' : `Expenses over the last ${timeRange === '3months' ? '3' : timeRange === '6months' ? '6' : timeRange === '12months' ? '12' : '24'} months`}</CardDescription>
           </CardHeader>
           <CardContent>
             <ResponsiveContainer width="100%" height={300}>
@@ -347,6 +348,25 @@ export const AnalyticsPage: React.FC = () => {
           </CardContent>
         </Card>
       </div>
+
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center"><BarChart3 className="w-5 h-5 mr-2" />Monthly Purchases</CardTitle>
+          <CardDescription>{timeRange === 'current_year' ? 'Purchases over the current year' : `Purchases over the last ${timeRange === '3months' ? '3' : timeRange === '6months' ? '6' : timeRange === '12months' ? '12' : '24'} months`}</CardDescription>
+        </CardHeader>
+        <CardContent>
+          <ResponsiveContainer width="100%" height={300}>
+            <BarChart data={analyticsData.purchase_analytics}>
+              <CartesianGrid strokeDasharray="3 3" />
+              <XAxis dataKey="period" />
+              <YAxis />
+              <Tooltip />
+              <Legend />
+              <Bar dataKey="total_amount" fill="#ffc658" />
+            </BarChart>
+          </ResponsiveContainer>
+        </CardContent>
+      </Card>
 
       <Card>
         <CardHeader>

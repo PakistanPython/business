@@ -202,7 +202,7 @@ router.get('/summary', async (req, res) => {
 router.get('/analytics', [
   query('period').optional().isIn(['week', 'month', 'quarter', 'year']).withMessage('Invalid period'),
   query('year').optional().isInt({ min: 2000, max: 2100 }).withMessage('Invalid year'),
-  query('time_range').optional().isIn(['3months', '6months', '12months', '24months']).withMessage('Invalid time range')
+  query('time_range').optional().isIn(['3months', '6months', '12months', '24months', 'current_year']).withMessage('Invalid time range')
 ], async (req, res) => {
   try {
     const errors = validationResult(req);
@@ -229,9 +229,15 @@ router.get('/analytics', [
         case '6months': intervalMonths = 6; break;
         case '12months': intervalMonths = 12; break;
         case '24months': intervalMonths = 24; break;
+        case 'current_year':
+          dateFilter = `AND to_char(date, 'YYYY') = to_char(CURRENT_DATE, 'YYYY')`;
+          groupBy = `to_char(date, 'YYYY-MM')`;
+          break;
       }
-      dateFilter = `AND date >= NOW() - INTERVAL '${intervalMonths} months'`;
-      groupBy = `to_char(date, 'YYYY-MM')`;
+      if (intervalMonths > 0) {
+        dateFilter = `AND date >= NOW() - INTERVAL '${intervalMonths} months'`;
+        groupBy = `to_char(date, 'YYYY-MM')`;
+      }
     } else {
       switch (period) {
         case 'week':
@@ -282,6 +288,21 @@ router.get('/analytics', [
       ORDER BY period, total_amount DESC
     `, [userId]);
 
+    // Get purchase analytics
+    const purchaseAnalytics = await dbAll(`
+      SELECT 
+        ${groupBy} as period,
+        SUM(p.amount) as total_amount,
+        COUNT(*) as transaction_count,
+        AVG(p.amount) as average_amount,
+        c.name as category
+      FROM purchases p
+      JOIN categories c ON p.category_id = c.id
+      WHERE p.business_id = $1 ${dateFilter}
+      GROUP BY period, c.name
+      ORDER BY period, total_amount DESC
+    `, [userId]);
+
     // Get profitability analysis
     const profitAnalysis = await dbAll(`
       SELECT 
@@ -318,6 +339,7 @@ router.get('/analytics', [
         year,
         income_analytics: incomeAnalytics,
         expense_analytics: expenseAnalytics,
+        purchase_analytics: purchaseAnalytics,
         profit_analysis: profitAnalysis
       }
     });
