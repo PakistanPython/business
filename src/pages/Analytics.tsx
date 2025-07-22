@@ -1,4 +1,5 @@
-import React, { useState, useEffect } from 'react';
+import * as React from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../components/ui/card';
 import { Button } from '../components/ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../components/ui/select';
@@ -24,8 +25,10 @@ import { ResponsiveContainer, LineChart as RechartsLineChart, CartesianGrid, XAx
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import Papa from 'papaparse';
+import html2canvas from 'html2canvas';
 
 export const AnalyticsPage: React.FC = () => {
+  const analyticsPageRef = useRef<HTMLDivElement>(null);
   const { formatCurrency } = usePreferences();
   const [analyticsData, setAnalyticsData] = useState<AnalyticsData | null>(null);
   const [dashboardSummary, setDashboardSummary] = useState<DashboardSummary | null>(null);
@@ -103,14 +106,48 @@ export const AnalyticsPage: React.FC = () => {
     }
 
     if (format === 'pdf') {
-      const doc = new jsPDF();
-      doc.text('Financial Analytics', 20, 10);
-      autoTable(doc, {
-        head: [['Metric', 'Value']],
-        body: Object.entries(dashboardSummary).map(([key, value]) => [key, value]),
+      handleExportAsImage('pdf');
+    }
+  };
+
+  const handleExportAsImage = async (format: 'pdf' | 'csv' | 'json') => {
+    if (!analyticsPageRef.current) {
+      toast.error('Could not capture the page for export.');
+      return;
+    }
+
+    toast.loading('Exporting...');
+
+    try {
+      const canvas = await html2canvas(analyticsPageRef.current, {
+        scale: 2,
+        useCORS: true,
+        logging: true,
+        allowTaint: true,
+        backgroundColor: '#ffffff',
       });
-      doc.save(`financial_analytics_${new Date().toISOString().split('T')[0]}.pdf`);
-      toast.success('Analytics data exported as PDF');
+
+      const imgData = canvas.toDataURL('image/png');
+
+      if (format === 'pdf') {
+        const pdf = new jsPDF('p', 'mm', 'a4');
+        const pdfWidth = pdf.internal.pageSize.getWidth();
+        const pdfHeight = pdf.internal.pageSize.getHeight();
+        const canvasWidth = canvas.width;
+        const canvasHeight = canvas.height;
+        const ratio = canvasWidth / canvasHeight;
+        const width = pdfWidth;
+        const height = width / ratio;
+
+        pdf.addImage(imgData, 'PNG', 0, 0, width, height > pdfHeight ? pdfHeight : height);
+        pdf.save(`financial_analytics_${new Date().toISOString().split('T')[0]}.pdf`);
+        toast.success('Analytics page exported as PDF.');
+      }
+    } catch (error) {
+      console.error('Error exporting as image:', error);
+      toast.error('Failed to export analytics page.');
+    } finally {
+      toast.dismiss();
     }
   };
 
@@ -250,7 +287,7 @@ export const AnalyticsPage: React.FC = () => {
   const currentMonthIndex = new Date().getMonth();
 
   return (
-    <div className="space-y-6 p-6">
+    <div className="space-y-6 p-6" ref={analyticsPageRef}>
       {/* Header */}
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center">
         <div>
