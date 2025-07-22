@@ -392,8 +392,8 @@ export const AnalyticsPage: React.FC = () => {
             <div className="flex justify-between"><span className="text-orange-700">Total Expenses</span><span className="font-bold text-orange-900">${formatToFixed(summary.total_expenses)}</span></div>
             <div className="flex justify-between"><span className="text-orange-700">Total Purchase</span><span className="font-bold text-orange-900">${formatToFixed(summary.total_purchases)}</span></div>
             <div className="flex justify-between"><span className="text-orange-700">Total Charity</span><span className="font-bold text-orange-900">${formatToFixed(summary.total_charity_paid)}</span></div>
-            <div className="flex justify-between"><span className="text-orange-700">Total Receivable</span><span className="font-bold text-orange-900">${formatToFixed(summary.total_accounts_receivable)}</span></div>
-            <div className="flex justify-between border-t border-orange-200 pt-2 mt-2"><span className="font-semibold text-orange-800">Total Cash Out</span><span className="font-bold text-orange-900">${formatToFixed(Number(summary.total_expenses) + Number(summary.total_purchases) + Number(summary.total_charity_paid) + Number(summary.total_accounts_receivable))}</span></div>
+            <div className="flex justify-between"><span className="text-orange-700">Total Receivable</span><span className="font-bold text-orange-900">${formatToFixed(summary.total_ar_outstanding)}</span></div>
+            <div className="flex justify-between border-t border-orange-200 pt-2 mt-2"><span className="font-semibold text-orange-800">Total Cash Out</span><span className="font-bold text-orange-900">${formatToFixed(Number(summary.total_expenses) + Number(summary.total_purchases) + Number(summary.total_charity_paid) + Number(summary.total_ar_outstanding))}</span></div>
           </CardContent>
         </Card>
         <Card className="bg-gradient-to-br from-indigo-50 to-indigo-100 border-indigo-200">
