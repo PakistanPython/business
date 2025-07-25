@@ -123,8 +123,8 @@ export const Dashboard: React.FC = () => {
       href: '/loans'
     },
     {
-      title: 'Charity Required',
-      value: formatCurrency(summary?.total_charity_required || 0),
+      title: 'Total Charity Remaining',
+      value: formatCurrency(summary?.total_charity_remaining || 0),
       icon: Heart,
       color: 'text-purple-600',
       bgColor: 'bg-purple-100',
