@@ -92,6 +92,9 @@ export const charityApi = {
   getAll: (params?: any) => api.get('/charity', { params }),
   getSummary: () => api.get('/charity/summary'),
   recordPayment: (data: CharityPaymentForm) => api.post('/charity/payment', data),
+  delete: (id: number) => api.delete(`/charity/${id}`),
+  update: (id: number, data: any) => api.put(`/charity/${id}`, data),
+  getPaymentHistory: (id: number) => api.get(`/charity/payments/${id}`),
   getStats: () => api.get('/charity/stats/summary'),
 };
 

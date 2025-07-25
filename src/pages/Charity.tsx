@@ -4,6 +4,7 @@ import { Button } from '../components/ui/button';
 import { Input } from '../components/ui/input';
 import { Label } from '../components/ui/label';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '../components/ui/dialog';
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from '../components/ui/dropdown-menu';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '../components/ui/table';
 import { Badge } from '../components/ui/badge';
 import { Textarea } from '../components/ui/textarea';
@@ -15,7 +16,11 @@ import {
   Clock,
   AlertCircle,
   CreditCard,
-  Search
+  Search,
+  MoreVertical,
+  Eye,
+  Edit,
+  Trash2
 } from 'lucide-react';
 import { charityApi } from '../lib/api';
 import { Charity, CharityPaymentForm } from '../lib/types';
@@ -30,6 +35,11 @@ export const CharityPage: React.FC = () => {
   const [summary, setSummary] = useState({ total_required: 0, total_paid: 0, total_remaining: 0 });
   const [isLoading, setIsLoading] = useState(true);
   const [isPaymentDialogOpen, setIsPaymentDialogOpen] = useState(false);
+  const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
+  const [isViewDialogOpen, setIsViewDialogOpen] = useState(false);
+  const [editingCharity, setEditingCharity] = useState<Charity | null>(null);
+  const [viewingCharity, setViewingCharity] = useState<Charity | null>(null);
+  const [paymentHistory, setPaymentHistory] = useState<any[]>([]);
   const [selectedCharity, setSelectedCharity] = useState<Charity | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
   const [filterStatus, setFilterStatus] = useState<string>('all');
@@ -92,6 +102,54 @@ export const CharityPage: React.FC = () => {
     } catch (error: any) {
       console.error('Error recording payment:', error);
       toast.error(error.response?.data?.message || 'Failed to record payment');
+    }
+  };
+
+  const handleDelete = async (id: number) => {
+    if (!window.confirm('Are you sure you want to delete this charity record?')) {
+      return;
+    }
+
+    try {
+      await charityApi.delete(id);
+      toast.success('Charity record deleted successfully');
+      loadCharityData();
+    } catch (error: any) {
+      console.error('Error deleting charity record:', error);
+      toast.error(error.response?.data?.message || 'Failed to delete charity record');
+    }
+  };
+
+  const handleView = async (charity: Charity) => {
+    setViewingCharity(charity);
+    try {
+      const response = await charityApi.getPaymentHistory(charity.id);
+      setPaymentHistory(response.data.data.payments || []);
+    } catch (error) {
+      console.error('Error fetching payment history:', error);
+      toast.error('Failed to fetch payment history');
+    }
+    setIsViewDialogOpen(true);
+  };
+
+  const handleEdit = (charity: Charity) => {
+    setEditingCharity(charity);
+    setIsEditDialogOpen(true);
+  };
+
+  const handleUpdate = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editingCharity) return;
+
+    try {
+      await charityApi.update(editingCharity.id, editingCharity);
+      toast.success('Charity record updated successfully');
+      setIsEditDialogOpen(false);
+      setEditingCharity(null);
+      loadCharityData();
+    } catch (error: any) {
+      console.error('Error updating charity record:', error);
+      toast.error(error.response?.data?.message || 'Failed to update charity record');
     }
   };
 
@@ -295,7 +353,7 @@ export const CharityPage: React.FC = () => {
                         </div>
                       </TableCell>
                       <TableCell>
-                        <div className="flex space-x-2">
+                        <div className="flex items-center space-x-2">
                           {charity.status !== 'paid' && (
                             <Button
                               size="sm"
@@ -306,6 +364,32 @@ export const CharityPage: React.FC = () => {
                               Pay
                             </Button>
                           )}
+                          <DropdownMenu>
+                            <DropdownMenuTrigger asChild>
+                              <Button variant="ghost" className="h-8 w-8 p-0">
+                                <span className="sr-only">Open menu</span>
+                                <MoreVertical className="h-4 w-4" />
+                              </Button>
+                            </DropdownMenuTrigger>
+                            <DropdownMenuContent align="end">
+                              <DropdownMenuItem onClick={() => handleView(charity)}>
+                                <Eye className="mr-2 h-4 w-4" />
+                                <span>View</span>
+                              </DropdownMenuItem>
+                              <DropdownMenuItem onClick={() => handleEdit(charity)}>
+                                <Edit className="mr-2 h-4 w-4" />
+                                <span>Edit</span>
+                              </DropdownMenuItem>
+                              <DropdownMenuSeparator />
+                              <DropdownMenuItem
+                                onClick={() => handleDelete(charity.id)}
+                                className="text-red-600"
+                              >
+                                <Trash2 className="mr-2 h-4 w-4" />
+                                <span>Delete</span>
+                              </DropdownMenuItem>
+                            </DropdownMenuContent>
+                          </DropdownMenu>
                         </div>
                       </TableCell>
                     </TableRow>
@@ -405,6 +489,144 @@ export const CharityPage: React.FC = () => {
               </Button>
             </DialogFooter>
           </form>
+        </DialogContent>
+      </Dialog>
+
+      {/* Edit Dialog */}
+      <Dialog open={isEditDialogOpen} onOpenChange={setIsEditDialogOpen}>
+        <DialogContent className="sm:max-w-[425px]">
+          <DialogHeader>
+            <DialogTitle>Edit Charity Record</DialogTitle>
+            <DialogDescription>
+              Update the details of the charity record
+            </DialogDescription>
+          </DialogHeader>
+          <form onSubmit={handleUpdate}>
+            <div className="grid gap-4 py-4">
+              <div className="grid gap-2">
+                <Label htmlFor="edit-recipient">Recipient</Label>
+                <Input
+                  id="edit-recipient"
+                  value={editingCharity?.recipient || ''}
+                  onChange={(e) =>
+                    setEditingCharity(
+                      editingCharity ? { ...editingCharity, recipient: e.target.value } : null
+                    )
+                  }
+                  placeholder="Organization or person"
+                />
+              </div>
+
+              <div className="grid gap-2">
+                <Label htmlFor="edit-description">Description</Label>
+                <Textarea
+                  id="edit-description"
+                  value={editingCharity?.description || ''}
+                  onChange={(e) =>
+                    setEditingCharity(
+                      editingCharity ? { ...editingCharity, description: e.target.value } : null
+                    )
+                  }
+                  placeholder="Charity details..."
+                  rows={3}
+                />
+              </div>
+            </div>
+            <DialogFooter>
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => setIsEditDialogOpen(false)}
+              >
+                Cancel
+              </Button>
+              <Button type="submit" className="bg-blue-600 hover:bg-blue-700">
+                Update Record
+              </Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
+
+      {/* View Dialog */}
+      <Dialog open={isViewDialogOpen} onOpenChange={setIsViewDialogOpen}>
+        <DialogContent className="sm:max-w-[425px]">
+          <DialogHeader>
+            <DialogTitle>View Charity Record</DialogTitle>
+            <DialogDescription>
+              Details of the charity record
+            </DialogDescription>
+          </DialogHeader>
+          {viewingCharity && (
+            <div className="grid gap-4 py-4">
+              <div className="grid grid-cols-2 gap-4">
+                <div className="font-semibold">Recipient:</div>
+                <div>{viewingCharity.recipient}</div>
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                <div className="font-semibold">Description:</div>
+                <div>{viewingCharity.description}</div>
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                <div className="font-semibold">Amount Required:</div>
+                <div>{formatCurrency(Number(viewingCharity.amount_required))}</div>
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                <div className="font-semibold">Amount Paid:</div>
+                <div>{formatCurrency(Number(viewingCharity.amount_paid))}</div>
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                <div className="font-semibold">Amount Remaining:</div>
+                <div>{formatCurrency(Number(viewingCharity.amount_remaining))}</div>
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                <div className="font-semibold">Status:</div>
+                <div>{getStatusBadge(viewingCharity.status)}</div>
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                <div className="font-semibold">Date:</div>
+                <div>{new Date(viewingCharity.income_date || viewingCharity.created_at).toLocaleDateString()}</div>
+              </div>
+              <div className="col-span-2">
+                <h3 className="font-semibold mt-4">Payment History</h3>
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Date</TableHead>
+                      <TableHead>Amount</TableHead>
+                      <TableHead>Recipient</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {paymentHistory.length > 0 ? (
+                      paymentHistory.map((payment) => (
+                        <TableRow key={payment.id}>
+                          <TableCell>{new Date(payment.payment_date).toLocaleDateString()}</TableCell>
+                          <TableCell>{formatCurrency(payment.payment_amount)}</TableCell>
+                          <TableCell>{payment.recipient}</TableCell>
+                        </TableRow>
+                      ))
+                    ) : (
+                      <TableRow>
+                        <TableCell colSpan={3} className="text-center">
+                          No payment history found
+                        </TableCell>
+                      </TableRow>
+                    )}
+                  </TableBody>
+                </Table>
+              </div>
+            </div>
+          )}
+          <DialogFooter>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => setIsViewDialogOpen(false)}
+            >
+              Close
+            </Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
     </div>

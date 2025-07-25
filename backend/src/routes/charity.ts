@@ -179,4 +179,45 @@ router.post('/payment', [
     }
 });
 
+// Get payment history for a charity
+router.get('/payments/:id', async (req, res) => {
+    try {
+        const userId = req.user!.userId;
+        const charityId = parseInt(req.params.id);
+
+        if (isNaN(charityId)) {
+            return res.status(400).json({
+                success: false,
+                message: 'Invalid charity ID'
+            });
+        }
+
+        const paymentHistory = await dbAll(
+            `SELECT 
+                id,
+                payment_amount,
+                payment_date,
+                recipient,
+                description
+             FROM charity_payments
+             WHERE charity_id = $1 AND business_id = $2
+             ORDER BY payment_date DESC`,
+            [charityId, userId]
+        );
+
+        res.json({
+            success: true,
+            data: {
+                payments: paymentHistory
+            }
+        });
+    } catch (error) {
+        console.error('Get payment history error:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Internal server error'
+        });
+    }
+});
+
 export default router;
