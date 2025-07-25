@@ -7,6 +7,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '.
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from '../components/ui/dialog';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '../components/ui/table';
 import { Badge } from '../components/ui/badge';
+import * as icons from 'lucide-react';
 import { 
   Plus, 
   Tag, 
@@ -21,47 +22,12 @@ import {
   DollarSign,
   Activity,
   Target,
-  Coffee,
-  Home,
-  Car,
-  ShoppingBag,
-  Utensils,
-  Gamepad2,
-  Heart,
-  Briefcase,
-  Book
+  ShoppingBag
 } from 'lucide-react';
 import { categoryApi } from '../lib/api';
 import { usePreferences } from '../contexts/PreferencesContext';
 import { Category, CategoryForm } from '../lib/types';
 import toast from 'react-hot-toast';
-
-const iconOptions = [
-  { value: 'DollarSign', icon: DollarSign, label: 'Money' },
-  { value: 'Home', icon: Home, label: 'Home' },
-  { value: 'Car', icon: Car, label: 'Transportation' },
-  { value: 'ShoppingBag', icon: ShoppingBag, label: 'Shopping' },
-  { value: 'Utensils', icon: Utensils, label: 'Food & Dining' },
-  { value: 'Coffee', icon: Coffee, label: 'Coffee & Drinks' },
-  { value: 'Gamepad2', icon: Gamepad2, label: 'Entertainment' },
-  { value: 'Heart', icon: Heart, label: 'Health & Fitness' },
-  { value: 'Briefcase', icon: Briefcase, label: 'Work & Business' },
-  { value: 'Book', icon: Book, label: 'Education' },
-  { value: 'Tag', icon: Tag, label: 'General' },
-];
-
-const colorOptions = [
-  { value: '#3B82F6', label: 'Blue' },
-  { value: '#10B981', label: 'Green' },
-  { value: '#F59E0B', label: 'Yellow' },
-  { value: '#EF4444', label: 'Red' },
-  { value: '#8B5CF6', label: 'Purple' },
-  { value: '#06B6D4', label: 'Cyan' },
-  { value: '#F97316', label: 'Orange' },
-  { value: '#84CC16', label: 'Lime' },
-  { value: '#EC4899', label: 'Pink' },
-  { value: '#6B7280', label: 'Gray' },
-];
 
 export const CategoriesPage: React.FC = () => {
   const { formatCurrency } = usePreferences();
@@ -168,13 +134,13 @@ export const CategoriesPage: React.FC = () => {
     setIsDialogOpen(true);
   };
 
+  const toPascalCase = (str: string) => {
+    return str.replace(/(^\w|-\w)/g, (g) => g.replace(/-/, "").toUpperCase());
+  };
+
   const getIconComponent = (iconName: string) => {
-    const iconOption = iconOptions.find(option => option.value === iconName);
-    if (iconOption) {
-      const IconComponent = iconOption.icon;
-      return <IconComponent className="w-4 h-4" />;
-    }
-    return <Tag className="w-4 h-4" />;
+    const IconComponent = (icons as any)[toPascalCase(iconName)] || Tag;
+    return <IconComponent className="w-4 h-4" />;
   };
 
   const getTypeBadge = (type: string) => {
@@ -511,7 +477,7 @@ export const CategoriesPage: React.FC = () => {
 
       {/* Category Dialog */}
       <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
-        <DialogContent className="sm:max-w-[425px]">
+        <DialogContent className="sm:max-w-[550px]">
           <DialogHeader>
             <DialogTitle>{editingCategory ? 'Edit Category' : 'Add New Category'}</DialogTitle>
             <DialogDescription>
@@ -548,46 +514,47 @@ export const CategoriesPage: React.FC = () => {
                 </Select>
               </div>
 
-              <div className="grid gap-2">
-                <Label htmlFor="color">Color</Label>
-                <div className="flex flex-wrap gap-2">
-                  {colorOptions.map((color) => (
-                    <button
-                      key={color.value}
-                      type="button"
-                      className={`w-8 h-8 rounded-full border-2 ${
-                        formData.color === color.value ? 'border-gray-400' : 'border-gray-200'
-                      }`}
-                      style={{ backgroundColor: color.value }}
-                      onClick={() => setFormData({...formData, color: color.value})}
-                      title={color.label}
+              <div className="grid grid-cols-2 gap-4">
+                <div className="grid gap-2">
+                  <Label htmlFor="color">Color</Label>
+                  <div className="flex items-center gap-2">
+                    <Input
+                      id="color"
+                      type="color"
+                      value={formData.color}
+                      onChange={(e) => setFormData({ ...formData, color: e.target.value })}
+                      className="p-1 h-10 w-14"
                     />
-                  ))}
+                    <Input
+                      type="text"
+                      value={formData.color}
+                      onChange={(e) => setFormData({ ...formData, color: e.target.value })}
+                      placeholder="#FFFFFF"
+                      className="max-w-[100px]"
+                    />
+                  </div>
                 </div>
               </div>
 
               <div className="grid gap-2">
-                <Label htmlFor="icon">Icon</Label>
-                <div className="grid grid-cols-5 gap-2">
-                  {iconOptions.map((iconOption) => {
-                    const IconComponent = iconOption.icon;
-                    return (
-                      <button
-                        key={iconOption.value}
-                        type="button"
-                        className={`p-2 rounded-md border ${
-                          formData.icon === iconOption.value 
-                            ? 'border-blue-500 bg-blue-50' 
-                            : 'border-gray-200 hover:border-gray-300'
-                        }`}
-                        onClick={() => setFormData({...formData, icon: iconOption.value})}
-                        title={iconOption.label}
-                      >
-                        <IconComponent className="w-4 h-4 mx-auto" />
-                      </button>
-                    );
-                  })}
-                </div>
+                <Label htmlFor="icon">
+                  Icon Name (from{' '}
+                  <a
+                    href="https://lucide.dev/icons/"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-blue-600 hover:underline"
+                  >
+                    lucide.dev
+                  </a>
+                  )
+                </Label>
+                <Input
+                  id="icon"
+                  value={formData.icon}
+                  onChange={(e) => setFormData({ ...formData, icon: e.target.value })}
+                  placeholder="e.g., Home, Car, ShoppingBag"
+                />
               </div>
 
               {/* Preview */}
