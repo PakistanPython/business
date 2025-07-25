@@ -19,7 +19,8 @@ import {
   AlertTriangle,
   Clock,
   CheckCircle,
-  Timer
+  Timer,
+  Landmark
 } from 'lucide-react';
 import { dashboardApi } from '../lib/api';
 import { DashboardData, AnalyticsData, DashboardSummary } from '../lib/types';
@@ -185,14 +186,14 @@ export const Dashboard: React.FC = () => {
       href: '/accounts-receivable'
     },
     {
-      title: 'Net Worth',
-      value: formatCurrency(summary?.net_worth || 0),
-      icon: DollarSign,
+      title: 'Total Loan Payable',
+      value: formatCurrency(summary?.total_active_loans || 0),
+      icon: Landmark,
       color: 'text-indigo-600',
       bgColor: 'bg-indigo-100',
-      change: '+15.8%',
-      changeType: 'positive' as const,
-      href: '/analytics'
+      change: '',
+      changeType: 'neutral' as const,
+      href: '/loans'
     },
     {
       title: 'Total Net Salary',
