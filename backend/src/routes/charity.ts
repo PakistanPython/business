@@ -168,8 +168,13 @@ router.post('/payment', [
         const newStatus = newAmountPaid >= charityRecord.amount_required ? 'paid' : 'partial';
 
         await dbRun(
-            'UPDATE charity SET amount_paid = $1, status = $2, recipient = $3, description = $4, updated_at = NOW() WHERE id = $5',
-            [newAmountPaid, newStatus, recipient, description, charity_id]
+            'UPDATE charity SET amount_paid = $1, status = $2, updated_at = NOW() WHERE id = $3',
+            [newAmountPaid, newStatus, charity_id]
+        );
+
+        await dbRun(
+            'INSERT INTO charity_payments (charity_id, business_id, payment_amount, payment_date, recipient, description) VALUES ($1, $2, $3, $4, $5, $6)',
+            [charity_id, userId, payment_amount, payment_date, recipient, description]
         );
 
         res.status(200).json({ message: 'Payment recorded successfully' });
