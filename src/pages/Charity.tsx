@@ -306,7 +306,7 @@ export const CharityPage: React.FC = () => {
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead>Income Source / Description</TableHead>
+                  <TableHead>Income Category/ Source</TableHead>
                   <TableHead>Required</TableHead>
                   <TableHead>Paid</TableHead>
                   <TableHead>Remaining</TableHead>
@@ -328,8 +328,8 @@ export const CharityPage: React.FC = () => {
                     <TableRow key={charity.id}>
                       <TableCell>
                         <div>
-                          <div className="font-medium">{charity.income_source || charity.recipient || 'N/A'}</div>
-                          <div className="text-sm text-gray-500">{charity.income_description || charity.description}</div>
+                          <div className="font-medium">{charity.income_category || 'N/A'}</div>
+                          <div className="text-sm text-gray-500">{charity.income_source}</div>
                         </div>
                       </TableCell>
                       <TableCell className="font-medium">{formatCurrency(Number(charity.amount_required))}</TableCell>
