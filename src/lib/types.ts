@@ -40,6 +40,7 @@ export interface Expense {
   amount: number;
   description?: string;
   category: string;
+  category_id: number;
   payment_method: string;
   date: string;
   receipt_path?: string;
@@ -54,6 +55,7 @@ export interface Purchase {
   amount: number;
   description?: string;
   category: string;
+  category_id: number;
   payment_method: string;
   date: string;
   receipt_path?: string;
@@ -324,7 +326,7 @@ export interface RegisterForm {
 export interface IncomeForm {
   amount: number;
   description?: string;
-  category: string;
+  category_id: number;
   source?: string;
   date: string;
   charity_percentage?: number;
@@ -333,7 +335,7 @@ export interface IncomeForm {
 export interface ExpenseForm {
   amount: number;
   description?: string;
-  category: string;
+  category_id: number;
   payment_method: string;
   date: string;
 }
@@ -341,7 +343,7 @@ export interface ExpenseForm {
 export interface PurchaseForm {
   amount: number;
   description?: string;
-  category: string;
+  category_id: number;
   payment_method: string;
   date: string;
 }

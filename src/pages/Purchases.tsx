@@ -8,6 +8,7 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '../components/ui/table';
 import { Badge } from '../components/ui/badge';
 import { Textarea } from '../components/ui/textarea';
+import * as icons from 'lucide-react';
 import { 
   Plus, 
   TrendingUp, 
@@ -22,16 +23,7 @@ import {
   Landmark,
   Wallet,
   Smartphone,
-  Tag,
-  Coffee,
-  Home,
-  Car,
-  ShoppingBag as ShoppingBagIcon,
-  Utensils,
-  Gamepad2,
-  Heart,
-  Briefcase,
-  Book
+  Tag
 } from 'lucide-react';
 import { purchaseApi, categoryApi } from '../lib/api';
 import { Purchase, PurchaseForm, Category } from '../lib/types';
@@ -50,7 +42,7 @@ export const PurchasesPage: React.FC = () => {
   const [formData, setFormData] = useState<PurchaseForm>({
     amount: 0,
     description: '',
-    category: '',
+    category_id: 0,
     payment_method: '',
     date: new Date().toISOString().split('T')[0]
   });
@@ -97,7 +89,7 @@ export const PurchasesPage: React.FC = () => {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     
-    if (!formData.amount || !formData.category || !formData.payment_method) {
+    if (!formData.amount || !formData.category_id || !formData.payment_method) {
       toast.error('Please fill in all required fields');
       return;
     }
@@ -126,7 +118,7 @@ export const PurchasesPage: React.FC = () => {
     setFormData({
       amount: purchase.amount,
       description: purchase.description || '',
-      category: purchase.category,
+      category_id: purchase.category_id,
       payment_method: purchase.payment_method,
       date: purchase.date.split('T')[0]
     });
@@ -150,7 +142,7 @@ export const PurchasesPage: React.FC = () => {
     setFormData({
       amount: 0,
       description: '',
-      category: '',
+      category_id: 0,
       payment_method: '',
       date: new Date().toISOString().split('T')[0]
     });
@@ -167,26 +159,13 @@ export const PurchasesPage: React.FC = () => {
 
   const totalPurchases = filteredPurchases.reduce((sum, item) => sum + (Number(item.amount) || 0), 0);
 
+  const toPascalCase = (str: string) => {
+    return str.replace(/(^\w|-\w)/g, (g) => g.replace(/-/, "").toUpperCase());
+  };
+
   const getIconComponent = (iconName: string) => {
-    const iconOptions = [
-      { value: 'DollarSign', icon: DollarSign, label: 'Money' },
-      { value: 'Home', icon: Home, label: 'Home' },
-      { value: 'Car', icon: Car, label: 'Transportation' },
-      { value: 'ShoppingBag', icon: ShoppingBagIcon, label: 'Shopping' },
-      { value: 'Utensils', icon: Utensils, label: 'Food & Dining' },
-      { value: 'Coffee', icon: Coffee, label: 'Coffee & Drinks' },
-      { value: 'Gamepad2', icon: Gamepad2, label: 'Entertainment' },
-      { value: 'Heart', icon: Heart, label: 'Health & Fitness' },
-      { value: 'Briefcase', icon: Briefcase, label: 'Work & Business' },
-      { value: 'Book', icon: Book, label: 'Education' },
-      { value: 'Tag', icon: Tag, label: 'General' },
-    ];
-    const iconOption = iconOptions.find(option => option.value === iconName);
-    if (iconOption) {
-      const IconComponent = iconOption.icon;
-      return <IconComponent className="w-4 h-4" />;
-    }
-    return <Tag className="w-4 h-4" />;
+    const IconComponent = (icons as any)[toPascalCase(iconName)] || Tag;
+    return <IconComponent className="w-4 h-4" />;
   };
 
   const getPaymentMethodIcon = (method: string) => {
@@ -273,15 +252,15 @@ export const PurchasesPage: React.FC = () => {
               <div>
                 <Label htmlFor="category">Category *</Label>
                 <Select 
-                  value={formData.category} 
-                  onValueChange={(value) => setFormData(prev => ({ ...prev, category: value }))}
+                  value={formData.category_id.toString()} 
+                  onValueChange={(value) => setFormData(prev => ({ ...prev, category_id: parseInt(value) }))}
                 >
                   <SelectTrigger>
                     <SelectValue placeholder="Select a category" />
                   </SelectTrigger>
                   <SelectContent>
                     {categories.map((category) => (
-                      <SelectItem key={category.id} value={category.name}>
+                      <SelectItem key={category.id} value={category.id.toString()}>
                         {category.name}
                       </SelectItem>
                     ))}
@@ -467,7 +446,7 @@ export const PurchasesPage: React.FC = () => {
                       <TableCell>
                         <div className="flex items-center space-x-3">
                           <div 
-                            className="w-6 h-6 rounded-full flex items-center justify-center text-white"
+                            className="w-8 h-8 rounded-full flex items-center justify-center text-white"
                             style={{ backgroundColor: item.category_color }}
                           >
                             {getIconComponent(item.category_icon)}

@@ -283,10 +283,10 @@ export const CategoriesPage: React.FC = () => {
                   <div key={category.id} className="flex items-center justify-between">
                     <div className="flex items-center space-x-3">
                       <div 
-                        className="w-4 h-4 rounded-full flex items-center justify-center text-white text-xs"
-                        style={{ backgroundColor: category.color || '#3B82F6' }}
+                        className="w-8 h-8 rounded-full flex items-center justify-center text-white"
+                        style={{ backgroundColor: category.color }}
                       >
-                        {getIconComponent(category.icon || 'Tag')}
+                        {getIconComponent(category.icon)}
                       </div>
                       <span className="font-medium">{category.name}</span>
                     </div>
@@ -320,10 +320,10 @@ export const CategoriesPage: React.FC = () => {
                   <div key={category.id} className="flex items-center justify-between">
                     <div className="flex items-center space-x-3">
                       <div 
-                        className="w-4 h-4 rounded-full flex items-center justify-center text-white text-xs"
-                        style={{ backgroundColor: category.color || '#EF4444' }}
+                        className="w-8 h-8 rounded-full flex items-center justify-center text-white"
+                        style={{ backgroundColor: category.color }}
                       >
-                        {getIconComponent(category.icon || 'Tag')}
+                        {getIconComponent(category.icon)}
                       </div>
                       <span className="font-medium">{category.name}</span>
                     </div>
@@ -357,10 +357,10 @@ export const CategoriesPage: React.FC = () => {
                   <div key={category.id} className="flex items-center justify-between">
                     <div className="flex items-center space-x-3">
                       <div 
-                        className="w-4 h-4 rounded-full flex items-center justify-center text-white text-xs"
-                        style={{ backgroundColor: category.color || '#8B5CF6' }}
+                        className="w-8 h-8 rounded-full flex items-center justify-center text-white"
+                        style={{ backgroundColor: category.color }}
                       >
-                        {getIconComponent(category.icon || 'Tag')}
+                        {getIconComponent(category.icon)}
                       </div>
                       <span className="font-medium">{category.name}</span>
                     </div>
