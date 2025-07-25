@@ -285,13 +285,13 @@ router.post('/', async (req: Request, res: Response) => {
         employee_id, pay_period_start, pay_period_end,
         gross_salary, deductions, net_salary,
         total_working_days, total_present_days, total_overtime_hours,
-        bonuses, reimbursements, pay_method, notes, status
-      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, 'draft') RETURNING id
+        bonuses, reimbursements, pay_method, notes, status, business_id
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, 'draft', $14) RETURNING id
     `, [
       employee_id, pay_period_start, pay_period_end,
       grossSalary, totalDeductions, netSalary,
       totalWorkingDays, totalPresentDays, totalOvertimeHours,
-      bonuses, reimbursements, pay_method, notes
+      bonuses, reimbursements, pay_method, notes, businessId
     ]);
 
     // Fetch the created record
@@ -551,12 +551,13 @@ router.post('/bulk-create', async (req: Request, res: Response) => {
             employee_id, pay_period_start, pay_period_end,
             gross_salary, deductions, net_salary,
             total_working_days, total_present_days, total_overtime_hours,
-            status
-          ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, 'draft') RETURNING id
+            status, business_id
+          ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, 'draft', $10) RETURNING id
         `, [
           employeeId, pay_period_start, pay_period_end,
           grossSalary, totalDeductions, netSalary,
           totalWorkingDays, totalPresentDays, totalOvertimeHours,
+          businessId
         ]);
 
         results.push({
@@ -612,10 +613,10 @@ router.get('/stats/summary', async (req: Request, res: Response) => {
         COUNT(CASE WHEN p.status = 'draft' THEN 1 END) as draft_payrolls,
         COUNT(CASE WHEN p.status = 'approved' THEN 1 END) as approved_payrolls,
         COUNT(CASE WHEN p.status = 'paid' THEN 1 END) as paid_payrolls,
-        COALESCE(ROUND(CAST(SUM(CASE WHEN p.status = 'paid' THEN gross_salary ELSE 0 END) AS numeric), 2), 0) as total_gross_salary,
-        COALESCE(ROUND(CAST(SUM(CASE WHEN p.status = 'paid' THEN net_salary ELSE 0 END) AS numeric), 2), 0) as total_net_salary,
-        COALESCE(ROUND(CAST(SUM(CASE WHEN p.status = 'paid' THEN deductions ELSE 0 END) AS numeric), 2), 0) as total_deductions,
-        COALESCE(ROUND(CAST(AVG(CASE WHEN p.status = 'paid' THEN net_salary ELSE NULL END) AS numeric), 2), 0) as avg_net_salary
+        COALESCE(ROUND(CAST(SUM(gross_salary) AS numeric), 2), 0) as total_gross_salary,
+        COALESCE(ROUND(CAST(SUM(net_salary) AS numeric), 2), 0) as total_net_salary,
+        COALESCE(ROUND(CAST(SUM(deductions) AS numeric), 2), 0) as total_deductions,
+        COALESCE(ROUND(CAST(AVG(net_salary) AS numeric), 2), 0) as avg_net_salary
       FROM payroll p
       JOIN employees e ON p.employee_id = e.id
       WHERE e.business_id = $1
