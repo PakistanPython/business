@@ -65,27 +65,6 @@ router.post('/register', [
     );
 
 
-    // Create default categories for the user
-    const defaultCategories = [
-      { name: 'Salary', type: 'income', color: '#10B981', icon: 'dollar-sign' },
-      { name: 'Business', type: 'income', color: '#3B82F6', icon: 'briefcase' },
-      { name: 'Investment', type: 'income', color: '#8B5CF6', icon: 'trending-up' },
-      { name: 'Food', type: 'expense', color: '#EF4444', icon: 'utensils' },
-      { name: 'Transport', type: 'expense', color: '#F59E0B', icon: 'car' },
-      { name: 'Utilities', type: 'expense', color: '#6B7280', icon: 'zap' },
-      { name: 'Entertainment', type: 'expense', color: '#EC4899', icon: 'music' },
-      { name: 'Inventory', type: 'purchase', color: '#059669', icon: 'package' },
-      { name: 'Equipment', type: 'purchase', color: '#DC2626', icon: 'tool' },
-      { name: 'Retail', type: 'sale', color: '#16A34A', icon: 'shopping-bag' },
-      { name: 'Service', type: 'sale', color: '#2563EB', icon: 'service' }
-    ];
-
-    for (const category of defaultCategories) {
-      await dbRun(
-        'INSERT INTO categories (business_id, name, type) VALUES ($1, $2, $3) RETURNING id',
-        [businessId, category.name, category.type]
-      );
-    }
 
     // Create default cash account
     await dbRun(
