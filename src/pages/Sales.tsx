@@ -79,7 +79,7 @@ export const SalesPage: React.FC = () => {
       const [salesResponse, categoriesResponse, purchasesResponse] = await Promise.all([
         saleApi.getAll(),
         categoryApi.getAll({ type: 'sale' }),
-        saleApi.getAvailablePurchases()
+        purchaseApi.getAll({ unsold: true })
       ]);
       
       const fetchedSales = salesResponse.data.data.sales || [];

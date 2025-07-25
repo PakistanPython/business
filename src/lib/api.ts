@@ -86,7 +86,6 @@ export const saleApi = {
   update: (id: number, data: SaleForm) => api.put(`/sales/${id}`, data),
   delete: (id: number) => api.delete(`/sales/${id}`),
   getSummary: () => api.get('/sales/summary'),
-  getAvailablePurchases: () => api.get('/sales/available/purchases'),
 };
 
 export const charityApi = {

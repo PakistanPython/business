@@ -16,7 +16,8 @@ router.get('/', [
   query('start_date').optional().isISO8601().withMessage('Start date must be valid ISO date'),
   query('end_date').optional().isISO8601().withMessage('End date must be valid ISO date'),
   query('sort_by').optional().isIn(['date', 'amount', 'created_at']).withMessage('Invalid sort field'),
-  query('sort_order').optional().isIn(['asc', 'desc']).withMessage('Sort order must be asc or desc')
+  query('sort_order').optional().isIn(['asc', 'desc']).withMessage('Sort order must be asc or desc'),
+  query('unsold').optional().isBoolean().withMessage('Unsold must be a boolean')
 ], async (req, res) => {
   try {
     const errors = validationResult(req);
@@ -37,6 +38,7 @@ router.get('/', [
     const endDate = req.query.end_date as string;
     const sortBy = req.query.sort_by as string || 'date';
     const sortOrder = req.query.sort_order as string || 'desc';
+    const unsold = req.query.unsold === 'true';
 
     // Build WHERE clause
     let whereClause = 'WHERE p.business_id = $1';
@@ -51,6 +53,10 @@ router.get('/', [
     if (endDate) {
       whereClause += ` AND p.date <= $${paramIndex++}`;
       whereParams.push(endDate);
+    }
+
+    if (unsold) {
+      whereClause += ' AND NOT EXISTS (SELECT 1 FROM sales s WHERE s.purchase_id = p.id)';
     }
 
     // Get total count
