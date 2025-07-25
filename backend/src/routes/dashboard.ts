@@ -32,7 +32,8 @@ router.get('/summary', async (req, res) => {
       ar_invoices_count: 0,
       ar_overdue_count: 0,
       net_worth: 0,
-      available_cash: 0
+      available_cash: 0,
+      total_net_salary: 0
     };
 
     // Get totals
@@ -49,6 +50,12 @@ router.get('/summary', async (req, res) => {
     const charityRemaining = await dbGet('SELECT COALESCE(SUM(amount_required - amount_paid), 0) as total FROM charity WHERE business_id = $1', [userId]);
     const arOutstanding = await dbGet('SELECT COALESCE(SUM(amount - paid_amount), 0) as total, COUNT(*) as count FROM accounts_receivable WHERE business_id = $1 AND status != \'paid\'', [userId]);
     const arOverdue = await dbGet('SELECT COALESCE(SUM(amount - paid_amount), 0) as total, COUNT(*) as count FROM accounts_receivable WHERE business_id = $1 AND received = FALSE AND due_date < CURRENT_DATE', [userId]);
+    const totalNetSalary = await dbGet(`
+      SELECT COALESCE(SUM(p.net_salary), 0) as total 
+      FROM payroll p
+      JOIN employees e ON p.employee_id = e.id
+      WHERE e.business_id = $1 AND p.status = 'paid'
+    `, [userId]);
 
     summary.total_income = parseFloat(incomeTotal.total || 0);
     summary.total_expenses = parseFloat(expenseTotal.total || 0);
@@ -66,6 +73,7 @@ router.get('/summary', async (req, res) => {
     summary.total_ar_overdue = parseFloat(arOverdue.total || 0);
     summary.ar_invoices_count = parseInt(arOutstanding.count || 0);
     summary.ar_overdue_count = parseInt(arOverdue.count || 0);
+    summary.total_net_salary = parseFloat(totalNetSalary.total || 0);
     summary.net_worth = summary.total_income - summary.total_expenses;
     summary.available_cash = summary.total_accounts_balance - summary.total_active_loans;
 

@@ -194,6 +194,16 @@ export const Dashboard: React.FC = () => {
       changeType: 'positive' as const,
       href: '/analytics'
     },
+    {
+      title: 'Total Net Salary',
+      value: formatCurrency(summary?.total_net_salary || 0),
+      icon: DollarSign,
+      color: 'text-teal-600',
+      bgColor: 'bg-teal-100',
+      change: 'From Payroll',
+      changeType: 'neutral' as const,
+      href: '/payroll'
+    },
   ];
 
   // Payroll and HR stats cards

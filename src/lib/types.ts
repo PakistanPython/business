@@ -216,6 +216,7 @@ export interface DashboardSummary {
   ar_overdue_count: number;
   net_worth: number;
   available_cash: number;
+  total_net_salary: number;
 }
 
 export interface MonthlyData {
