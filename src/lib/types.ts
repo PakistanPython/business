@@ -103,6 +103,7 @@ export interface Charity {
   income_description?: string;
   income_source?: string;
   income_date?: string;
+  income_category?: string;
 }
 
 export interface CharityPaymentForm {

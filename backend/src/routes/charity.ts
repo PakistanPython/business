@@ -73,9 +73,11 @@ router.get('/', [
         (COALESCE(c.amount_paid, 0) * 100 / c.amount_required) as progress,
         i.description as income_description,
         i.source as income_source,
-        i.date as income_date
+        i.date as income_date,
+        cat.name as income_category
        FROM charity c
        LEFT JOIN income i ON c.income_id = i.id
+       LEFT JOIN categories cat ON i.category_id = cat.id
        ${whereClause.replace('business_id', 'c.business_id')} 
        ORDER BY c.${sortBy} ${sortOrder.toUpperCase()}
        LIMIT $${paramIndex++} OFFSET $${paramIndex++}`,

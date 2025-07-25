@@ -553,20 +553,14 @@ export const CharityPage: React.FC = () => {
         <DialogContent className="sm:max-w-[425px]">
           <DialogHeader>
             <DialogTitle>View Charity Record</DialogTitle>
-            <DialogDescription>
-              Details of the charity record
-            </DialogDescription>
+            {viewingCharity && (
+              <DialogDescription>
+                {`${viewingCharity.income_category || ''} , ${viewingCharity.income_source || ''} , ${viewingCharity.income_description || ''}`}
+              </DialogDescription>
+            )}
           </DialogHeader>
           {viewingCharity && (
             <div className="grid gap-4 py-4">
-              <div className="grid grid-cols-2 gap-4">
-                <div className="font-semibold">Recipient:</div>
-                <div>{viewingCharity.recipient}</div>
-              </div>
-              <div className="grid grid-cols-2 gap-4">
-                <div className="font-semibold">Description:</div>
-                <div>{viewingCharity.description}</div>
-              </div>
               <div className="grid grid-cols-2 gap-4">
                 <div className="font-semibold">Amount Required:</div>
                 <div>{formatCurrency(Number(viewingCharity.amount_required))}</div>
