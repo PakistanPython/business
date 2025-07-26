@@ -237,3 +237,12 @@ export const preferencesApi = {
   get: () => api.get('/preferences'),
   update: (data: any) => api.put('/preferences', data),
 };
+
+export const backupApi = {
+  download: () => api.get('/backup/download', { responseType: 'blob' }),
+  upload: (data: FormData) => api.post('/backup/upload', data, {
+    headers: {
+      'Content-Type': 'multipart/form-data',
+    },
+  }),
+};

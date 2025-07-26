@@ -41,6 +41,9 @@ export const PreferencesProvider: React.FC<{ children: ReactNode }> = ({ childre
   }, [user]);
 
   const formatCurrency = (amount: number) => {
+    if (preferences.currency === 'PKR') {
+      return `Rs ${amount.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+    }
     return new Intl.NumberFormat('en-US', {
       style: 'currency',
       currency: preferences.currency,

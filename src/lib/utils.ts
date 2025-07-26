@@ -7,6 +7,9 @@ export function cn(...inputs: ClassValue[]) {
 
 // Format currency
 export const formatCurrency = (amount: number, currency = 'USD'): string => {
+  if (currency === 'PKR') {
+    return `Rs ${amount.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+  }
   return new Intl.NumberFormat('en-US', {
     style: 'currency',
     currency: currency,

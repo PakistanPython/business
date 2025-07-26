@@ -22,13 +22,13 @@ import {
   Save,
   RefreshCw
 } from 'lucide-react';
-import { authApi, preferencesApi, dashboardApi } from '../lib/api';
+import { authApi, preferencesApi, dashboardApi, backupApi } from '../lib/api';
 import { useAuth } from '../contexts/AuthContext';
 import { User as UserType } from '../lib/types';
 import toast from 'react-hot-toast';
 
 export const ProfilePage: React.FC = () => {
-  const { user, updateUser } = useAuth();
+  const { user, updateUser, logout } = useAuth();
   const [isLoading, setIsLoading] = useState(false);
   const [activeTab, setActiveTab] = useState('profile');
   
@@ -168,26 +168,53 @@ export const ProfilePage: React.FC = () => {
     }
   };
 
-  const handleExportData = () => {
-    // Simulate data export
-    const exportData = {
-      user_profile: user,
-      preferences: preferences,
-      stats: stats,
-      exported_at: new Date().toISOString()
-    };
+  const handleExportData = async () => {
+    setIsLoading(true);
+    try {
+      const response = await backupApi.download();
+      const url = window.URL.createObjectURL(new Blob([response.data]));
+      const link = document.createElement('a');
+      link.href = url;
+      const contentDisposition = response.headers['content-disposition'];
+      let filename = 'backup.sql';
+      if (contentDisposition) {
+        const filenameMatch = contentDisposition.match(/filename="?(.+)"?/);
+        if (filenameMatch.length > 1) {
+          filename = filenameMatch[1];
+        }
+      }
+      link.setAttribute('download', filename);
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      window.URL.revokeObjectURL(url);
+      toast.success('Database backup downloaded successfully');
+    } catch (error) {
+      console.error('Error downloading backup:', error);
+      toast.error('Failed to download backup');
+    } finally {
+      setIsLoading(false);
+    }
+  };
 
-    const blob = new Blob([JSON.stringify(exportData, null, 2)], { type: 'application/json' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `profile_data_${new Date().toISOString().split('T')[0]}.json`;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(url);
-    
-    toast.success('Profile data exported successfully');
+  const handleBackupUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    const formData = new FormData();
+    formData.append('backup', file);
+
+    setIsLoading(true);
+    try {
+      await backupApi.upload(formData);
+      toast.success('Backup uploaded successfully. Please log in again.');
+      logout();
+    } catch (error: any) {
+      console.error('Error uploading backup:', error);
+      toast.error(error.response?.data?.message || 'Failed to upload backup');
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   const handleDeleteAccount = async () => {
@@ -484,7 +511,7 @@ export const ProfilePage: React.FC = () => {
                         <option value="EUR">EUR (€)</option>
                         <option value="GBP">GBP (£)</option>
                         <option value="JPY">JPY (¥)</option>
-                        <option value="PKR">PKR (₨)</option>
+                        <option value="PKR">PKR (Rs)</option>
                       </select>
                     </div>
                     <div className="space-y-2">
@@ -626,14 +653,21 @@ export const ProfilePage: React.FC = () => {
               </CardHeader>
               <CardContent className="space-y-6">
                 <div className="space-y-4">
-                  <h3 className="text-lg font-medium">Data Export</h3>
+                  <h3 className="text-lg font-medium">Database Backup</h3>
                   <p className="text-sm text-gray-600">
-                    Download a copy of your data including profile information, preferences, and transaction history.
+                    Download a complete backup of your database or restore from a backup file.
                   </p>
-                  <Button onClick={handleExportData} variant="outline">
-                    <Download className="w-4 h-4 mr-2" />
-                    Export My Data
-                  </Button>
+                  <div className="flex space-x-2">
+                    <Button onClick={handleExportData} variant="outline">
+                      <Download className="w-4 h-4 mr-2" />
+                      Download Backup
+                    </Button>
+                    <Button variant="outline" onClick={() => document.getElementById('backup-upload')?.click()}>
+                      <Upload className="w-4 h-4 mr-2" />
+                      Upload Backup
+                    </Button>
+                    <input type="file" id="backup-upload" className="hidden" onChange={handleBackupUpload} accept=".zip" />
+                  </div>
                 </div>
 
                 <Separator />

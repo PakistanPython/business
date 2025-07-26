@@ -29,6 +29,8 @@ import workSchedulesRoutes from './routes/work_schedules';
 import leaveRoutes from './routes/leaves';
 import attendanceRulesRoutes from './routes/attendance_rules';
 import preferencesRoutes from './routes/preferences';
+import backupRoutes from './routes/backup';
+import transactionRoutes from './routes/transaction';
 
 const app = express();
 const PORT = process.env.PORT || 5000;
@@ -104,6 +106,8 @@ app.use('/api/work-schedules', workSchedulesRoutes);
 app.use('/api/leaves', leaveRoutes);
 app.use('/api/attendance-rules', attendanceRulesRoutes);
 app.use('/api/preferences', preferencesRoutes);
+app.use('/api/backup', backupRoutes);
+app.use('/api/transactions', transactionRoutes);
 
 // Default route
 app.get('/', (req, res) => {
