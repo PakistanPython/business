@@ -49,7 +49,7 @@ export const Header: React.FC<HeaderProps> = ({ onMenuClick }) => {
           </button>
 
           {/* Breadcrumbs */}
-          <nav className="flex" aria-label="Breadcrumb">
+          <nav className="hidden lg:flex" aria-label="Breadcrumb">
             <ol className="flex items-center space-x-4">
               <li>
                 <div>
@@ -111,7 +111,7 @@ export const Header: React.FC<HeaderProps> = ({ onMenuClick }) => {
           </button>
 
           {/* User menu */}
-          <div className="relative ml-3">
+          <div className="relative">
             <div className="flex items-center space-x-3">
               <div className="hidden sm:block text-right">
                 <p className="text-sm font-medium text-gray-900">
