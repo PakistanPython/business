@@ -65,13 +65,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
           } catch (error) {
             // Token is invalid, clear storage and log out
             console.error('Token verification failed, logging out:', error);
-            // Do not logout, just clear the state
-            setAuthState({
-              user: null,
-              token: null,
-              isAuthenticated: false,
-              isLoading: false,
-            });
+            logout();
           }
         } else {
           setAuthState({
@@ -134,7 +128,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     try {
       setAuthState(prev => ({ ...prev, isLoading: true }));
       
-      const response = await authApi.loginEmployee({ email, password });
+      const response = await authApi.loginEmployee({ login: email, password });
       const { user, token } = response.data.data;
 
       // Store in localStorage
