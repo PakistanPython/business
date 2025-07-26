@@ -40,7 +40,7 @@ export const IncomePage: React.FC = () => {
   const [formData, setFormData] = useState<IncomeForm>({
     amount: 0,
     description: '',
-    category_id: 0,
+    category_id: null,
     source: '',
     date: new Date().toISOString().split('T')[0],
     charity_percentage: 0,
@@ -72,7 +72,7 @@ export const IncomePage: React.FC = () => {
     e.preventDefault();
     
     if (!formData.amount || !formData.category_id) {
-      toast.error('Please fill in all required fields');
+      toast.error('Amount and category are required.');
       return;
     }
 
@@ -127,7 +127,7 @@ export const IncomePage: React.FC = () => {
     setFormData({
       amount: 0,
       description: '',
-      category_id: 0,
+      category_id: null,
       source: '',
       date: new Date().toISOString().split('T')[0],
       charity_percentage: 0,
@@ -217,7 +217,7 @@ export const IncomePage: React.FC = () => {
               <div>
                 <Label htmlFor="category">Category *</Label>
                 <Select 
-                  value={formData.category_id.toString()} 
+                  value={formData.category_id?.toString() || ''} 
                   onValueChange={(value) => setFormData(prev => ({ ...prev, category_id: parseInt(value) }))}
                 >
                   <SelectTrigger>

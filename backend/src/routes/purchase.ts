@@ -160,9 +160,10 @@ router.post('/', [
     .trim()
     .isLength({ max: 500 })
     .withMessage('Description cannot exceed 500 characters'),
-  body('category')
+  body('category_id')
     .optional()
-    .trim(),
+    .isInt({ min: 1 })
+    .withMessage('Category is required'),
   body('payment_method')
     .optional()
     .trim(),
@@ -181,22 +182,11 @@ router.post('/', [
     }
 
     const userId = req.user!.userId;
-    const { amount, description = null, category, payment_method, date } = req.body;
-
-    let categoryId = null;
-    if (category) {
-      const categoryRecord = await dbGet(
-        'SELECT id FROM categories WHERE name = $1 AND business_id = $2 AND type = \'purchase\'',
-        [category, userId]
-      );
-      if (categoryRecord) {
-        categoryId = categoryRecord.id;
-      }
-    }
+    const { amount, description = null, category_id, payment_method, date } = req.body;
 
     const purchaseResult = await dbRun(
       'INSERT INTO purchases (business_id, amount, description, category_id, payment_method, date) VALUES ($1, $2, $3, $4, $5, $6) RETURNING id',
-      [userId, amount, description, categoryId, payment_method, date]
+      [userId, amount, description, category_id, payment_method, date]
     );
 
     const purchaseId = purchaseResult.lastID;
@@ -231,9 +221,10 @@ router.put('/:id', [
     .trim()
     .isLength({ max: 500 })
     .withMessage('Description cannot exceed 500 characters'),
-  body('category')
+  body('category_id')
     .optional()
-    .trim(),
+    .isInt({ min: 1 })
+    .withMessage('Invalid category ID'),
   body('payment_method')
     .optional()
     .trim(),
@@ -274,18 +265,7 @@ router.put('/:id', [
       });
     }
 
-    const { amount, description, category, payment_method, date } = req.body;
-
-    let categoryId = existingRecord.category_id;
-    if (category) {
-      const categoryRecord = await dbGet(
-        'SELECT id FROM categories WHERE name = $1 AND business_id = $2 AND type = \'purchase\'',
-        [category, userId]
-      );
-      if (categoryRecord) {
-        categoryId = categoryRecord.id;
-      }
-    }
+    const { amount, description, category_id, payment_method, date } = req.body;
 
     const updates: string[] = [];
     const values: any[] = [];
@@ -299,9 +279,9 @@ router.put('/:id', [
       updates.push(`description = $${paramIndex++}`);
       values.push(description);
     }
-    if (category) {
+    if (category_id) {
       updates.push(`category_id = $${paramIndex++}`);
-      values.push(categoryId);
+      values.push(category_id);
     }
     if (payment_method) {
       updates.push(`payment_method = $${paramIndex++}`);

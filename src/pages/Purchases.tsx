@@ -42,7 +42,7 @@ export const PurchasesPage: React.FC = () => {
   const [formData, setFormData] = useState<PurchaseForm>({
     amount: 0,
     description: '',
-    category_id: 0,
+    category_id: null,
     payment_method: '',
     date: new Date().toISOString().split('T')[0]
   });
@@ -90,7 +90,7 @@ export const PurchasesPage: React.FC = () => {
     e.preventDefault();
     
     if (!formData.amount || !formData.category_id || !formData.payment_method) {
-      toast.error('Please fill in all required fields');
+      toast.error('Amount, category, and payment method are required.');
       return;
     }
 
@@ -142,7 +142,7 @@ export const PurchasesPage: React.FC = () => {
     setFormData({
       amount: 0,
       description: '',
-      category_id: 0,
+      category_id: null,
       payment_method: '',
       date: new Date().toISOString().split('T')[0]
     });
@@ -164,6 +164,9 @@ export const PurchasesPage: React.FC = () => {
   };
 
   const getIconComponent = (iconName: string) => {
+    if (typeof iconName !== 'string' || !iconName) {
+      return <Tag className="w-4 h-4" />;
+    }
     const IconComponent = (icons as any)[toPascalCase(iconName)] || Tag;
     return <IconComponent className="w-4 h-4" />;
   };
@@ -252,7 +255,7 @@ export const PurchasesPage: React.FC = () => {
               <div>
                 <Label htmlFor="category">Category *</Label>
                 <Select 
-                  value={formData.category_id.toString()} 
+                  value={formData.category_id?.toString() || ''} 
                   onValueChange={(value) => setFormData(prev => ({ ...prev, category_id: parseInt(value) }))}
                 >
                   <SelectTrigger>

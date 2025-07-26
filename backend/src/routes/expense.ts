@@ -159,9 +159,8 @@ router.post('/', [
     .trim()
     .isLength({ max: 500 })
     .withMessage('Description cannot exceed 500 characters'),
-  body('category')
-    .trim()
-    .notEmpty()
+  body('category_id')
+    .isInt({ min: 1 })
     .withMessage('Category is required'),
   body('payment_method')
     .trim()
@@ -182,22 +181,11 @@ router.post('/', [
     }
 
     const userId = req.user!.userId;
-    const { amount, description = null, category, payment_method, date } = req.body;
-
-    const categoryRecord = await dbGet(
-      'SELECT id FROM categories WHERE name = $1 AND business_id = $2 AND type = \'expense\'',
-      [category, userId]
-    );
-    if (!categoryRecord) {
-      return res.status(400).json({
-        success: false,
-        message: 'Invalid expense category'
-      });
-    }
+    const { amount, description = null, category_id, payment_method, date } = req.body;
 
     const expenseResult = await dbRun(
       'INSERT INTO expenses (business_id, amount, description, category_id, payment_method, date) VALUES ($1, $2, $3, $4, $5, $6) RETURNING id',
-      [userId, amount, description, categoryRecord.id, payment_method, date]
+      [userId, amount, description, category_id, payment_method, date]
     );
 
     const expenseId = expenseResult.lastID;
@@ -232,11 +220,10 @@ router.put('/:id', [
     .trim()
     .isLength({ max: 500 })
     .withMessage('Description cannot exceed 500 characters'),
-  body('category')
+  body('category_id')
     .optional()
-    .trim()
-    .notEmpty()
-    .withMessage('Category cannot be empty'),
+    .isInt({ min: 1 })
+    .withMessage('Invalid category ID'),
   body('payment_method')
     .optional()
     .trim()
@@ -279,22 +266,7 @@ router.put('/:id', [
       });
     }
 
-    const { amount, description, category, payment_method, date } = req.body;
-
-    let categoryId = existingRecord.category_id;
-    if (category) {
-      const categoryRecord = await dbGet(
-        'SELECT id FROM categories WHERE name = $1 AND business_id = $2 AND type = \'expense\'',
-        [category, userId]
-      );
-      if (!categoryRecord) {
-        return res.status(400).json({
-          success: false,
-          message: 'Invalid expense category'
-        });
-      }
-      categoryId = categoryRecord.id;
-    }
+    const { amount, description, category_id, payment_method, date } = req.body;
 
     const updates: string[] = [];
     const values: any[] = [];
@@ -312,9 +284,9 @@ router.put('/:id', [
       updates.push(`payment_method = $${paramIndex++}`);
       values.push(payment_method);
     }
-    if (category) {
+    if (category_id) {
       updates.push(`category_id = $${paramIndex++}`);
-      values.push(categoryId);
+      values.push(category_id);
     }
     if (date !== undefined) {
       updates.push(`date = $${paramIndex++}`);

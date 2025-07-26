@@ -136,7 +136,7 @@ router.post('/', [
         const result = await dbRun(
             `INSERT INTO loans (business_id, lender_name, principal_amount, current_balance, loan_type, start_date, due_date, interest_rate, monthly_payment, status)
              VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, 'active')`,
-            [business_id, lender_name, principal_amount, current_balance || principal_amount, loan_type, start_date, due_date, interest_rate, monthly_payment]
+            [business_id, lender_name, principal_amount, current_balance || principal_amount, loan_type, start_date, due_date || null, interest_rate, monthly_payment]
         );
 
         res.status(201).json({
@@ -203,7 +203,7 @@ router.put('/:id', [
     body('amount').optional().isFloat({ gt: 0 }),
     body('interest_rate').optional().isFloat({ min: 0 }),
     body('start_date').optional().isISO8601().toDate(),
-    body('end_date').optional().isISO8601().toDate(),
+    body('due_date').optional({ checkFalsy: true }).isISO8601().withMessage('Invalid due date'),
     body('status').optional().isIn(['active', 'paid']),
 ], async (req, res) => {
   try {
@@ -239,7 +239,7 @@ router.put('/:id', [
       });
     }
 
-    const { amount, interest_rate, start_date, end_date, status } = req.body;
+    const { amount, interest_rate, start_date, due_date, status } = req.body;
 
     const updates: string[] = [];
     const values: any[] = [];
@@ -257,9 +257,9 @@ router.put('/:id', [
         updates.push(`start_date = $${paramIndex++}`);
         values.push(start_date);
     }
-    if (end_date !== undefined) {
-        updates.push(`end_date = $${paramIndex++}`);
-        values.push(end_date);
+    if (due_date !== undefined) {
+        updates.push(`due_date = $${paramIndex++}`);
+        values.push(due_date || null);
     }
     if (status !== undefined) {
       updates.push(`status = $${paramIndex++}`);

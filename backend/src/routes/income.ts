@@ -159,8 +159,8 @@ router.post('/', [
     .trim()
     .isLength({ max: 500 })
     .withMessage('Description cannot exceed 500 characters'),
-  body('category')
-    .notEmpty()
+  body('category_id')
+    .isInt({ min: 1 })
     .withMessage('Category is required'),
   body('date')
     .isISO8601()
@@ -181,26 +181,14 @@ router.post('/', [
     }
 
     const userId = req.user!.userId;
-    const { amount, description, category, date, charity_percentage, source } = req.body;
+    const { amount, description, category_id, date, charity_percentage, source } = req.body;
 
     try {
       await dbRun('BEGIN');
 
-      const categoryRecord = await dbGet(
-        'SELECT id FROM categories WHERE name = $1 AND business_id = $2 AND type = \'income\'',
-        [category, userId]
-      );
-
-      if (!categoryRecord) {
-        return res.status(400).json({
-          success: false,
-          message: 'Invalid income category'
-        });
-      }
-
       const incomeResult = await dbRun(
         'INSERT INTO income (business_id, amount, description, category_id, date, charity_percentage, source) VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING id',
-        [userId, amount, description, categoryRecord.id, date, charity_percentage || 0, source]
+        [userId, amount, description, category_id, date, charity_percentage || 0, source]
       );
 
       const incomeId = incomeResult.lastID;
@@ -248,8 +236,10 @@ router.put('/:id', [
     .trim()
     .isLength({ max: 500 })
     .withMessage('Description cannot exceed 500 characters'),
-  body('category')
-    .optional(),
+  body('category_id')
+    .optional()
+    .isInt({ min: 1 })
+    .withMessage('Invalid category ID'),
   body('date')
     .optional()
     .isISO8601()
@@ -291,22 +281,7 @@ router.put('/:id', [
       });
     }
 
-    const { amount, description, category, date, charity_percentage, source } = req.body;
-
-    let categoryId = existingRecord.category_id;
-    if (category) {
-      const categoryRecord = await dbGet(
-        'SELECT id FROM categories WHERE name = $1 AND business_id = $2 AND type = \'income\'',
-        [category, userId]
-      );
-      if (!categoryRecord) {
-        return res.status(400).json({
-          success: false,
-          message: 'Invalid income category'
-        });
-      }
-      categoryId = categoryRecord.id;
-    }
+    const { amount, description, category_id, date, charity_percentage, source } = req.body;
 
     const updates: string[] = [];
     const values: any[] = [];
@@ -320,9 +295,9 @@ router.put('/:id', [
       updates.push(`description = $${paramIndex++}`);
       values.push(description);
     }
-    if (category) {
+    if (category_id) {
       updates.push(`category_id = $${paramIndex++}`);
-      values.push(categoryId);
+      values.push(category_id);
     }
     if (date !== undefined) {
       updates.push(`date = $${paramIndex++}`);
