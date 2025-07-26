@@ -2,8 +2,9 @@ import axios from 'axios';
 import { LoginForm, RegisterForm, IncomeForm, ExpenseForm, PurchaseForm, SaleForm, AccountForm, LoanForm, CategoryForm, AccountsReceivableForm, PaymentForm, CharityPaymentForm } from './types';
 
 // Create axios instance with base configuration
+// Create axios instance with base configuration
 export const api = axios.create({
-  baseURL: import.meta.env.VITE_API_URL || '/api',
+  baseURL: import.meta.env.PROD ? '/api' : import.meta.env.VITE_API_URL || 'http://localhost:5000/api',
   headers: {
     'Content-Type': 'application/json',
   },
