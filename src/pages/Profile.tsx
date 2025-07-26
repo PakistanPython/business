@@ -35,7 +35,8 @@ export const ProfilePage: React.FC = () => {
   const [profileForm, setProfileForm] = useState({
     username: '',
     email: '',
-    full_name: ''
+    full_name: '',
+    business_name: ''
   });
 
   const [passwordForm, setPasswordForm] = useState({
@@ -66,7 +67,8 @@ export const ProfilePage: React.FC = () => {
       setProfileForm({
         username: user.username,
         email: user.email,
-        full_name: user.full_name
+        full_name: user.full_name,
+        business_name: user.business_name || ''
       });
       loadUserStats();
       loadUserPreferences();
@@ -105,7 +107,7 @@ export const ProfilePage: React.FC = () => {
       const response = await authApi.updateProfile(profileForm);
       if (response.data.success) {
         const updatedUser = response.data.data.user;
-        updateUser(updatedUser);
+        updateUser({ ...user, ...updatedUser });
         toast.success('Profile updated successfully');
       }
     } catch (error: any) {
@@ -353,6 +355,28 @@ export const ProfilePage: React.FC = () => {
                       />
                     </div>
                     <div className="space-y-2">
+                      <Label htmlFor="full_name">Full Name</Label>
+                      <Input
+                        id="full_name"
+                        value={profileForm.full_name}
+                        onChange={(e) => setProfileForm({...profileForm, full_name: e.target.value})}
+                        placeholder="Your full name"
+                        required
+                      />
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div className="space-y-2">
+                      <Label htmlFor="business_name">Business Name</Label>
+                      <Input
+                        id="business_name"
+                        value={profileForm.business_name}
+                        onChange={(e) => setProfileForm({...profileForm, business_name: e.target.value})}
+                        placeholder="Your business name"
+                        required
+                      />
+                    </div>
+                    <div className="space-y-2">
                       <Label htmlFor="email">Email</Label>
                       <Input
                         id="email"
@@ -363,16 +387,6 @@ export const ProfilePage: React.FC = () => {
                         required
                       />
                     </div>
-                  </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="full_name">Full Name</Label>
-                    <Input
-                      id="full_name"
-                      value={profileForm.full_name}
-                      onChange={(e) => setProfileForm({...profileForm, full_name: e.target.value})}
-                      placeholder="Your full name"
-                      required
-                    />
                   </div>
                   <Button type="submit" disabled={isLoading} className="bg-blue-600 hover:bg-blue-700">
                     {isLoading ? <RefreshCw className="w-4 h-4 mr-2 animate-spin" /> : <Save className="w-4 h-4 mr-2" />}

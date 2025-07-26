@@ -210,7 +210,8 @@ router.put('/profile', [
   authenticateToken,
   body('username').optional().isLength({ min: 3 }).withMessage('Username must be at least 3 characters'),
   body('email').optional().isEmail().withMessage('Valid email is required'),
-  body('full_name').optional().isLength({ min: 1 }).withMessage('Full name is required')
+  body('full_name').optional().isLength({ min: 1 }).withMessage('Full name is required'),
+  body('business_name').optional().isLength({ min: 1 }).withMessage('Business name is required')
 ], async (req, res) => {
   try {
     const errors = validationResult(req);
@@ -223,7 +224,8 @@ router.put('/profile', [
     }
 
     const userId = req.user!.userId;
-    const { username, email, full_name } = req.body;
+    const businessId = req.user!.businessId;
+    const { username, email, full_name, business_name } = req.body;
 
     // Check if username or email is already taken by another user
     if (username) {
@@ -263,7 +265,11 @@ router.put('/profile', [
       values.push(full_name);
     }
 
-    if (updates.length === 0) {
+    if (business_name) {
+      await dbRun('UPDATE businesses SET name = $1 WHERE id = $2', [business_name, businessId]);
+    }
+
+    if (updates.length === 0 && !business_name) {
       return res.status(400).json({
         success: false,
         message: 'No fields to update'

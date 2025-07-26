@@ -519,15 +519,15 @@ router.get('/user-stats', async (req, res) => {
     // Simulate data usage (in a real app, this might be calculated differently)
     const dataUsage = (await dbGet(`
         SELECT 
-            (SELECT COUNT(*) FROM users) * 0.1 +
-            (SELECT COUNT(*) FROM employees) * 0.2 +
-            (SELECT COUNT(*) FROM accounts) * 0.05 +
-            (SELECT COUNT(*) FROM income) * 0.02 +
-            (SELECT COUNT(*) FROM expenses) * 0.02 +
-            (SELECT COUNT(*) FROM purchases) * 0.03 +
-            (SELECT COUNT(*) FROM sales) * 0.04
+            (SELECT COUNT(*) FROM users WHERE business_id = $1) * 0.1 +
+            (SELECT COUNT(*) FROM employees WHERE business_id = $1) * 0.2 +
+            (SELECT COUNT(*) FROM accounts WHERE business_id = $1) * 0.05 +
+            (SELECT COUNT(*) FROM income WHERE business_id = $1) * 0.02 +
+            (SELECT COUNT(*) FROM expenses WHERE business_id = $1) * 0.02 +
+            (SELECT COUNT(*) FROM purchases WHERE business_id = $1) * 0.03 +
+            (SELECT COUNT(*) FROM sales WHERE business_id = $1) * 0.04
         AS estimated_mb
-    `)).estimated_mb;
+    `, [businessId])).estimated_mb;
 
     res.json({
       success: true,
