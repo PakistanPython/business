@@ -29,26 +29,39 @@ router.get('/download', authenticateToken, async (req, res) => {
     await client.connect();
     const backupData: { [key: string]: any[] } = {};
 
-    const tablesRes = await client.query(`
-      SELECT tablename FROM pg_catalog.pg_tables WHERE schemaname = 'public'
+    // Get all employees for the business to handle indirect relations
+    const employeesRes = await client.query('SELECT id FROM employees WHERE business_id = $1', [businessId]);
+    const employeeIds = employeesRes.rows.map(row => row.id);
+
+    // Get all tables with a direct business_id
+    const businessTablesRes = await client.query(`
+        SELECT table_name FROM information_schema.columns 
+        WHERE table_schema = 'public' AND column_name = 'business_id'
     `);
-    const tables = tablesRes.rows.map(row => row.tablename);
-
-    for (const table of tables) {
-      if (table === 'users') continue; // Never include users table in backup
-
-      const columnsRes = await client.query(`
-        SELECT column_name FROM information_schema.columns 
-        WHERE table_schema = 'public' AND table_name = $1
-      `, [table]);
-      const columns = columnsRes.rows.map(row => row.column_name);
-
-      if (columns.includes('business_id')) {
+    for (const row of businessTablesRes.rows) {
+        const table = row.table_name;
+        if (table === 'users') continue;
         const dataRes = await client.query(`SELECT * FROM ${table} WHERE business_id = $1`, [businessId]);
         if (dataRes.rows.length > 0) {
-          backupData[table] = dataRes.rows;
+            backupData[table] = dataRes.rows;
         }
-      }
+    }
+
+    // Get all tables with an indirect employee_id link
+    if (employeeIds.length > 0) {
+        const employeeTablesRes = await client.query(`
+            SELECT table_name FROM information_schema.columns 
+            WHERE table_schema = 'public' AND column_name = 'employee_id'
+        `);
+        for (const row of employeeTablesRes.rows) {
+            const table = row.table_name;
+            // Skip tables that are already backed up via business_id
+            if (backupData[table]) continue;
+            const dataRes = await client.query(`SELECT * FROM ${table} WHERE employee_id = ANY($1::int[])`, [employeeIds]);
+            if (dataRes.rows.length > 0) {
+                backupData[table] = dataRes.rows;
+            }
+        }
     }
 
     fs.writeFileSync(backupPath, JSON.stringify(backupData, null, 2));
@@ -97,22 +110,45 @@ router.post('/upload', authenticateToken, upload.single('backup'), (req, res) =>
       await client.query('BEGIN');
 
       const backupData = JSON.parse(fs.readFileSync(extractedPath, 'utf8'));
-      const tableOrder = ['charity', 'categories', 'accounts', 'employees', 'loans', 'purchases', 'sales', 'expenses', 'income', 'charity_payments', 'loan_payments', 'user_preferences', 'work_schedules', 'attendance_rules', 'attendance', 'leaves'];
+      const tableOrder = [
+        // Core data
+        'charity', 'categories', 'accounts', 'employees', 'loans', 'purchases', 'sales', 'expenses', 'income',
+        // Dependent data
+        'accounts_receivable', 'accounts_payable', 'payroll', 'charity_payments', 'loan_payments', 'user_preferences',
+        // Attendance & Scheduling
+        'work_schedules', 'attendance_rules', 'attendance', 'leaves'
+      ];
 
       const idMap: { [key: string]: { [key: number]: number } } = {};
+
+      // First, get all employees for the business to handle indirect relations
+      const employeesRes = await client.query('SELECT id FROM employees WHERE business_id = $1', [businessId]);
+      const employeeIds = employeesRes.rows.map(row => row.id);
 
       for (const table of tableOrder) {
         if (!backupData[table]) continue;
         idMap[table] = {};
 
-        // Clear old data, but never touch the users table
-        if (table !== 'users') {
-            await client.query(`DELETE FROM ${table} WHERE business_id = $1`, [businessId]);
+        // Clear old data
+        const columnsRes = await client.query(`
+          SELECT column_name FROM information_schema.columns 
+          WHERE table_schema = 'public' AND table_name = $1
+        `, [table]);
+        const tableColumns = columnsRes.rows.map(row => row.column_name);
+
+        if (tableColumns.includes('business_id')) {
+          await client.query(`DELETE FROM ${table} WHERE business_id = $1`, [businessId]);
+        } else if (tableColumns.includes('employee_id') && employeeIds.length > 0) {
+          await client.query(`DELETE FROM ${table} WHERE employee_id = ANY($1::int[])`, [employeeIds]);
         }
 
         for (const row of backupData[table]) {
           const { id, ...rowData } = row;
-          rowData.business_id = businessId;
+          
+          // Only set business_id if the column exists
+          if (tableColumns.includes('business_id')) {
+            rowData.business_id = businessId;
+          }
 
           // Regenerate unique employee fields to avoid conflicts
           if (table === 'employees') {
