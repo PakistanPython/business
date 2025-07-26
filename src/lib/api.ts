@@ -45,12 +45,15 @@ export const authApi = {
   getProfile: () => api.get('/auth/profile'),
   getEmployeeProfile: () => api.get('/auth/employee/profile'),
   updateProfile: (data: any) => api.put('/auth/profile', data),
+  changePassword: (data: any) => api.post('/auth/change-password', data),
+  deleteAccount: () => api.delete('/auth/account'),
 };
 
 export const dashboardApi = {
   getSummary: () => api.get('/dashboard/summary'),
   getAnalytics: (params?: any) => api.get('/dashboard/analytics', { params }),
   getMetrics: () => api.get('/dashboard/metrics'),
+  getUserStats: () => api.get('/dashboard/user-stats'),
 };
 
 export const incomeApi = {

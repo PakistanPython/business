@@ -22,7 +22,7 @@ import {
   Save,
   RefreshCw
 } from 'lucide-react';
-import { authApi, preferencesApi } from '../lib/api';
+import { authApi, preferencesApi, dashboardApi } from '../lib/api';
 import { useAuth } from '../contexts/AuthContext';
 import { User as UserType } from '../lib/types';
 import toast from 'react-hot-toast';
@@ -87,15 +87,13 @@ export const ProfilePage: React.FC = () => {
 
   const loadUserStats = async () => {
     try {
-      // This would typically come from an API endpoint
-      setStats({
-        total_transactions: 156,
-        account_created: user?.created_at || '',
-        last_login: new Date().toISOString(),
-        data_usage: 2.5
-      });
+      const response = await dashboardApi.getUserStats();
+      if (response.data.success) {
+        setStats(response.data.data);
+      }
     } catch (error) {
       console.error('Error loading user stats:', error);
+      toast.error('Failed to load user statistics');
     }
   };
 
@@ -134,17 +132,18 @@ export const ProfilePage: React.FC = () => {
     setIsLoading(true);
 
     try {
-      // This would be an API call to change password
-      await new Promise(resolve => setTimeout(resolve, 1000)); // Simulate API call
-      toast.success('Password changed successfully');
-      setPasswordForm({
-        current_password: '',
-        new_password: '',
-        confirm_password: ''
-      });
+      const response = await authApi.changePassword(passwordForm);
+      if (response.data.success) {
+        toast.success('Password changed successfully');
+        setPasswordForm({
+          current_password: '',
+          new_password: '',
+          confirm_password: ''
+        });
+      }
     } catch (error: any) {
       console.error('Error changing password:', error);
-      toast.error('Failed to change password');
+      toast.error(error.response?.data?.message || 'Failed to change password');
     } finally {
       setIsLoading(false);
     }
@@ -189,10 +188,27 @@ export const ProfilePage: React.FC = () => {
     toast.success('Profile data exported successfully');
   };
 
-  const handleDeleteAccount = () => {
-    if (window.confirm('Are you sure you want to delete your account? This action cannot be undone.')) {
-      if (window.confirm('This will permanently delete all your data. Type "DELETE" to confirm.')) {
-        toast.error('Account deletion not implemented in demo');
+  const handleDeleteAccount = async () => {
+    const confirm1 = window.prompt('Are you sure you want to delete your account? This action cannot be undone. Type "DELETE" to confirm.');
+    if (confirm1 === 'DELETE') {
+      const confirm2 = window.prompt('This will permanently delete all your data, including financial records, employees, and settings. This is your final confirmation. Type "PERMANENTLY DELETE" to proceed.');
+      if (confirm2 === 'PERMANENTLY DELETE') {
+        setIsLoading(true);
+        try {
+          const response = await authApi.deleteAccount();
+          if (response.data.success) {
+            toast.success('Account deleted successfully. You will be logged out.');
+            // Logout user
+            updateUser(null);
+            localStorage.removeItem('token');
+            window.location.href = '/login';
+          }
+        } catch (error: any) {
+          console.error('Error deleting account:', error);
+          toast.error(error.response?.data?.message || 'Failed to delete account');
+        } finally {
+          setIsLoading(false);
+        }
       }
     }
   };

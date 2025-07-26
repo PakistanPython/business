@@ -497,4 +497,55 @@ router.get('/metrics', async (req, res) => {
   }
 });
 
+// Get user-specific stats
+router.get('/user-stats', async (req, res) => {
+  try {
+    const userId = req.user!.userId;
+    const businessId = req.user!.businessId;
+
+    // Get total transactions (income and expenses)
+    const transactions = await dbGet(`
+      SELECT
+        (SELECT COUNT(*) FROM income WHERE business_id = $1) +
+        (SELECT COUNT(*) FROM expenses WHERE business_id = $1) +
+        (SELECT COUNT(*) FROM purchases WHERE business_id = $1) +
+        (SELECT COUNT(*) FROM sales WHERE business_id = $1)
+      AS total_transactions
+    `, [businessId]);
+
+    // Get user creation date and last login
+    const user = await dbGet('SELECT created_at, last_login FROM users WHERE id = $1', [userId]);
+
+    // Simulate data usage (in a real app, this might be calculated differently)
+    const dataUsage = (await dbGet(`
+        SELECT 
+            (SELECT COUNT(*) FROM users) * 0.1 +
+            (SELECT COUNT(*) FROM employees) * 0.2 +
+            (SELECT COUNT(*) FROM accounts) * 0.05 +
+            (SELECT COUNT(*) FROM income) * 0.02 +
+            (SELECT COUNT(*) FROM expenses) * 0.02 +
+            (SELECT COUNT(*) FROM purchases) * 0.03 +
+            (SELECT COUNT(*) FROM sales) * 0.04
+        AS estimated_mb
+    `)).estimated_mb;
+
+    res.json({
+      success: true,
+      data: {
+        total_transactions: transactions.total_transactions || 0,
+        account_created: user.created_at,
+        last_login: user.last_login || new Date().toISOString(),
+        data_usage: parseFloat(dataUsage).toFixed(2)
+      }
+    });
+
+  } catch (error) {
+    console.error('User stats error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Internal server error'
+    });
+  }
+});
+
 export default router;

@@ -147,6 +147,9 @@ router.post('/login', loginLimiter, [
       });
     }
 
+    // Update last login time
+    await dbRun('UPDATE users SET last_login = NOW() WHERE id = $1', [user.id]);
+
     // Generate JWT token
     const token = generateToken(user.id, user.username, user.email, user.user_type || 'admin', user.business_id, user.business_name);
 
@@ -205,7 +208,9 @@ router.get('/profile', authenticateToken, async (req, res) => {
 // Update user profile (protected route)
 router.put('/profile', [
   authenticateToken,
-  body('email').optional().isEmail().withMessage('Valid email is required')
+  body('username').optional().isLength({ min: 3 }).withMessage('Username must be at least 3 characters'),
+  body('email').optional().isEmail().withMessage('Valid email is required'),
+  body('full_name').optional().isLength({ min: 1 }).withMessage('Full name is required')
 ], async (req, res) => {
   try {
     const errors = validationResult(req);
@@ -218,20 +223,25 @@ router.put('/profile', [
     }
 
     const userId = req.user!.userId;
-    const { email } = req.body;
+    const { username, email, full_name } = req.body;
 
-    // Check if email is already taken by another user
+    // Check if username or email is already taken by another user
+    if (username) {
+      const existingUser = await dbGet(
+        'SELECT id FROM users WHERE username = $1 AND id != $2',
+        [username, userId]
+      );
+      if (existingUser) {
+        return res.status(400).json({ success: false, message: 'Username already taken' });
+      }
+    }
     if (email) {
       const existingUser = await dbGet(
         'SELECT id FROM users WHERE email = $1 AND id != $2',
         [email, userId]
       );
-
       if (existingUser) {
-        return res.status(400).json({
-          success: false,
-          message: 'Email already taken'
-        });
+        return res.status(400).json({ success: false, message: 'Email already taken' });
       }
     }
 
@@ -240,9 +250,17 @@ router.put('/profile', [
     const values: any[] = [];
     let placeholderIndex = 1;
 
+    if (username) {
+      updates.push(`username = $${placeholderIndex++}`);
+      values.push(username);
+    }
     if (email) {
       updates.push(`email = $${placeholderIndex++}`);
       values.push(email);
+    }
+    if (full_name) {
+      updates.push(`full_name = $${placeholderIndex++}`);
+      values.push(full_name);
     }
 
     if (updates.length === 0) {
@@ -262,7 +280,7 @@ router.put('/profile', [
 
     // Get updated user
     const user = await dbGet(
-      'SELECT id, username, email, user_type, business_id, created_at FROM users WHERE id = $1',
+      'SELECT id, username, email, user_type, business_id, created_at, full_name FROM users WHERE id = $1',
       [userId]
     );
 
@@ -279,6 +297,94 @@ router.put('/profile', [
       success: false,
       message: 'Internal server error'
     });
+  }
+});
+
+// Change password
+router.post('/change-password', [
+  authenticateToken,
+  body('current_password').notEmpty().withMessage('Current password is required'),
+  body('new_password').isLength({ min: 6 }).withMessage('New password must be at least 6 characters')
+], async (req, res) => {
+  try {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+      return res.status(400).json({
+        success: false,
+        message: 'Validation failed',
+        errors: errors.array()
+      });
+    }
+
+    const userId = req.user!.userId;
+    const { current_password, new_password } = req.body;
+
+    // Get user from database
+    const user = await dbGet('SELECT * FROM users WHERE id = $1', [userId]);
+
+    if (!user) {
+      return res.status(404).json({ success: false, message: 'User not found' });
+    }
+
+    // Check current password
+    const isPasswordValid = await bcrypt.compare(current_password, user.password_hash);
+    if (!isPasswordValid) {
+      return res.status(401).json({ success: false, message: 'Invalid current password' });
+    }
+
+    // Hash new password
+    const newPasswordHash = await bcrypt.hash(new_password, 12);
+
+    // Update password
+    await dbRun('UPDATE users SET password_hash = $1, updated_at = NOW() WHERE id = $2', [newPasswordHash, userId]);
+
+    res.json({ success: true, message: 'Password changed successfully' });
+
+  } catch (error) {
+    console.error('Change password error:', error);
+    res.status(500).json({ success: false, message: 'Internal server error' });
+  }
+});
+
+// Delete account
+router.delete('/account', authenticateToken, async (req, res) => {
+  try {
+    const userId = req.user!.userId;
+    const businessId = req.user!.businessId;
+
+    // It's a good practice to archive or soft-delete data first.
+    // For this example, we'll perform a hard delete.
+    
+    // Use a transaction to ensure all or nothing is deleted
+    await dbRun('BEGIN');
+
+    // Delete all related data
+    await dbRun('DELETE FROM charity_payments WHERE charity_id IN (SELECT id FROM charity WHERE business_id = $1)', [businessId]);
+    await dbRun('DELETE FROM charity WHERE business_id = $1', [businessId]);
+    await dbRun('DELETE FROM sales WHERE business_id = $1', [businessId]);
+    await dbRun('DELETE FROM purchases WHERE business_id = $1', [businessId]);
+    await dbRun('DELETE FROM expenses WHERE business_id = $1', [businessId]);
+    await dbRun('DELETE FROM income WHERE business_id = $1', [businessId]);
+    await dbRun('DELETE FROM loan_payments WHERE loan_id IN (SELECT id FROM loans WHERE business_id = $1)', [businessId]);
+    await dbRun('DELETE FROM loans WHERE business_id = $1', [businessId]);
+    await dbRun('DELETE FROM payroll WHERE employee_id IN (SELECT id FROM employees WHERE business_id = $1)', [businessId]);
+    await dbRun('DELETE FROM attendance WHERE employee_id IN (SELECT id FROM employees WHERE business_id = $1)', [businessId]);
+    await dbRun('DELETE FROM employees WHERE business_id = $1', [businessId]);
+    await dbRun('DELETE FROM accounts_receivable WHERE business_id = $1', [businessId]);
+    await dbRun('DELETE FROM accounts_payable WHERE business_id = $1', [businessId]);
+    await dbRun('DELETE FROM accounts WHERE business_id = $1', [businessId]);
+    await dbRun('DELETE FROM user_preferences WHERE user_id = $1', [userId]);
+    await dbRun('DELETE FROM businesses WHERE id = $1', [businessId]);
+    await dbRun('DELETE FROM users WHERE id = $1', [userId]);
+
+    await dbRun('COMMIT');
+
+    res.json({ success: true, message: 'Account deleted successfully' });
+
+  } catch (error) {
+    await dbRun('ROLLBACK');
+    console.error('Account deletion error:', error);
+    res.status(500).json({ success: false, message: 'Internal server error' });
   }
 });
 
