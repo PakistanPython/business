@@ -42,23 +42,17 @@ function App() {
               <Route path="/login" element={<LoginForm />} />
               <Route path="/register" element={<RegisterForm />} />
               
-              {/* Employee Portal route */}
-              <Route path="/employee-portal" element={
-                <ProtectedRoute>
-                  <UserRedirectRoute>
-                    <EmployeePortal />
-                  </UserRedirectRoute>
-                </ProtectedRoute>
-              } />
-              
-              {/* Protected business owner routes */}
-              <Route path="/" element={
-                <ProtectedRoute>
-                  <UserRedirectRoute>
-                    <MainLayout />
-                  </UserRedirectRoute>
-                </ProtectedRoute>
-              }>
+              {/* Protected routes */}
+              <Route
+                path="/"
+                element={
+                  <ProtectedRoute>
+                    <UserRedirectRoute>
+                      <MainLayout />
+                    </UserRedirectRoute>
+                  </ProtectedRoute>
+                }
+              >
                 <Route index element={<Navigate to="/dashboard" replace />} />
                 <Route path="dashboard" element={<Dashboard />} />
                 <Route path="income" element={<IncomePage />} />
@@ -75,16 +69,9 @@ function App() {
                 <Route path="attendance" element={<AttendancePage />} />
                 <Route path="payroll" element={<PayrollPage />} />
                 <Route path="profile" element={<ProfilePage />} />
+                <Route path="employee-portal" element={<EmployeePortal />} />
+                <Route path="*" element={<Navigate to="/dashboard" replace />} />
               </Route>
-
-              {/* Catch all route - only redirect non-employee paths */}
-              <Route path="*" element={
-                <ProtectedRoute>
-                  <UserRedirectRoute>
-                    <Navigate to="/dashboard" replace />
-                  </UserRedirectRoute>
-                </ProtectedRoute>
-              } />
                 </Routes>
                 
                 {/* Toast notifications */}
