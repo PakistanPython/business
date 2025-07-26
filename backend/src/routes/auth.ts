@@ -1,4 +1,5 @@
 import express from 'express';
+import rateLimit from 'express-rate-limit';
 import bcrypt from 'bcryptjs';
 import { body, validationResult } from 'express-validator';
 import { dbGet, dbRun } from '../config/database';
@@ -6,6 +7,15 @@ import { generateToken } from '../utils/jwt';
 import { authenticateToken } from '../middleware/auth';
 
 const router = express.Router();
+
+// Rate limiter for login
+const loginLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: 100, // limit each IP to 100 requests per windowMs
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: 'Too many login attempts from this IP, please try again after 15 minutes'
+});
 
 // Register new user
 router.post('/register', [
@@ -99,7 +109,7 @@ router.post('/register', [
 });
 
 // Login user
-router.post('/login', [
+router.post('/login', loginLimiter, [
   body('login').notEmpty().withMessage('Username or email is required'),
   body('password').notEmpty().withMessage('Password is required')
 ], async (req, res) => {

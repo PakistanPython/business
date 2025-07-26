@@ -384,7 +384,7 @@ export const Dashboard: React.FC = () => {
           <CardContent>
             <div className="space-y-4">
               {dashboardOverviewData?.recent_transactions?.slice(0, 5).map((transaction, index) => (
-                <div key={transaction.id || index} className="flex items-center justify-between py-2 border-b border-gray-100 last:border-0">
+                <div key={`${transaction.id}-${index}-${transaction.transaction_type}`} className="flex items-center justify-between py-2 border-b border-gray-100 last:border-0">
                   <div className="flex items-center space-x-3">
                     <div className={`p-2 rounded-full ${
                       transaction.transaction_type === 'income' 

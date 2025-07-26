@@ -222,15 +222,47 @@ export const AttendanceProvider: React.FC<AttendanceProviderProps> = ({ children
     }
   };
 
-  // Initialize data when user logs in - NO AUTO-REFRESH
+  const loadInitialData = async () => {
+    if (!user) return;
+    
+    console.log('Loading initial attendance data for user:', user.id);
+    
+    const loadFn = async () => {
+      setLoading(true);
+      setError(null);
+      
+      try {
+        const today = new Date().toISOString().split('T')[0];
+        const [todayRes, allRes] = await Promise.all([
+          attendanceApi.getAll({ date: today }),
+          attendanceApi.getAll({})
+        ]);
+
+        if (todayRes && todayRes.data && Array.isArray(todayRes.data.attendance)) {
+          setTodayAttendance(todayRes.data.attendance);
+        } else if (todayRes && todayRes.data && Array.isArray(todayRes.data)) {
+          setTodayAttendance(todayRes.data);
+        }
+
+        if (allRes && allRes.data && Array.isArray(allRes.data.attendance)) {
+          setAllAttendance(allRes.data.attendance);
+        } else if (allRes && allRes.data && Array.isArray(allRes.data)) {
+          setAllAttendance(allRes.data);
+        }
+      } catch (err: any) {
+        console.error('Error loading initial attendance data:', err);
+        setError(err.response?.data?.message || 'Failed to load attendance data');
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    await handleRateLimit(loadFn);
+  };
+
   useEffect(() => {
-    if (user) {
-      // Only load data once when user changes
-      console.log('Loading initial attendance data for user:', user.id);
-      refreshTodayAttendance();
-      refreshAttendance(); // Also load all attendance for history
-    }
-  }, [user?.id]); // Only depend on user ID change
+    loadInitialData();
+  }, [user?.id]);
 
   const value: AttendanceContextType = {
     todayAttendance,
