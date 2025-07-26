@@ -4,7 +4,7 @@ import { LoginForm, RegisterForm, IncomeForm, ExpenseForm, PurchaseForm, SaleFor
 // Create axios instance with base configuration
 // Create axios instance with base configuration
 export const api = axios.create({
-  baseURL: import.meta.env.PROD ? '/api' : import.meta.env.VITE_API_URL || 'http://localhost:5000/api',
+  baseURL: import.meta.env.DEV ? 'http://localhost:5000/api' : '/api',
   headers: {
     'Content-Type': 'application/json',
   },
