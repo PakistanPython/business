@@ -318,7 +318,7 @@ export const AccountsReceivablePage: React.FC = () => {
       <div className="flex justify-between items-center">
         <div>
           <h1 className="text-3xl font-bold text-gray-900">Accounts Receivable</h1>
-          <p className="text-gray-600 mt-2">Manage customer invoices and track payments</p>
+          <p className="text-gray-600 mt-2">Manage person invoices and track payments</p>
         </div>
         <Button onClick={openAddDialog} className="bg-blue-600 hover:bg-blue-700">
           <Plus className="w-4 h-4 mr-2" />
@@ -380,7 +380,7 @@ export const AccountsReceivablePage: React.FC = () => {
       {/* Accounts Receivable Table */}
       <Card>
         <CardHeader>
-          <CardTitle>Customer Invoices</CardTitle>
+          <CardTitle>Person Invoices</CardTitle>
           <CardDescription>Track and manage your accounts receivable</CardDescription>
         </CardHeader>
         <CardContent>
@@ -388,7 +388,7 @@ export const AccountsReceivablePage: React.FC = () => {
             <div className="relative flex-1">
               <Search className="absolute left-3 top-3 h-4 w-4 text-gray-400" />
               <Input
-                placeholder="Search customers..."
+                placeholder="Search people..."
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
                 className="pl-10"
@@ -422,7 +422,7 @@ export const AccountsReceivablePage: React.FC = () => {
               <TableHeader>
                 <TableRow>
                   <TableHead>Invoice #</TableHead>
-                  <TableHead>Customer</TableHead>
+                  <TableHead>Person</TableHead>
                   <TableHead>Due Date</TableHead>
                   <TableHead>Amount</TableHead>
                   <TableHead>Paid</TableHead>
@@ -535,25 +535,25 @@ export const AccountsReceivablePage: React.FC = () => {
           <DialogHeader>
             <DialogTitle>{editingAccount ? 'Edit Invoice' : 'Create New Invoice'}</DialogTitle>
             <DialogDescription>
-              {editingAccount ? 'Update invoice information.' : 'Create a new customer invoice.'}
+              {editingAccount ? 'Update invoice information.' : 'Create a new person invoice.'}
             </DialogDescription>
           </DialogHeader>
           <form onSubmit={handleSubmit}>
             <div className="grid gap-4 py-4">
               <div className="grid grid-cols-2 gap-4">
                 <div className="grid gap-2">
-                  <Label htmlFor="customer_name">Customer Name *</Label>
+                  <Label htmlFor="customer_name">Person Name *</Label>
                   <Input
                     id="customer_name"
                     value={formData.customer_name}
                     onChange={(e) => setFormData({...formData, customer_name: e.target.value})}
-                    placeholder="Customer Name"
+                    placeholder="Person Name"
                     required
                   />
                 </div>
 
                 <div className="grid gap-2">
-                  <Label htmlFor="customer_email">Customer Email</Label>
+                  <Label htmlFor="customer_email">Person Email</Label>
                   <Input
                     id="customer_email"
                     type="email"
@@ -566,7 +566,7 @@ export const AccountsReceivablePage: React.FC = () => {
 
               <div className="grid grid-cols-2 gap-4">
                 <div className="grid gap-2">
-                  <Label htmlFor="customer_phone">Customer Phone</Label>
+                  <Label htmlFor="customer_phone">Person Phone</Label>
                   <Input
                     id="customer_phone"
                     value={formData.customer_phone}
@@ -591,12 +591,12 @@ export const AccountsReceivablePage: React.FC = () => {
               </div>
 
               <div className="grid gap-2">
-                <Label htmlFor="customer_address">Customer Address</Label>
+                <Label htmlFor="customer_address">Person Address</Label>
                 <Textarea
                   id="customer_address"
                   value={formData.customer_address}
                   onChange={(e) => setFormData({...formData, customer_address: e.target.value})}
-                  placeholder="Customer Address"
+                  placeholder="Person Address"
                   rows={2}
                 />
               </div>
@@ -766,7 +766,7 @@ export const AccountsReceivablePage: React.FC = () => {
               {/* Customer Information */}
               <div className="grid grid-cols-2 gap-6">
                 <div>
-                  <h3 className="text-lg font-semibold mb-3">Customer Information</h3>
+                  <h3 className="text-lg font-semibold mb-3">Person Information</h3>
                   <div className="space-y-2">
                     <div><strong>Name:</strong> {selectedAccount.customer_name}</div>
                     {selectedAccount.customer_email && (
