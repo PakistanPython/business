@@ -200,8 +200,12 @@ router.post('/:id/payment', [
 
 // Update loan
 router.put('/:id', [
-    body('amount').optional().isFloat({ gt: 0 }),
+    body('lender_name').optional().notEmpty().withMessage('Lender name is required'),
+    body('principal_amount').optional().isFloat({ gt: 0 }),
+    body('current_balance').optional().isFloat({ gt: 0 }),
     body('interest_rate').optional().isFloat({ min: 0 }),
+    body('monthly_payment').optional().isFloat({ min: 0 }),
+    body('loan_type').optional().isIn(['personal', 'business', 'mortgage', 'auto', 'other']),
     body('start_date').optional().isISO8601().toDate(),
     body('due_date').optional({ checkFalsy: true }).isISO8601().withMessage('Invalid due date'),
     body('status').optional().isIn(['active', 'paid']),
@@ -239,19 +243,45 @@ router.put('/:id', [
       });
     }
 
-    const { amount, interest_rate, start_date, due_date, status } = req.body;
+    const {
+      lender_name,
+      principal_amount,
+      current_balance,
+      interest_rate,
+      monthly_payment,
+      loan_type,
+      start_date,
+      due_date,
+      status
+    } = req.body;
 
     const updates: string[] = [];
     const values: any[] = [];
     let paramIndex = 1;
 
-    if (amount !== undefined) {
-      updates.push(`amount = $${paramIndex++}`);
-      values.push(amount);
+    if (lender_name !== undefined) {
+      updates.push(`lender_name = $${paramIndex++}`);
+      values.push(lender_name);
+    }
+    if (principal_amount !== undefined) {
+      updates.push(`principal_amount = $${paramIndex++}`);
+      values.push(principal_amount);
+    }
+    if (current_balance !== undefined) {
+      updates.push(`current_balance = $${paramIndex++}`);
+      values.push(current_balance);
     }
     if (interest_rate !== undefined) {
       updates.push(`interest_rate = $${paramIndex++}`);
       values.push(interest_rate);
+    }
+    if (monthly_payment !== undefined) {
+      updates.push(`monthly_payment = $${paramIndex++}`);
+      values.push(monthly_payment);
+    }
+    if (loan_type !== undefined) {
+      updates.push(`loan_type = $${paramIndex++}`);
+      values.push(loan_type);
     }
     if (start_date !== undefined) {
         updates.push(`start_date = $${paramIndex++}`);
@@ -277,7 +307,7 @@ router.put('/:id', [
 
     // Update loan record
     await dbRun(
-      `UPDATE loans SET ${updates.join(', ')}, updated_at = NOW() WHERE id = $${paramIndex++}`,
+      `UPDATE loans SET ${updates.join(', ')}, updated_at = CURRENT_TIMESTAMP WHERE id = $${paramIndex}`,
       values
     );
 
