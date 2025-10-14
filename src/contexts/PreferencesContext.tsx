@@ -11,7 +11,7 @@ interface Preferences {
 interface PreferencesContextType {
   preferences: Preferences;
   setPreferences: (preferences: Preferences) => void;
-  formatCurrency: (amount: number) => string;
+  formatCurrency: (amount: number | null | undefined) => string;
 }
 
 const PreferencesContext = createContext<PreferencesContextType | undefined>(undefined);
@@ -40,14 +40,17 @@ export const PreferencesProvider: React.FC<{ children: ReactNode }> = ({ childre
     loadPreferences();
   }, [user]);
 
-  const formatCurrency = (amount: number) => {
+  const formatCurrency = (amount: number | null | undefined) => {
+    const validAmount = typeof amount === 'number' ? amount : 0;
+
     if (preferences.currency === 'PKR') {
-      return `Rs ${amount.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+      return `Rs ${validAmount.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
     }
+    
     return new Intl.NumberFormat('en-US', {
       style: 'currency',
       currency: preferences.currency,
-    }).format(amount);
+    }).format(validAmount);
   };
 
   return (
