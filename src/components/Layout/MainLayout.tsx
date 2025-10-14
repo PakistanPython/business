@@ -2,9 +2,11 @@ import React, { useState } from 'react';
 import { Outlet } from 'react-router-dom';
 import Header from './Header';
 import Sidebar from './Sidebar';
+import { useAuth } from '../../contexts/AuthContext';
 
 export const MainLayout: React.FC = () => {
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const { user } = useAuth();
 
   const handleMenuClick = () => {
     setSidebarOpen(!sidebarOpen);
@@ -17,7 +19,7 @@ export const MainLayout: React.FC = () => {
   return (
     <div className="h-screen flex overflow-hidden bg-gray-100">
       {/* Sidebar */}
-      <Sidebar isOpen={sidebarOpen} onClose={handleSidebarClose} />
+      {user?.user_type !== 'employee' && <Sidebar isOpen={sidebarOpen} onClose={handleSidebarClose} />}
 
       {/* Main content */}
       <div className="flex flex-col flex-1 overflow-hidden">

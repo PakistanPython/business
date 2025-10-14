@@ -128,7 +128,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     try {
       setAuthState(prev => ({ ...prev, isLoading: true }));
       
-      const response = await authApi.loginEmployee({ login: email, password });
+      const response = await authApi.loginEmployee({ email, password });
       const { user, token } = response.data.data;
 
       // Store in localStorage

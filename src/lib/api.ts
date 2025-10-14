@@ -1,5 +1,5 @@
 import axios from 'axios';
-import { LoginForm, RegisterForm, IncomeForm, ExpenseForm, PurchaseForm, SaleForm, AccountForm, LoanForm, CategoryForm, AccountsReceivableForm, PaymentForm, CharityPaymentForm } from './types';
+import { LoginForm, EmployeeLoginForm, RegisterForm, IncomeForm, ExpenseForm, PurchaseForm, SaleForm, AccountForm, LoanForm, CategoryForm, AccountsReceivableForm, PaymentForm, CharityPaymentForm } from './types';
 
 // Create axios instance with base configuration
 // Create axios instance with base configuration
@@ -41,7 +41,7 @@ api.interceptors.response.use(
 export const authApi = {
   register: (data: RegisterForm) => api.post('/auth/register', data),
   login: (data: LoginForm) => api.post('/auth/login', data),
-  loginEmployee: (data: LoginForm) => api.post('/auth/employee/login', data),
+  loginEmployee: (data: EmployeeLoginForm) => api.post('/auth/employee/login', data),
   getProfile: () => api.get('/auth/profile'),
   getEmployeeProfile: () => api.get('/auth/employee/profile'),
   updateProfile: (data: any) => api.put('/auth/profile', data),

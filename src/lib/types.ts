@@ -317,6 +317,11 @@ export interface LoginForm {
   password: string;
 }
 
+export interface EmployeeLoginForm {
+  email: string;
+  password: string;
+}
+
 export interface RegisterForm {
   username: string;
   email: string;

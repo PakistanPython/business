@@ -44,9 +44,15 @@ const navigation = [
   { name: 'Categories', href: '/categories', icon: Settings },
 ];
 
+const employeeNavigation = [
+  { name: 'Dashboard', href: '/employee-portal', icon: LayoutDashboard },
+];
+
 export const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose }) => {
   const location = useLocation();
   const { user, logout } = useAuth();
+
+  const currentNavigation = user?.user_type === 'employee' ? employeeNavigation : navigation;
 
   const handleLogout = () => {
     logout();
@@ -80,7 +86,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose }) => {
           <ScrollArea className="flex-1 mt-6">
             <nav className="px-3">
               <div className="space-y-1">
-                {navigation.map((item) => {
+                {currentNavigation.map((item) => {
                   const Icon = item.icon;
                   const isActive = location.pathname === item.href;
 
