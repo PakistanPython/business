@@ -413,13 +413,13 @@ export const AnalyticsPage: React.FC = () => {
 
         <Card className="bg-gradient-to-br from-blue-50 to-blue-100 border-blue-200">
           <CardHeader>
-            <CardTitle className="text-blue-800 flex items-center"><Heart className="w-5 h-5 mr-2" />Charity Overview</CardTitle>
+            <CardTitle className="text-blue-800 flex items-center"><Wallet className="w-5 h-5 mr-2" />Cash Balance</CardTitle>
           </CardHeader>
           <CardContent className="space-y-3">
-            <div className="flex justify-between"><span className="text-blue-700">Total Required</span><span className="font-bold text-blue-900">{formatCurrency(summary.total_charity_required)}</span></div>
-            <div className="flex justify-between"><span className="text-blue-700">Amount Paid</span><span className="font-bold text-blue-900">{formatCurrency(summary.total_charity_paid)}</span></div>
-            <div className="flex justify-between"><span className="text-blue-700">Completion Rate</span><span className="font-bold text-blue-900">{Number(summary.total_charity_required) > 0 ? ((Number(summary.total_charity_paid) / Number(summary.total_charity_required)) * 100).toFixed(1) : '100.0'}%</span></div>
-            <div className="flex justify-between border-t border-blue-200 pt-2 mt-2"><span className="font-semibold text-blue-800">Total Charity</span><span className="font-bold text-blue-900">{formatCurrency(Number(summary.total_charity_required) + Number(summary.total_charity_paid))}</span></div>
+            <div className="flex justify-between"><span className="text-blue-700">Account Balances</span><span className="font-bold text-blue-900">{formatCurrency(summary.total_accounts_balance)}</span></div>
+            <div className="flex justify-between"><span className="text-blue-700">Cash In Hand</span><span className="font-bold text-blue-900">{formatCurrency(availableCash)}</span></div>
+            <div className="flex justify-between border-t border-blue-200 pt-2 mt-2"><span className="font-semibold text-blue-800">Percentage</span><span className={`font-bold ${((summary.total_accounts_balance - availableCash) / summary.total_accounts_balance * 100) < 0 ? 'text-red-600' : 'text-green-600'}`}>{summary.total_accounts_balance > 0 ? (((summary.total_accounts_balance - availableCash) / summary.total_accounts_balance) * 100).toFixed(1) : '100.0'}%</span></div>
+            <div className="flex justify-between"><span className="font-semibold text-blue-700">Balance Diff</span><span className={`font-bold ${summary.total_accounts_balance - availableCash < 0 ? 'text-red-600' : 'text-green-600'}`}>{formatCurrency(summary.total_accounts_balance - availableCash)}</span></div>
           </CardContent>
         </Card>
       </div>
