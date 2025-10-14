@@ -210,7 +210,7 @@ router.put('/:id', [
       });
     }
 
-    const { account_name, balance, bank_name, account_number } = req.body;
+    const { account_name, balance, bank_name, account_number, account_type } = req.body;
 
     // Check for duplicate account name if changing name
     if (account_name) {
@@ -234,6 +234,10 @@ router.put('/:id', [
     if (account_name !== undefined) {
       updates.push(`account_name = $${paramIndex++}`);
       values.push(account_name);
+    }
+    if (account_type !== undefined) {
+      updates.push(`account_type = $${paramIndex++}`);
+      values.push(account_type);
     }
     if (balance !== undefined) {
       updates.push(`balance = $${paramIndex++}`);
@@ -259,7 +263,7 @@ router.put('/:id', [
 
     // Update account record
     await dbRun(
-      `UPDATE accounts SET ${updates.join(', ')}, updated_at = NOW() WHERE id = $${paramIndex++}`,
+      `UPDATE accounts SET ${updates.join(', ')}, updated_at = CURRENT_TIMESTAMP WHERE id = $${paramIndex++}`,
       values
     );
 
@@ -306,14 +310,6 @@ router.delete('/:id', async (req, res) => {
       return res.status(404).json({
         success: false,
         message: 'Account not found'
-      });
-    }
-
-    // Check if account has balance
-    if (parseFloat(account.balance) !== 0) {
-      return res.status(400).json({
-        success: false,
-        message: 'Cannot delete account with non-zero balance'
       });
     }
 

@@ -464,9 +464,7 @@ export const AccountsPage: React.FC = () => {
                   value={formData.balance}
                   onChange={(e) => setFormData({...formData, balance: parseFloat(e.target.value) || 0})}
                   placeholder="0.00"
-                  disabled={!!editingAccount} // Prevent editing balance on existing accounts
                 />
-                 {editingAccount && <p className="text-xs text-gray-500">Balance can only be changed via transactions or transfers.</p>}
               </div>
 
               {(formData.account_type === 'bank' || formData.account_type === 'savings' || formData.account_type === 'investment') && (
