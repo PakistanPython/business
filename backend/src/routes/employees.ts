@@ -17,7 +17,7 @@ const generateEmployeeCode = async (businessId: number): Promise<string> => {
   for (let attempt = 0; attempt < 10; attempt++) {
     // Get the highest existing employee number for this year globally
     const result = await dbGet(
-      'SELECT MAX(CAST(SUBSTR(employee_code, 6) AS INTEGER)) as max_number FROM employees WHERE employee_code LIKE $1',
+      "SELECT MAX(CAST(SUBSTR(employee_code, 6) AS INTEGER)) as max_number FROM employees WHERE employee_code LIKE $1 AND SUBSTR(employee_code, 6) ~ '^[0-9]+$'",
       [`EMP${year}%`]
     );
     
