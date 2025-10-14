@@ -10,6 +10,12 @@ router.use(authenticateToken);
 router.get('/', async (req, res) => {
   try {
     const userId = req.user!.userId;
+    const userType = req.user!.userType;
+
+    if (userType === 'employee') {
+      return res.json({ success: true, data: {} });
+    }
+
     let preferences = await dbGet('SELECT * FROM user_preferences WHERE user_id = $1', [userId]);
 
     if (!preferences) {
@@ -55,6 +61,12 @@ router.put('/', [
 
   try {
     const userId = req.user!.userId;
+    const userType = req.user!.userType;
+
+    if (userType === 'employee') {
+      return res.status(403).json({ success: false, message: 'Employees cannot update preferences.' });
+    }
+
     const {
       email_notifications,
       push_notifications,
