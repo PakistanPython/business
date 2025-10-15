@@ -298,6 +298,10 @@ export const AnalyticsPage: React.FC = () => {
     ? ((Number(summary.total_income) - Number(summary.total_expenses)) / Number(summary.total_income)) * 100 
     : 0;
 
+  const totalAssets = Number(summary.total_purchases) + Number(summary.total_accounts_balance) + Number(summary.total_ar_outstanding);
+  const totalLiabilities = Number(summary.total_active_loans) + Number(summary.total_charity_remaining);
+  const netWorth = totalAssets - totalLiabilities;
+
   const currentMonthIndex = new Date().getMonth();
 
   return (
@@ -357,7 +361,7 @@ export const AnalyticsPage: React.FC = () => {
       <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
         <MetricCard
           title="Net Worth"
-          value={formatCurrency(summary.net_worth)}
+          value={formatCurrency(netWorth)}
           icon={<TrendingUp className="h-4 w-4 text-emerald-600" />}
           color="bg-gradient-to-br from-emerald-50 to-emerald-100 border-emerald-200"
           subtitle="Assets minus liabilities"
