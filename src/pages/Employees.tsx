@@ -279,6 +279,7 @@ export const EmployeesPage: React.FC = () => {
   const [isScheduleDialogOpen, setIsScheduleDialogOpen] = useState(false);
   const [isLeaveTypeDialogOpen, setIsLeaveTypeDialogOpen] = useState(false);
   const [isAttendanceRuleDialogOpen, setIsAttendanceRuleDialogOpen] = useState(false);
+  const [selectedSchedule, setSelectedSchedule] = useState<WorkSchedule | null>(null);
   const [scheduleFormData, setScheduleFormData] = useState<ScheduleFormData>(initialScheduleFormData);
   const [leaveTypeFormData, setLeaveTypeFormData] = useState<LeaveTypeFormData>(initialLeaveTypeFormData);
   const [attendanceRuleFormData, setAttendanceRuleFormData] = useState<AttendanceRuleFormData>(initialAttendanceRuleFormData);
@@ -371,6 +372,20 @@ export const EmployeesPage: React.FC = () => {
     } catch (error: any) {
       console.error('Error creating work schedule:', error);
       toast.error(error.response?.data?.error || 'Failed to create work schedule');
+    }
+  };
+
+  const handleUpdateWorkSchedule = async (scheduleData: any) => {
+    if (!selectedSchedule) return;
+    try {
+      await api.put(`/work-schedules/${selectedSchedule.id}`, scheduleData);
+      toast.success('Work schedule updated successfully!');
+      fetchWorkSchedules();
+      setIsScheduleDialogOpen(false);
+      setSelectedSchedule(null);
+    } catch (error: any)      {
+      console.error('Error updating work schedule:', error);
+      toast.error(error.response?.data?.error || 'Failed to update work schedule');
     }
   };
 
@@ -840,7 +855,33 @@ export const EmployeesPage: React.FC = () => {
                             </Button>
                           </DropdownMenuTrigger>
                           <DropdownMenuContent align="end">
-                            <DropdownMenuItem>
+                            <DropdownMenuItem onClick={() => {
+                              setSelectedSchedule(schedule);
+                              setScheduleFormData({
+                                employee_id: schedule.employee_id.toString(),
+                                schedule_name: schedule.schedule_name,
+                                effective_from: schedule.effective_from.split('T')[0],
+                                effective_to: schedule.effective_to?.split('T')[0] || '',
+                                monday_start: schedule.monday_start,
+                                monday_end: schedule.monday_end,
+                                tuesday_start: schedule.tuesday_start,
+                                tuesday_end: schedule.tuesday_end,
+                                wednesday_start: schedule.wednesday_start,
+                                wednesday_end: schedule.wednesday_end,
+                                thursday_start: schedule.thursday_start,
+                                thursday_end: schedule.thursday_end,
+                                friday_start: schedule.friday_start,
+                                friday_end: schedule.friday_end,
+                                saturday_start: schedule.saturday_start,
+                                saturday_end: schedule.saturday_end,
+                                sunday_start: schedule.sunday_start,
+                                sunday_end: schedule.sunday_end,
+                                break_duration: schedule.break_duration,
+                                weekly_hours: schedule.weekly_hours,
+                                is_active: schedule.is_active,
+                              });
+                              setIsScheduleDialogOpen(true);
+                            }}>
                               <Edit className="mr-2 h-4 w-4" />
                               Edit
                             </DropdownMenuItem>
@@ -1378,12 +1419,18 @@ export const EmployeesPage: React.FC = () => {
       </Dialog>
 
       {/* Work Schedule Dialog */}
-      <Dialog open={isScheduleDialogOpen} onOpenChange={setIsScheduleDialogOpen}>
+      <Dialog open={isScheduleDialogOpen} onOpenChange={(isOpen) => {
+        setIsScheduleDialogOpen(isOpen);
+        if (!isOpen) {
+          setSelectedSchedule(null);
+          setScheduleFormData(initialScheduleFormData);
+        }
+      }}>
         <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
-            <DialogTitle>Create Work Schedule</DialogTitle>
+            <DialogTitle>{selectedSchedule ? 'Edit' : 'Create'} Work Schedule</DialogTitle>
             <DialogDescription>
-              Set up duty timings and work schedule for employees.
+              {selectedSchedule ? 'Update the work schedule details.' : 'Set up a new work schedule for an employee.'}
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4">
@@ -1483,8 +1530,8 @@ export const EmployeesPage: React.FC = () => {
               <Button type="button" variant="outline" onClick={() => setIsScheduleDialogOpen(false)}>
                 Cancel
               </Button>
-              <Button type="button" onClick={() => handleCreateWorkSchedule(scheduleFormData)}>
-                Create Schedule
+              <Button type="button" onClick={() => selectedSchedule ? handleUpdateWorkSchedule(scheduleFormData) : handleCreateWorkSchedule(scheduleFormData)}>
+                {selectedSchedule ? 'Update Schedule' : 'Create Schedule'}
               </Button>
             </div>
           </div>
