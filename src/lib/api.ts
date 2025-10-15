@@ -50,7 +50,7 @@ export const authApi = {
 };
 
 export const dashboardApi = {
-  getSummary: () => api.get('/dashboard/summary'),
+  getSummary: (params?: any) => api.get('/dashboard/summary', { params }),
   getAnalytics: (params?: any) => api.get('/dashboard/analytics', { params }),
   getMetrics: () => api.get('/dashboard/metrics'),
   getUserStats: () => api.get('/dashboard/user-stats'),

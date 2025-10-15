@@ -9,9 +9,42 @@ const router = express.Router();
 router.use(authenticateToken);
 
 // Get dashboard summary
-router.get('/summary', async (req, res) => {
+router.get('/summary', [
+  query('time_range').optional({ checkFalsy: true }).isIn(['3months', '6months', '12months', '24months', 'current_year', 'last_year', 'all_time']).withMessage('Invalid time range'),
+  query('year').optional().isInt({ min: 2000, max: 2100 }).withMessage('Invalid year'),
+  query('month').optional().isInt({ min: 1, max: 12 }).withMessage('Invalid month'),
+  query('start_date').optional().isISO8601().withMessage('Invalid start date'),
+  query('end_date').optional().isISO8601().withMessage('Invalid end date')
+], async (req, res) => {
   try {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+      return res.status(400).json({
+        success: false,
+        message: 'Validation failed',
+        errors: errors.array()
+      });
+    }
+
     const userId = req.user!.userId;
+    const { time_range, year, month, start_date, end_date } = req.query;
+
+    let dateFilter = '';
+    if (start_date && end_date) {
+      dateFilter = `AND date BETWEEN '${start_date}' AND '${end_date}'`;
+    } else if (month && year) {
+      dateFilter = `AND to_char(date, 'YYYY-MM') = '${year}-${String(month).padStart(2, '0')}'`;
+    } else if (time_range) {
+      switch (time_range) {
+        case '3months': dateFilter = `AND date >= NOW() - INTERVAL '3 months'`; break;
+        case '6months': dateFilter = `AND date >= NOW() - INTERVAL '6 months'`; break;
+        case '12months': dateFilter = `AND date >= NOW() - INTERVAL '12 months'`; break;
+        case '24months': dateFilter = `AND date >= NOW() - INTERVAL '24 months'`; break;
+        case 'current_year': dateFilter = `AND to_char(date, 'YYYY') = to_char(CURRENT_DATE, 'YYYY')`; break;
+        case 'last_year': dateFilter = `AND to_char(date, 'YYYY') = to_char(CURRENT_DATE - INTERVAL '1 year', 'YYYY')`; break;
+        case 'all_time': dateFilter = ''; break;
+      }
+    }
 
     // Get financial summary
     const summary = {
@@ -37,24 +70,23 @@ router.get('/summary', async (req, res) => {
     };
 
     // Get totals
-    const incomeTotal = await dbGet('SELECT COALESCE(SUM(amount), 0) as total FROM income WHERE business_id = $1', [userId]);
-    const expenseTotal = await dbGet('SELECT COALESCE(SUM(amount), 0) as total FROM expenses WHERE business_id = $1', [userId]);
-    const purchaseTotal = await dbGet('SELECT COALESCE(SUM(amount), 0) as total FROM purchases WHERE business_id = $1', [userId]);
-    const salesTotal = await dbGet('SELECT COALESCE(SUM(selling_price), 0) as revenue, COALESCE(SUM(selling_price - amount), 0) as profit FROM sales WHERE business_id = $1', [userId]);
-    const purchaseCount = await dbGet('SELECT COUNT(*) as count FROM purchases WHERE business_id = $1', [userId]);
-    const salesCount = await dbGet('SELECT COUNT(*) as count FROM sales WHERE business_id = $1', [userId]);
-    const accountsBalance = await dbGet('SELECT COALESCE(SUM(balance), 0) as total FROM accounts WHERE business_id = $1', [userId]);
-    const activeLoans = await dbGet('SELECT COALESCE(SUM(current_balance), 0) as total FROM loans WHERE business_id = $1 AND status = \'active\'', [userId]);
-    const charityRequired = await dbGet('SELECT COALESCE(SUM(amount_required), 0) as total FROM charity WHERE business_id = $1', [userId]);
-    const charityPaid = await dbGet('SELECT COALESCE(SUM(amount_paid), 0) as total FROM charity WHERE business_id = $1', [userId]);
-    const charityRemaining = await dbGet('SELECT COALESCE(SUM(amount_required - amount_paid), 0) as total FROM charity WHERE business_id = $1', [userId]);
-    const arOutstanding = await dbGet('SELECT COALESCE(SUM(amount - paid_amount), 0) as total, COUNT(*) as count FROM accounts_receivable WHERE business_id = $1 AND status != \'paid\'', [userId]);
-    const arOverdue = await dbGet('SELECT COALESCE(SUM(amount - paid_amount), 0) as total, COUNT(*) as count FROM accounts_receivable WHERE business_id = $1 AND received = FALSE AND due_date < CURRENT_DATE', [userId]);
+    const incomeTotal = await dbGet(`SELECT COALESCE(SUM(amount), 0) as total FROM income WHERE business_id = $1 ${dateFilter}`, [userId]);
+    const expenseTotal = await dbGet(`SELECT COALESCE(SUM(amount), 0) as total FROM expenses WHERE business_id = $1 ${dateFilter}`, [userId]);
+    const purchaseTotal = await dbGet(`SELECT COALESCE(SUM(amount), 0) as total FROM purchases WHERE business_id = $1 ${dateFilter}`, [userId]);
+    const salesTotal = await dbGet(`SELECT COALESCE(SUM(selling_price), 0) as revenue, COALESCE(SUM(selling_price - amount), 0) as profit FROM sales WHERE business_id = $1 ${dateFilter}`, [userId]);
+    const purchaseCount = await dbGet(`SELECT COUNT(*) as count FROM purchases WHERE business_id = $1 ${dateFilter}`, [userId]);
+    const salesCount = await dbGet(`SELECT COUNT(*) as count FROM sales WHERE business_id = $1 ${dateFilter}`, [userId]);
+    const accountsBalance = await dbGet(`SELECT COALESCE(SUM(balance), 0) as total FROM accounts WHERE business_id = $1`, [userId]); // No date filter for balance
+    const activeLoans = await dbGet(`SELECT COALESCE(SUM(principal_amount), 0) as total FROM loans WHERE business_id = $1 ${dateFilter.replace(/date/g, 'start_date')}`, [userId]);
+    const charityRequired = await dbGet(`SELECT COALESCE(SUM(amount_required), 0) as total FROM charity WHERE business_id = $1 ${dateFilter.replace(/date/g, 'created_at')}`, [userId]);
+    const charityPaid = await dbGet(`SELECT COALESCE(SUM(amount_paid), 0) as total FROM charity WHERE business_id = $1 ${dateFilter.replace(/date/g, 'created_at')}`, [userId]);
+    const charityRemaining = await dbGet(`SELECT COALESCE(SUM(amount_required - amount_paid), 0) as total FROM charity WHERE business_id = $1 ${dateFilter.replace(/date/g, 'created_at')}`, [userId]);
+    const arOutstanding = await dbGet(`SELECT COALESCE(SUM(amount - paid_amount), 0) as total, COUNT(*) as count FROM accounts_receivable WHERE business_id = $1 AND status != 'paid' ${dateFilter.replace(/date/g, 'created_at')}`, [userId]);
+    const arOverdue = await dbGet(`SELECT COALESCE(SUM(amount - paid_amount), 0) as total, COUNT(*) as count FROM accounts_receivable WHERE business_id = $1 AND received = FALSE AND due_date < CURRENT_DATE ${dateFilter.replace(/date/g, 'created_at')}`, [userId]);
     const totalNetSalary = await dbGet(`
-      SELECT COALESCE(SUM(p.net_salary), 0) as total 
-      FROM payroll p
-      JOIN employees e ON p.employee_id = e.id
-      WHERE e.business_id = $1 AND p.status = 'paid'
+      SELECT COALESCE(SUM(net_salary), 0) as total 
+      FROM payroll
+      WHERE business_id = $1 AND status = 'paid' ${dateFilter.replace(/date/g, 'pay_period_end')}
     `, [userId]);
 
     summary.total_income = parseFloat(incomeTotal.total || 0);
@@ -237,11 +269,11 @@ router.get('/analytics', [
     let groupBy = '';
 
     if (startDate && endDate) {
-      dateFilter = `AND date BETWEEN '${startDate}' AND '${endDate}'`;
-      groupBy = `to_char(date, 'YYYY-MM-DD')`;
+      dateFilter = `AND %%ALIAS%%.created_at BETWEEN '${startDate}' AND '${endDate}'`;
+      groupBy = `to_char(%%ALIAS%%.created_at, 'YYYY-MM-DD')`;
     } else if (month) {
-      dateFilter = `AND to_char(date, 'YYYY-MM') = '${year}-${String(month).padStart(2, '0')}'`;
-      groupBy = `to_char(date, 'YYYY-MM-DD')`;
+      dateFilter = `AND to_char(%%ALIAS%%.created_at, 'YYYY-MM') = '${year}-${String(month).padStart(2, '0')}'`;
+      groupBy = `to_char(%%ALIAS%%.created_at, 'YYYY-MM-DD')`;
     } else if (timeRange) {
       let intervalMonths = 0;
       switch (timeRange) {
@@ -250,53 +282,53 @@ router.get('/analytics', [
         case '12months': intervalMonths = 12; break;
         case '24months': intervalMonths = 24; break;
         case 'current_year':
-          dateFilter = `AND to_char(date, 'YYYY') = to_char(CURRENT_DATE, 'YYYY')`;
-          groupBy = `to_char(date, 'YYYY-MM')`;
+          dateFilter = `AND to_char(%%ALIAS%%.created_at, 'YYYY') = to_char(CURRENT_DATE, 'YYYY')`;
+          groupBy = `to_char(%%ALIAS%%.created_at, 'YYYY-MM')`;
           break;
         case 'last_year':
-          dateFilter = `AND to_char(date, 'YYYY') = to_char(CURRENT_DATE - INTERVAL '1 year', 'YYYY')`;
-          groupBy = `to_char(date, 'YYYY-MM')`;
+          dateFilter = `AND to_char(%%ALIAS%%.created_at, 'YYYY') = to_char(CURRENT_DATE - INTERVAL '1 year', 'YYYY')`;
+          groupBy = `to_char(%%ALIAS%%.created_at, 'YYYY-MM')`;
           break;
         case 'all_time':
           dateFilter = ``;
-          groupBy = `to_char(date, 'YYYY-MM')`;
+          groupBy = `to_char(%%ALIAS%%.created_at, 'YYYY-MM')`;
           break;
       }
       if (intervalMonths > 0) {
-        dateFilter = `AND date >= NOW() - INTERVAL '${intervalMonths} months'`;
-        groupBy = `to_char(date, 'YYYY-MM')`;
+        dateFilter = `AND %%ALIAS%%.created_at >= NOW() - INTERVAL '${intervalMonths} months'`;
+        groupBy = `to_char(%%ALIAS%%.created_at, 'YYYY-MM')`;
       }
     } else {
       switch (period) {
         case 'week':
-          dateFilter = `AND to_char(date, 'YYYY') = '${year}' AND to_char(date, 'WW') >= to_char(NOW() - INTERVAL '12 weeks', 'WW')`;
-          groupBy = `to_char(date, 'YYYY-WW')`;
+          dateFilter = `AND to_char(%%ALIAS%%.created_at, 'YYYY') = '${year}' AND to_char(%%ALIAS%%.created_at, 'WW') >= to_char(NOW() - INTERVAL '12 weeks', 'WW')`;
+          groupBy = `to_char(%%ALIAS%%.created_at, 'YYYY-WW')`;
           break;
         case 'quarter':
-          dateFilter = `AND to_char(date, 'YYYY') = '${year}'`;
-          groupBy = `to_char(date, 'YYYY-Q')`;
+          dateFilter = `AND to_char(%%ALIAS%%.created_at, 'YYYY') = '${year}'`;
+          groupBy = `to_char(%%ALIAS%%.created_at, 'YYYY-Q')`;
           break;
         case 'year':
-          dateFilter = `AND to_char(date, 'YYYY') >= '${year - 4}'`;
-          groupBy = `to_char(date, 'YYYY')`;
+          dateFilter = `AND to_char(%%ALIAS%%.created_at, 'YYYY') >= '${year - 4}'`;
+          groupBy = `to_char(%%ALIAS%%.created_at, 'YYYY')`;
           break;
         default: // month
-          dateFilter = `AND date >= NOW() - INTERVAL '12 months'`;
-          groupBy = `to_char(date, 'YYYY-MM')`;
+          dateFilter = `AND %%ALIAS%%.created_at >= NOW() - INTERVAL '12 months'`;
+          groupBy = `to_char(%%ALIAS%%.created_at, 'YYYY-MM')`;
       }
     }
 
     // Get income analytics
     const incomeAnalytics = await dbAll(`
       SELECT 
-        ${groupBy} as period,
+        ${groupBy.replace(/%%ALIAS%%/g, 'i')} as period,
         SUM(i.amount) as total_amount,
         COUNT(*) as transaction_count,
         AVG(i.amount) as average_amount,
         c.name as category
       FROM income i
       JOIN categories c ON i.category_id = c.id
-      WHERE i.business_id = $1 ${dateFilter}
+      WHERE i.business_id = $1 ${dateFilter.replace(/%%ALIAS%%/g, 'i')}
       GROUP BY period, c.name
       ORDER BY period, total_amount DESC
     `, [userId]);
@@ -304,14 +336,14 @@ router.get('/analytics', [
     // Get expense analytics
     const expenseAnalytics = await dbAll(`
       SELECT 
-        ${groupBy} as period,
+        ${groupBy.replace(/%%ALIAS%%/g, 'e')} as period,
         SUM(e.amount) as total_amount,
         COUNT(*) as transaction_count,
         AVG(e.amount) as average_amount,
         c.name as category
       FROM expenses e
       JOIN categories c ON e.category_id = c.id
-      WHERE e.business_id = $1 ${dateFilter}
+      WHERE e.business_id = $1 ${dateFilter.replace(/%%ALIAS%%/g, 'e')}
       GROUP BY period, c.name
       ORDER BY period, total_amount DESC
     `, [userId]);
@@ -319,14 +351,14 @@ router.get('/analytics', [
     // Get purchase analytics
     const purchaseAnalytics = await dbAll(`
       SELECT 
-        ${groupBy} as period,
+        ${groupBy.replace(/%%ALIAS%%/g, 'p')} as period,
         SUM(p.amount) as total_amount,
         COUNT(*) as transaction_count,
         AVG(p.amount) as average_amount,
         c.name as category
       FROM purchases p
       JOIN categories c ON p.category_id = c.id
-      WHERE p.business_id = $1 ${dateFilter}
+      WHERE p.business_id = $1 ${dateFilter.replace(/%%ALIAS%%/g, 'p')}
       GROUP BY period, c.name
       ORDER BY period, total_amount DESC
     `, [userId]);
@@ -344,16 +376,16 @@ router.get('/analytics', [
           ELSE 0 
         END as profit_margin
       FROM (
-        SELECT ${groupBy} as period, SUM(amount) as income, 0 as expenses
+        SELECT ${groupBy.replace(/%%ALIAS%%./g, '')} as period, SUM(amount) as income, 0 as expenses
         FROM income
-        WHERE business_id = $1 ${dateFilter}
+        WHERE business_id = $1 ${dateFilter.replace(/%%ALIAS%%./g, '')}
         GROUP BY period
 
         UNION ALL
 
-        SELECT ${groupBy} as period, 0 as income, SUM(amount) as expenses
+        SELECT ${groupBy.replace(/%%ALIAS%%./g, '')} as period, 0 as income, SUM(amount) as expenses
         FROM expenses
-        WHERE business_id = $2 ${dateFilter}
+        WHERE business_id = $2 ${dateFilter.replace(/%%ALIAS%%./g, '')}
         GROUP BY period
       )
       GROUP BY period
@@ -404,16 +436,16 @@ router.get('/metrics', async (req, res) => {
     };
 
     // Get revenue metrics
-    const revenue30d = await dbGet('SELECT COALESCE(SUM(amount), 0) as total FROM income WHERE business_id = $1 AND date >= NOW() - INTERVAL \'30 days\'', [userId]);
-    const revenue90d = await dbGet('SELECT COALESCE(SUM(amount), 0) as total FROM income WHERE business_id = $1 AND date >= NOW() - INTERVAL \'90 days\'', [userId]);
+    const revenue30d = await dbGet('SELECT COALESCE(SUM(amount), 0) as total FROM income WHERE business_id = $1 AND created_at >= NOW() - INTERVAL \'30 days\'', [userId]);
+    const revenue90d = await dbGet('SELECT COALESCE(SUM(amount), 0) as total FROM income WHERE business_id = $1 AND created_at >= NOW() - INTERVAL \'90 days\'', [userId]);
     
     // Get expense metrics
-    const expenses30d = await dbGet('SELECT COALESCE(SUM(amount), 0) as total FROM expenses WHERE business_id = $1 AND date >= NOW() - INTERVAL \'30 days\'', [userId]);
-    const expenses90d = await dbGet('SELECT COALESCE(SUM(amount), 0) as total FROM expenses WHERE business_id = $1 AND date >= NOW() - INTERVAL \'90 days\'', [userId]);
+    const expenses30d = await dbGet('SELECT COALESCE(SUM(amount), 0) as total FROM expenses WHERE business_id = $1 AND created_at >= NOW() - INTERVAL \'30 days\'', [userId]);
+    const expenses90d = await dbGet('SELECT COALESCE(SUM(amount), 0) as total FROM expenses WHERE business_id = $1 AND created_at >= NOW() - INTERVAL \'90 days\'', [userId]);
     
     // Get average metrics
-    const avgIncome30d = await dbGet('SELECT COALESCE(AVG(amount), 0) as avg FROM income WHERE business_id = $1 AND date >= NOW() - INTERVAL \'30 days\'', [userId]);
-    const avgExpense30d = await dbGet('SELECT COALESCE(AVG(amount), 0) as avg FROM expenses WHERE business_id = $1 AND date >= NOW() - INTERVAL \'30 days\'', [userId]);
+    const avgIncome30d = await dbGet('SELECT COALESCE(AVG(amount), 0) as avg FROM income WHERE business_id = $1 AND created_at >= NOW() - INTERVAL \'30 days\'', [userId]);
+    const avgExpense30d = await dbGet('SELECT COALESCE(AVG(amount), 0) as avg FROM expenses WHERE business_id = $1 AND created_at >= NOW() - INTERVAL \'30 days\'', [userId]);
     
     // Get charity metrics
     const charityPaid30d = await dbGet('SELECT COALESCE(SUM(amount_paid), 0) as total FROM charity WHERE business_id = $1 AND updated_at >= NOW() - INTERVAL \'30 days\' AND status = \'paid\'', [userId]);
@@ -448,10 +480,10 @@ router.get('/metrics', async (req, res) => {
         COALESCE(SUM(CASE WHEN type = 'expense' THEN amount ELSE 0 END), 0) as expenses
       FROM (
         SELECT 'income' as type, amount FROM income 
-        WHERE business_id = $1 AND to_char(date, 'YYYY-MM') = to_char(NOW(), 'YYYY-MM')
+        WHERE business_id = $1 AND to_char(created_at, 'YYYY-MM') = to_char(NOW(), 'YYYY-MM')
         UNION ALL
         SELECT 'expense' as type, amount FROM expenses 
-        WHERE business_id = $2 AND to_char(date, 'YYYY-MM') = to_char(NOW(), 'YYYY-MM')
+        WHERE business_id = $2 AND to_char(created_at, 'YYYY-MM') = to_char(NOW(), 'YYYY-MM')
       )
     `, [userId, userId]);
 
@@ -461,10 +493,10 @@ router.get('/metrics', async (req, res) => {
         COALESCE(SUM(CASE WHEN type = 'expense' THEN amount ELSE 0 END), 0) as expenses
       FROM (
         SELECT 'income' as type, amount FROM income 
-        WHERE business_id = $1 AND to_char(date, 'YYYY-MM') = to_char(NOW() - INTERVAL '1 month', 'YYYY-MM')
+        WHERE business_id = $1 AND to_char(created_at, 'YYYY-MM') = to_char(NOW() - INTERVAL '1 month', 'YYYY-MM')
         UNION ALL
         SELECT 'expense' as type, amount FROM expenses 
-        WHERE business_id = $2 AND to_char(date, 'YYYY-MM') = to_char(NOW() - INTERVAL '1 month', 'YYYY-MM')
+        WHERE business_id = $2 AND to_char(created_at, 'YYYY-MM') = to_char(NOW() - INTERVAL '1 month', 'YYYY-MM')
       )
     `, [userId, userId]);
 

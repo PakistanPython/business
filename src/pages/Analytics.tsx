@@ -46,8 +46,7 @@ export const AnalyticsPage: React.FC = () => {
   const [endDate, setEndDate] = useState<string | null>(null);
 
   useEffect(() => {
-    loadAnalyticsData();
-    loadDashboardSummary(); // Load summary data separately
+    loadAnalyticsPageData();
   }, [timeRange, year, month, startDate, endDate]);
 
   const handleTimeRangeChange = (value: string) => {
@@ -165,36 +164,43 @@ export const AnalyticsPage: React.FC = () => {
     }
   };
 
-  const loadAnalyticsData = async () => {
+  const loadAnalyticsPageData = async () => {
     try {
       setIsLoading(true);
-      setAnalyticsData(null); 
-      const response = await dashboardApi.getAnalytics({ time_range: timeRange, year, month, start_date: startDate, end_date: endDate });
-      setAnalyticsData(response.data.data);
-    } catch (error) {
-      console.error('Error loading analytics:', error);
-      toast.error('Failed to load analytics data');
-    } finally {
-      setIsLoading(false);
-    }
-  };
+      setAnalyticsData(null);
+      
+      const params = { time_range: timeRange, year, month, start_date: startDate, end_date: endDate };
 
-  const loadDashboardSummary = async () => {
-    try {
-      const response = await dashboardApi.getSummary();
-      setDashboardSummary(response.data.data.summary);
-      setMonthlyData(response.data.data.monthly_data);
-      setTrendData(response.data.data.trend_data);
-      setTopExpenseCategories(response.data.data.top_expense_categories);
-      setCharityOverview(response.data.data.charity_overview);
+      const analyticsPromise = dashboardApi.getAnalytics(params);
+      const summaryPromise = dashboardApi.getSummary(params);
 
-      // Fetch payroll records
-      const payrollResponse = await api.get('/payroll?status=paid');
+      const payrollParams = new URLSearchParams({ status: 'paid' });
+      if (timeRange) payrollParams.append('time_range', timeRange);
+      if (year) payrollParams.append('year', String(year));
+      if (month) payrollParams.append('month', String(month));
+      if (startDate) payrollParams.append('start_date', startDate);
+      if (endDate) payrollParams.append('end_date', endDate);
+      const payrollPromise = api.get(`/payroll?${payrollParams.toString()}`);
+
+      const [analyticsResponse, summaryResponse, payrollResponse] = await Promise.all([
+        analyticsPromise,
+        summaryPromise,
+        payrollPromise
+      ]);
+
+      setAnalyticsData(analyticsResponse.data.data);
+      setDashboardSummary(summaryResponse.data.data.summary);
+      setMonthlyData(summaryResponse.data.data.monthly_data);
+      setTrendData(summaryResponse.data.data.trend_data);
+      setTopExpenseCategories(summaryResponse.data.data.top_expense_categories);
+      setCharityOverview(summaryResponse.data.data.charity_overview);
       setPayrollRecords(payrollResponse.data.payroll || []);
 
     } catch (error) {
-      console.error('Error loading dashboard summary:', error);
-      toast.error('Failed to load dashboard summary data');
+      console.error('Error loading analytics data:', error);
+      toast.error('Failed to load analytics data');
+    } finally {
+      setIsLoading(false);
     }
   };
 
