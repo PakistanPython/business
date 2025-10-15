@@ -404,10 +404,9 @@ export const AnalyticsPage: React.FC = () => {
             <CardTitle className="text-red-800 flex items-center"><CreditCard className="w-5 h-5 mr-2" />Liabilities Overview</CardTitle>
           </CardHeader>
           <CardContent className="space-y-3">
-            <div className="flex justify-between"><span className="text-red-700">Total Expenses</span><span className="font-bold text-red-900">{formatCurrency(summary.total_expenses)}</span></div>
             <div className="flex justify-between"><span className="text-red-700">Active Loans</span><span className="font-bold text-red-900">{formatCurrency(summary.total_active_loans)}</span></div>
             <div className="flex justify-between"><span className="text-red-700">Charity Due</span><span className="font-bold text-red-900">{formatCurrency(summary.total_charity_remaining)}</span></div>
-            <div className="flex justify-between border-t border-red-200 pt-2 mt-2"><span className="font-semibold text-red-800">Total Liabilities</span><span className="font-bold text-red-900">{formatCurrency(Number(summary.total_expenses) + Number(summary.total_active_loans) + Number(summary.total_charity_remaining))}</span></div>
+            <div className="flex justify-between border-t border-red-200 pt-2 mt-2"><span className="font-semibold text-red-800">Total Liabilities</span><span className="font-bold text-red-900">{formatCurrency(Number(summary.total_active_loans) + Number(summary.total_charity_remaining))}</span></div>
           </CardContent>
         </Card>
 
