@@ -76,17 +76,19 @@ router.get('/summary', [
     const salesTotal = await dbGet(`SELECT COALESCE(SUM(selling_price), 0) as revenue, COALESCE(SUM(selling_price - amount), 0) as profit FROM sales WHERE business_id = $1 ${dateFilter}`, [userId]);
     const purchaseCount = await dbGet(`SELECT COUNT(*) as count FROM purchases WHERE business_id = $1 ${dateFilter}`, [userId]);
     const salesCount = await dbGet(`SELECT COUNT(*) as count FROM sales WHERE business_id = $1 ${dateFilter}`, [userId]);
-    const accountsBalance = await dbGet(`SELECT COALESCE(SUM(balance), 0) as total FROM accounts WHERE business_id = $1`, [userId]); // No date filter for balance
+    const accountsBalance = await dbGet(`SELECT COALESCE(SUM(balance), 0) as total FROM accounts WHERE business_id = $1 ${dateFilter.replace(/date/g, 'created_at')}`, [userId]);
     const activeLoans = await dbGet(`SELECT COALESCE(SUM(principal_amount), 0) as total FROM loans WHERE business_id = $1 ${dateFilter.replace(/date/g, 'start_date')}`, [userId]);
     const charityRequired = await dbGet(`SELECT COALESCE(SUM(amount_required), 0) as total FROM charity WHERE business_id = $1 ${dateFilter.replace(/date/g, 'created_at')}`, [userId]);
     const charityPaid = await dbGet(`SELECT COALESCE(SUM(amount_paid), 0) as total FROM charity WHERE business_id = $1 ${dateFilter.replace(/date/g, 'created_at')}`, [userId]);
     const charityRemaining = await dbGet(`SELECT COALESCE(SUM(amount_required - amount_paid), 0) as total FROM charity WHERE business_id = $1 ${dateFilter.replace(/date/g, 'created_at')}`, [userId]);
     const arOutstanding = await dbGet(`SELECT COALESCE(SUM(amount - paid_amount), 0) as total, COUNT(*) as count FROM accounts_receivable WHERE business_id = $1 AND status != 'paid' ${dateFilter.replace(/date/g, 'created_at')}`, [userId]);
     const arOverdue = await dbGet(`SELECT COALESCE(SUM(amount - paid_amount), 0) as total, COUNT(*) as count FROM accounts_receivable WHERE business_id = $1 AND received = FALSE AND due_date < CURRENT_DATE ${dateFilter.replace(/date/g, 'created_at')}`, [userId]);
+    let payrollDateFilter = dateFilter.replace(/date/g, 'p.pay_period_end');
     const totalNetSalary = await dbGet(`
-      SELECT COALESCE(SUM(net_salary), 0) as total 
-      FROM payroll
-      WHERE business_id = $1 AND status = 'paid' ${dateFilter.replace(/date/g, 'pay_period_end')}
+      SELECT COALESCE(SUM(p.net_salary), 0) as total 
+      FROM payroll p
+      JOIN employees e ON p.employee_id = e.id
+      WHERE e.business_id = $1 AND p.status = 'paid' ${payrollDateFilter}
     `, [userId]);
 
     summary.total_income = parseFloat(incomeTotal.total || 0);
