@@ -77,6 +77,69 @@ router.post('/types', async (req: Request, res: Response) => {
   }
 });
 
+router.put('/types/:id', async (req: Request, res: Response) => {
+  try {
+    const businessId = req.user!.userId;
+    const { id } = req.params;
+    const { name, description, max_days_per_year, is_paid } = req.body;
+
+    if (!name) {
+      return res.status(400).json({ error: 'Leave type name is required' });
+    }
+
+    const leaveType = await dbGet(
+      'SELECT id, business_id FROM leave_types WHERE id = $1',
+      [id]
+    );
+
+    if (!leaveType) {
+      return res.status(404).json({ error: 'Leave type not found.' });
+    }
+
+    if (leaveType.business_id !== null && leaveType.business_id !== businessId) {
+      return res.status(403).json({ error: 'You do not have permission to edit this leave type.' });
+    }
+
+    const result = await dbRun(
+      'UPDATE leave_types SET name = $1, description = $2, max_days_per_year = $3, is_paid = $4, business_id = $5 WHERE id = $6',
+      [name, description, max_days_per_year, is_paid, businessId, id]
+    );
+
+    const updatedLeaveType = await dbGet('SELECT * FROM leave_types WHERE id = $1', [id]);
+    res.json(updatedLeaveType);
+  } catch (error) {
+    console.error('Error updating leave type:', error);
+    res.status(500).json({ error: 'Failed to update leave type' });
+  }
+});
+
+router.delete('/types/:id', async (req: Request, res: Response) => {
+  try {
+    const businessId = req.user!.userId;
+    const { id } = req.params;
+
+    const leaveType = await dbGet(
+      'SELECT id, business_id FROM leave_types WHERE id = $1',
+      [id]
+    );
+
+    if (!leaveType) {
+      return res.status(404).json({ error: 'Leave type not found.' });
+    }
+    
+    if (leaveType.business_id !== null && leaveType.business_id !== businessId) {
+      return res.status(403).json({ error: 'You do not have permission to delete this leave type.' });
+    }
+
+    await dbRun('DELETE FROM leave_types WHERE id = $1', [id]);
+
+    res.status(204).send();
+  } catch (error) {
+    console.error('Error deleting leave type:', error);
+    res.status(500).json({ error: 'Failed to delete leave type' });
+  }
+});
+
 router.get('/', async (req: Request, res: Response) => {
   try {
     const businessId = req.user!.userId;

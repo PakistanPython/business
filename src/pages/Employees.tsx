@@ -105,6 +105,7 @@ interface LeaveType {
   requires_approval: boolean;
   advance_notice_days: number;
   color: string;
+  business_id: number | null;
 }
 
 interface LeaveBalance {
@@ -280,6 +281,7 @@ export const EmployeesPage: React.FC = () => {
   const [isLeaveTypeDialogOpen, setIsLeaveTypeDialogOpen] = useState(false);
   const [isAttendanceRuleDialogOpen, setIsAttendanceRuleDialogOpen] = useState(false);
   const [selectedSchedule, setSelectedSchedule] = useState<WorkSchedule | null>(null);
+  const [selectedLeaveType, setSelectedLeaveType] = useState<LeaveType | null>(null);
   const [scheduleFormData, setScheduleFormData] = useState<ScheduleFormData>(initialScheduleFormData);
   const [leaveTypeFormData, setLeaveTypeFormData] = useState<LeaveTypeFormData>(initialLeaveTypeFormData);
   const [attendanceRuleFormData, setAttendanceRuleFormData] = useState<AttendanceRuleFormData>(initialAttendanceRuleFormData);
@@ -395,9 +397,36 @@ export const EmployeesPage: React.FC = () => {
       toast.success('Leave type created successfully!');
       fetchLeaveTypes();
       setIsLeaveTypeDialogOpen(false);
+      setLeaveTypeFormData(initialLeaveTypeFormData);
     } catch (error: any) {
       console.error('Error creating leave type:', error);
       toast.error(error.response?.data?.error || 'Failed to create leave type');
+    }
+  };
+
+  const handleUpdateLeaveType = async (leaveTypeData: any) => {
+    if (!selectedLeaveType) return;
+    try {
+      await api.put(`/leaves/types/${selectedLeaveType.id}`, leaveTypeData);
+      toast.success('Leave type updated successfully!');
+      fetchLeaveTypes();
+      setIsLeaveTypeDialogOpen(false);
+      setSelectedLeaveType(null);
+    } catch (error: any) {
+      console.error('Error updating leave type:', error);
+      toast.error(error.response?.data?.error || 'Failed to update leave type');
+    }
+  };
+
+  const handleDeleteLeaveType = async (leaveTypeId: number) => {
+    if (!window.confirm('Are you sure you want to delete this leave type?')) return;
+    try {
+      await api.delete(`/leaves/types/${leaveTypeId}`);
+      toast.success('Leave type deleted successfully!');
+      fetchLeaveTypes();
+    } catch (error: any) {
+      console.error('Error deleting leave type:', error);
+      toast.error(error.response?.data?.error || 'Failed to delete leave type');
     }
   };
 
@@ -920,7 +949,7 @@ export const EmployeesPage: React.FC = () => {
             <CardContent>
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                 {leaveTypes.map((leaveType) => (
-                  <Card key={leaveType.id}>
+                  <Card key={leaveType.id} className="relative">
                     <CardContent className="p-4">
                       <div className="flex items-center space-x-3">
                         <div 
@@ -942,6 +971,32 @@ export const EmployeesPage: React.FC = () => {
                         </div>
                       </div>
                     </CardContent>
+                    <div className="absolute top-2 right-2">
+                      <DropdownMenu>
+                        <DropdownMenuTrigger asChild>
+                            <Button variant="ghost" className="h-8 w-8 p-0">
+                              <MoreHorizontal className="h-4 w-4" />
+                            </Button>
+                          </DropdownMenuTrigger>
+                          <DropdownMenuContent align="end">
+                            <DropdownMenuItem onClick={() => {
+                              setSelectedLeaveType(leaveType);
+                              setLeaveTypeFormData(leaveType);
+                              setIsLeaveTypeDialogOpen(true);
+                            }}>
+                              <Edit className="mr-2 h-4 w-4" />
+                              Edit
+                            </DropdownMenuItem>
+                            <DropdownMenuItem
+                              onClick={() => handleDeleteLeaveType(leaveType.id)}
+                              className="text-red-600"
+                            >
+                              <Trash2 className="mr-2 h-4 w-4" />
+                              Delete
+                            </DropdownMenuItem>
+                          </DropdownMenuContent>
+                        </DropdownMenu>
+                      </div>
                   </Card>
                 ))}
               </div>
@@ -1539,12 +1594,18 @@ export const EmployeesPage: React.FC = () => {
       </Dialog>
 
       {/* Leave Type Dialog */}
-      <Dialog open={isLeaveTypeDialogOpen} onOpenChange={setIsLeaveTypeDialogOpen}>
+      <Dialog open={isLeaveTypeDialogOpen} onOpenChange={(isOpen) => {
+        setIsLeaveTypeDialogOpen(isOpen);
+        if (!isOpen) {
+          setSelectedLeaveType(null);
+          setLeaveTypeFormData(initialLeaveTypeFormData);
+        }
+      }}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Create Leave Type</DialogTitle>
+            <DialogTitle>{selectedLeaveType ? 'Edit' : 'Create'} Leave Type</DialogTitle>
             <DialogDescription>
-              Define a new type of leave for your organization.
+              {selectedLeaveType ? 'Update the leave type details.' : 'Define a new type of leave for your organization.'}
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4">
@@ -1633,8 +1694,8 @@ export const EmployeesPage: React.FC = () => {
               <Button type="button" variant="outline" onClick={() => setIsLeaveTypeDialogOpen(false)}>
                 Cancel
               </Button>
-              <Button type="button" onClick={() => handleCreateLeaveType(leaveTypeFormData)}>
-                Create Leave Type
+              <Button type="button" onClick={() => selectedLeaveType ? handleUpdateLeaveType(leaveTypeFormData) : handleCreateLeaveType(leaveTypeFormData)}>
+                {selectedLeaveType ? 'Update Leave Type' : 'Create Leave Type'}
               </Button>
             </div>
           </div>
