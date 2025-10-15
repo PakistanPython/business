@@ -74,13 +74,16 @@ router.get('/', async (req: Request, res: Response) => {
     if (userType === 'employee') {
       businessId = req.user!.businessId!;
     }
-    const { 
-      employee_id, 
-      status, 
-      pay_period_start, 
+    const {
+      employee_id,
+      status,
+      pay_period_start,
       pay_period_end,
-      page = 1, 
-      limit = 20 
+      time_range,
+      year,
+      month,
+      page = 1,
+      limit = 20
     } = req.query;
 
     let query = `
@@ -116,6 +119,24 @@ router.get('/', async (req: Request, res: Response) => {
       query += ` AND p.pay_period_start >= $${params.length + 1} AND p.pay_period_end <= $${params.length + 2}`;
       params.push(pay_period_start as string, pay_period_end as string);
     }
+
+    let dateFilter = '';
+    if (pay_period_start && pay_period_end) {
+      dateFilter = ` AND p.pay_period_start >= '${pay_period_start}' AND p.pay_period_end <= '${pay_period_end}'`;
+    } else if (month && year) {
+      dateFilter = ` AND to_char(p.pay_period_end, 'YYYY-MM') = '${year}-${String(month).padStart(2, '0')}'`;
+    } else if (time_range) {
+      switch (time_range) {
+        case '3months': dateFilter = ` AND p.pay_period_end >= NOW() - INTERVAL '3 months'`; break;
+        case '6months': dateFilter = ` AND p.pay_period_end >= NOW() - INTERVAL '6 months'`; break;
+        case '12months': dateFilter = ` AND p.pay_period_end >= NOW() - INTERVAL '12 months'`; break;
+        case '24months': dateFilter = ` AND p.pay_period_end >= NOW() - INTERVAL '24 months'`; break;
+        case 'current_year': dateFilter = ` AND to_char(p.pay_period_end, 'YYYY') = to_char(NOW(), 'YYYY')`; break;
+        case 'last_year': dateFilter = ` AND to_char(p.pay_period_end, 'YYYY') = to_char(NOW() - INTERVAL '1 year', 'YYYY')`; break;
+        case 'all_time': dateFilter = ''; break;
+      }
+    }
+    query += dateFilter;
 
     query += ' ORDER BY p.pay_period_end DESC, p.created_at DESC';
 
@@ -154,6 +175,10 @@ router.get('/', async (req: Request, res: Response) => {
     if (pay_period_start && pay_period_end) {
       countQuery += ` AND p.pay_period_start >= $${countParams.length + 1} AND p.pay_period_end <= $${countParams.length + 2}`;
       countParams.push(pay_period_start as string, pay_period_end as string);
+    }
+
+    if (dateFilter) {
+      countQuery += dateFilter;
     }
 
     const { total } = await dbGet(countQuery, countParams);
