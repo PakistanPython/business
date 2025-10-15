@@ -55,6 +55,15 @@ router.post('/types', async (req: Request, res: Response) => {
       return res.status(400).json({ error: 'Leave type name is required' });
     }
 
+    const existingType = await dbGet(
+      'SELECT id FROM leave_types WHERE name = $1 AND (business_id = $2 OR business_id IS NULL)',
+      [name, businessId]
+    );
+
+    if (existingType) {
+      return res.status(409).json({ error: 'Leave type with this name already exists' });
+    }
+
     const result = await dbRun(
       'INSERT INTO leave_types (name, description, max_days_per_year, is_paid, business_id) VALUES ($1, $2, $3, $4, $5)',
       [name, description, max_days_per_year, is_paid, businessId]

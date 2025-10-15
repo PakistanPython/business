@@ -90,11 +90,11 @@ router.post('/', async (req: Request, res: Response) => {
         sunday_start, sunday_end, break_duration, weekly_hours, is_active
       ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22) RETURNING id
     `, [
-      employee_id, businessId, schedule_name, effective_from, effective_to,
-      monday_start, monday_end, tuesday_start, tuesday_end,
-      wednesday_start, wednesday_end, thursday_start, thursday_end,
-      friday_start, friday_end, saturday_start, saturday_end,
-      sunday_start, sunday_end, break_duration, weekly_hours, is_active
+      employee_id, businessId, schedule_name, effective_from, effective_to || null,
+      monday_start || null, monday_end || null, tuesday_start || null, tuesday_end || null,
+      wednesday_start || null, wednesday_end || null, thursday_start || null, thursday_end || null,
+      friday_start || null, friday_end || null, saturday_start || null, saturday_end || null,
+      sunday_start || null, sunday_end || null, break_duration, weekly_hours, is_active
     ]);
 
     const newSchedule = await dbGet(`
