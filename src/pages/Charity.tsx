@@ -124,7 +124,15 @@ export const CharityPage: React.FC = () => {
     setViewingCharity(charity);
     try {
       const response = await charityApi.getPaymentHistory(charity.id);
-      setPaymentHistory(response.data.data.payments || []);
+      const payments = response.data.data.payments || [];
+      // Ensure payment_amount is properly formatted as number
+      const formattedPayments = payments.map(payment => ({
+        ...payment,
+        payment_amount: typeof payment.payment_amount === 'string' 
+          ? parseFloat(payment.payment_amount) 
+          : payment.payment_amount
+      }));
+      setPaymentHistory(formattedPayments);
     } catch (error) {
       console.error('Error fetching payment history:', error);
       toast.error('Failed to fetch payment history');
