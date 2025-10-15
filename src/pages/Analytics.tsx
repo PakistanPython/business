@@ -392,10 +392,10 @@ export const AnalyticsPage: React.FC = () => {
             <CardTitle className="text-green-800 flex items-center"><Wallet className="w-5 h-5 mr-2" />Assets Overview</CardTitle>
           </CardHeader>
           <CardContent className="space-y-3">
-            <div className="flex justify-between"><span className="text-green-700">Total Income</span><span className="font-bold text-green-900">{formatCurrency(summary.total_income)}</span></div>
+            <div className="flex justify-between"><span className="text-green-700">Total Purchase</span><span className="font-bold text-green-900">{formatCurrency(summary.total_purchases)}</span></div>
             <div className="flex justify-between"><span className="text-green-700">Account Balances</span><span className="font-bold text-green-900">{formatCurrency(summary.total_accounts_balance)}</span></div>
-            <div className="flex justify-between"><span className="text-green-700">Available Cash</span><span className="font-bold text-green-900">{formatCurrency(summary.available_cash)}</span></div>
-            <div className="flex justify-between border-t border-green-200 pt-2 mt-2"><span className="font-semibold text-green-800">Total Assets</span><span className="font-bold text-green-900">{formatCurrency(Number(summary.total_income) + Number(summary.total_accounts_balance) + Number(summary.available_cash))}</span></div>
+            <div className="flex justify-between"><span className="text-green-700">Total Receivable</span><span className="font-bold text-green-900">{formatCurrency(summary.total_ar_outstanding)}</span></div>
+            <div className="flex justify-between border-t border-green-200 pt-2 mt-2"><span className="font-semibold text-green-800">Total Assets</span><span className="font-bold text-green-900">{formatCurrency(Number(summary.total_purchases) + Number(summary.total_accounts_balance) + Number(summary.total_ar_outstanding))}</span></div>
           </CardContent>
         </Card>
 
