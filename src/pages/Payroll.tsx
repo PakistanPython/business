@@ -44,6 +44,31 @@ interface BulkPayrollFormData {
   auto_calculate: boolean;
 }
 
+interface PayrollLedgerEntry {
+  date: string;
+  attendance: string;
+  amount: number;
+}
+
+interface PayrollLedgerData {
+  employee: {
+    id: number;
+    name: string;
+    employee_code?: string;
+    department?: string;
+  };
+  month: string;
+  total_amount: number;
+  summary?: {
+    present: number;
+    absent: number;
+    holiday: number;
+    half_day: number;
+    month_days?: number;
+  };
+  entries: PayrollLedgerEntry[];
+}
+
 const initialFormData: PayrollFormData = {
   employee_id: '',
   pay_period_start: '',
@@ -86,11 +111,16 @@ export const PayrollPage: React.FC = () => {
   const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false);
   const [isBulkCreateDialogOpen, setIsBulkCreateDialogOpen] = useState(false);
   const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
+  const [isLedgerDialogOpen, setIsLedgerDialogOpen] = useState(false);
   const [selectedPayroll, setSelectedPayroll] = useState<Payroll | null>(null);
   const [formData, setFormData] = useState<PayrollFormData>(initialFormData);
   const [bulkFormData, setBulkFormData] = useState<BulkPayrollFormData>(initialBulkFormData);
   const [submitting, setSubmitting] = useState(false);
   const [calculatedData, setCalculatedData] = useState<any>(null);
+  const [ledgerEmployeeId, setLedgerEmployeeId] = useState('');
+  const [ledgerMonth, setLedgerMonth] = useState(new Date().toISOString().slice(0, 7));
+  const [ledgerLoading, setLedgerLoading] = useState(false);
+  const [ledgerData, setLedgerData] = useState<PayrollLedgerData | null>(null);
 
   useEffect(() => {
     if (formData.auto_calculate && formData.employee_id && formData.pay_period_start && formData.pay_period_end) {
@@ -123,7 +153,7 @@ export const PayrollPage: React.FC = () => {
         total_present_days: calculatedData.totalPresentDays?.toString() || '',
         total_overtime_hours: calculatedData.totalOvertimeHours?.toString() || '',
       }));
-    } else {
+    } else if (formData.auto_calculate) {
       setFormData((prev) => ({
         ...prev,
         basic_salary: '',
@@ -133,13 +163,13 @@ export const PayrollPage: React.FC = () => {
         total_overtime_hours: '',
       }));
     }
-  }, [calculatedData]);
+  }, [calculatedData, formData.auto_calculate]);
 
   useEffect(() => {
     fetchPayrollRecords();
     fetchEmployees();
     fetchStats();
-  }, [statusFilter, employeeFilter, periodFilter, searchTerm]);
+  }, [statusFilter, employeeFilter, periodFilter]);
 
   useEffect(() => {
     if (stats) {
@@ -353,6 +383,25 @@ export const PayrollPage: React.FC = () => {
     }
   };
 
+  const handleLoadLedger = async () => {
+    if (!ledgerEmployeeId || !ledgerMonth) {
+      toast.error('Please select employee and month');
+      return;
+    }
+
+    setLedgerLoading(true);
+    try {
+      const response = await api.get(`/payroll/ledger?employee_id=${ledgerEmployeeId}&month=${ledgerMonth}`);
+      setLedgerData(response.data);
+    } catch (error: any) {
+      console.error('Error fetching payroll ledger:', error);
+      toast.error(error.response?.data?.error || 'Failed to load employee ledger');
+      setLedgerData(null);
+    } finally {
+      setLedgerLoading(false);
+    }
+  };
+
   const openEditDialog = (payroll: Payroll) => {
     setSelectedPayroll(payroll);
     setFormData({
@@ -389,9 +438,35 @@ export const PayrollPage: React.FC = () => {
     }
   };
 
+  const getAttendanceStatusBadge = (status: string) => {
+    switch (status) {
+      case 'present':
+        return <Badge className="bg-green-100 text-green-800">Present</Badge>;
+      case 'absent':
+        return <Badge className="bg-red-100 text-red-800">Absent</Badge>;
+      case 'late':
+        return <Badge className="bg-yellow-100 text-yellow-800">Late</Badge>;
+      case 'half_day':
+        return <Badge className="bg-blue-100 text-blue-800">Half Day</Badge>;
+      case 'holiday':
+        return <Badge className="bg-purple-100 text-purple-800">Holiday</Badge>;
+      default:
+        return <Badge>{String(status || '').replace('_', ' ')}</Badge>;
+    }
+  };
+
+
+  const parseLedgerDate = (dateString: string) => {
+    const [year, month, day] = String(dateString).split('-').map(Number);
+    return new Date(year, (month || 1) - 1, day || 1);
+  };
 
   const formatDate = (dateString: string) => {
-    return new Date(dateString).toLocaleDateString();
+    return parseLedgerDate(dateString).toLocaleDateString();
+  };
+
+  const getDayName = (dateString: string) => {
+    return parseLedgerDate(dateString).toLocaleDateString(undefined, { weekday: 'long' });
   };
 
   const filteredPayrollRecords = payrollRecords.filter(payroll => {
@@ -432,6 +507,10 @@ export const PayrollPage: React.FC = () => {
           <p className="text-gray-600">Manage employee salaries and payroll records</p>
         </div>
         <div className="flex gap-2">
+          <Button onClick={() => setIsLedgerDialogOpen(true)} variant="outline">
+            <Eye className="h-4 w-4 mr-2" />
+            Employee Ledger
+          </Button>
           <Button onClick={() => setIsBulkCreateDialogOpen(true)} variant="outline">
             <Users className="h-4 w-4 mr-2" />
             Bulk Create
@@ -860,6 +939,117 @@ export const PayrollPage: React.FC = () => {
               </Button>
             </div>
           </form>
+        </DialogContent>
+      </Dialog>
+
+      {/* Employee Ledger Dialog */}
+      <Dialog open={isLedgerDialogOpen} onOpenChange={setIsLedgerDialogOpen}>
+        <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>Employee Ledger</DialogTitle>
+            <DialogDescription>
+              Select employee and month to view date-wise attendance amount ledger.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4 items-end">
+            <div>
+              <Label htmlFor="ledger_employee">Employee</Label>
+              <Select value={ledgerEmployeeId} onValueChange={setLedgerEmployeeId}>
+                <SelectTrigger id="ledger_employee">
+                  <SelectValue placeholder="Select employee" />
+                </SelectTrigger>
+                <SelectContent>
+                  {employees.map((employee) => (
+                    <SelectItem key={employee.id} value={employee.id.toString()}>
+                      {employee.first_name} {employee.last_name} ({employee.employee_code})
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div>
+              <Label htmlFor="ledger_month">Month</Label>
+              <Input
+                id="ledger_month"
+                type="month"
+                value={ledgerMonth}
+                onChange={(e) => setLedgerMonth(e.target.value)}
+              />
+            </div>
+
+            <Button onClick={handleLoadLedger} disabled={ledgerLoading}>
+              {ledgerLoading ? 'Loading...' : 'Show Ledger'}
+            </Button>
+          </div>
+
+          {ledgerData && (
+            <div className="space-y-4 mt-4">
+              <Card>
+                <CardContent className="p-4">
+                  <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-2">
+                    <div>
+                      <p className="font-semibold text-lg">{ledgerData.employee.name}</p>
+                      <p className="text-sm text-gray-600">
+                        Month: {new Date(`${ledgerData.month}-01`).toLocaleDateString(undefined, { year: 'numeric', month: 'long' })}
+                      </p>
+                    </div>
+                    <div className="text-right">
+                      <p className="text-sm text-gray-600">Total Amount</p>
+                      <p className="font-bold text-green-600 text-lg">{formatCurrency(ledgerData.total_amount)}</p>
+                    </div>
+                  </div>
+
+                  {ledgerData.summary && (
+                    <div className="grid grid-cols-2 md:grid-cols-5 gap-2 mt-4">
+                      <div className="rounded border p-2 text-center">
+                        <p className="text-xs text-gray-500">Present</p>
+                        <p className="font-semibold text-green-700">{ledgerData.summary.present}</p>
+                      </div>
+                      <div className="rounded border p-2 text-center">
+                        <p className="text-xs text-gray-500">Absent</p>
+                        <p className="font-semibold text-red-700">{ledgerData.summary.absent}</p>
+                      </div>
+                      <div className="rounded border p-2 text-center">
+                        <p className="text-xs text-gray-500">Holiday</p>
+                        <p className="font-semibold text-purple-700">{ledgerData.summary.holiday}</p>
+                      </div>
+                      <div className="rounded border p-2 text-center">
+                        <p className="text-xs text-gray-500">Half Day</p>
+                        <p className="font-semibold text-blue-700">{ledgerData.summary.half_day}</p>
+                      </div>
+                      <div className="rounded border p-2 text-center">
+                        <p className="text-xs text-gray-500">Month Days</p>
+                        <p className="font-semibold text-gray-800">{ledgerData.summary.month_days ?? ledgerData.entries.length}</p>
+                      </div>
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Date</TableHead>
+                    <TableHead>Day</TableHead>
+                    <TableHead>Attendance</TableHead>
+                    <TableHead className="text-right">Amount</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {ledgerData.entries.map((entry) => (
+                    <TableRow key={entry.date}>
+                      <TableCell>{formatDate(entry.date)}</TableCell>
+                      <TableCell>{getDayName(entry.date)}</TableCell>
+                      <TableCell>{getAttendanceStatusBadge(entry.attendance)}</TableCell>
+                      <TableCell className="text-right font-medium">{formatCurrency(entry.amount)}</TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </div>
+          )}
         </DialogContent>
       </Dialog>
 

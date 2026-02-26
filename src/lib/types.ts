@@ -563,6 +563,7 @@ export interface AttendanceStats {
   total_records: number;
   present_count: number;
   absent_count: number;
+  half_day_count: number;
   late_count: number;
   total_hours: number;
   total_overtime_hours: number;

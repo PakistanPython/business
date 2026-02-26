@@ -8,6 +8,38 @@ const router = express.Router();
 // Apply authentication middleware to all routes
 router.use(authenticateToken);
 
+const getBusinessIdFromRequest = (req: Request): number => {
+  return req.user!.userType === 'employee' ? req.user!.businessId! : req.user!.userId;
+};
+
+const isEmployeeUser = (req: Request): boolean => req.user!.userType === 'employee';
+
+const round2 = (value: number) => Math.round(value * 100) / 100;
+
+const normalizeDateKey = (value: unknown): string => {
+  if (!value) return '';
+
+  if (value instanceof Date) {
+    if (Number.isNaN(value.getTime())) return '';
+    const year = value.getFullYear();
+    const month = String(value.getMonth() + 1).padStart(2, '0');
+    const day = String(value.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
+  }
+
+  const raw = String(value).trim();
+  if (/^\d{4}-\d{2}-\d{2}/.test(raw)) {
+    return raw.slice(0, 10);
+  }
+
+  const parsed = new Date(raw);
+  if (Number.isNaN(parsed.getTime())) return '';
+  const year = parsed.getFullYear();
+  const month = String(parsed.getMonth() + 1).padStart(2, '0');
+  const day = String(parsed.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+};
+
 // Helper function to calculate payroll based on attendance
 const calculatePayroll = async (employeeId: number, payPeriodStart: string, payPeriodEnd: string) => {
   // Get employee details
@@ -68,12 +100,7 @@ const calculatePayroll = async (employeeId: number, payPeriodStart: string, payP
 router.get('/', async (req: Request, res: Response) => {
   try {
     const userType = req.user!.userType;
-    let businessId = req.user!.userId;
-    
-    // For employees, business ID comes from the token
-    if (userType === 'employee') {
-      businessId = req.user!.businessId!;
-    }
+    const businessId = getBusinessIdFromRequest(req);
     const {
       employee_id,
       status,
@@ -157,11 +184,8 @@ router.get('/', async (req: Request, res: Response) => {
     const countParams: any[] = [businessId];
 
     if (userType === 'employee') {
-      const employee = await dbGet('SELECT id FROM employees WHERE user_id = $1', [req.user?.userId]);
-      if (employee) {
-        countQuery += ` AND p.employee_id = $${countParams.length + 1}`;
-        countParams.push(employee.id);
-      }
+      countQuery += ` AND p.employee_id = $${countParams.length + 1}`;
+      countParams.push(req.user!.userId);
     } else if (employee_id) {
       countQuery += ` AND p.employee_id = $${countParams.length + 1}`;
       countParams.push(employee_id as string);
@@ -199,10 +223,171 @@ router.get('/', async (req: Request, res: Response) => {
 });
 
 // GET /api/payroll/:id - Get single payroll record
+router.get('/ledger', async (req: Request, res: Response) => {
+  try {
+    const businessId = getBusinessIdFromRequest(req);
+    const { employee_id, month } = req.query;
+
+    if (!employee_id || !month || !/^\d{4}-\d{2}$/.test(String(month))) {
+      return res.status(400).json({ error: 'employee_id and month (YYYY-MM) are required' });
+    }
+
+    const requestedEmployeeId = Number(employee_id);
+    if (!Number.isFinite(requestedEmployeeId) || requestedEmployeeId <= 0) {
+      return res.status(400).json({ error: 'Invalid employee_id' });
+    }
+
+    if (isEmployeeUser(req) && requestedEmployeeId !== req.user!.userId) {
+      return res.status(403).json({ error: 'Employees can only view their own ledger' });
+    }
+
+    const employee = await dbGet(
+      `SELECT id, first_name, last_name, employee_code, department, salary_type, base_salary, daily_wage, hourly_rate
+       FROM employees
+       WHERE id = $1 AND business_id = $2`,
+      [requestedEmployeeId, businessId]
+    );
+
+    if (!employee) {
+      return res.status(404).json({ error: 'Employee not found' });
+    }
+
+    const [yearStr, monthStr] = String(month).split('-');
+    const year = Number(yearStr);
+    const monthNum = Number(monthStr);
+    const daysInMonth = new Date(year, monthNum, 0).getDate();
+    const periodStart = `${year}-${String(monthNum).padStart(2, '0')}-01`;
+    const periodEnd = `${year}-${String(monthNum).padStart(2, '0')}-${String(daysInMonth).padStart(2, '0')}`;
+
+    const attendanceRecords = await dbAll(
+      `SELECT
+          date,
+          status,
+          check_in_time AS clock_in_time,
+          check_out_time AS clock_out_time,
+          total_hours,
+          overtime_hours
+       FROM attendance
+       WHERE employee_id = $1 AND date BETWEEN $2 AND $3
+       ORDER BY date ASC`,
+      [requestedEmployeeId, periodStart, periodEnd]
+    );
+
+    const attendanceByDate = new Map<string, any>();
+    const statusPriority: Record<string, number> = {
+      present: 5,
+      late: 4,
+      half_day: 3,
+      holiday: 2,
+      absent: 1,
+    };
+
+    for (const record of attendanceRecords) {
+      const dateKey = normalizeDateKey(record.date);
+      if (!dateKey) continue;
+
+      const existing = attendanceByDate.get(dateKey);
+      if (!existing) {
+        attendanceByDate.set(dateKey, record);
+        continue;
+      }
+
+      const existingPriority = statusPriority[String(existing.status)] ?? 0;
+      const currentPriority = statusPriority[String(record.status)] ?? 0;
+      if (currentPriority >= existingPriority) {
+        attendanceByDate.set(dateKey, record);
+      }
+    }
+
+    const dailyRateMonthly = (employee.base_salary || 0) / daysInMonth;
+    const dailyRate = employee.daily_wage || employee.base_salary || 0;
+    const hourlyRate = employee.hourly_rate || (employee.base_salary || 0) / 160;
+
+    const entries: Array<{
+      date: string;
+      attendance: string;
+      clock_in_time: string | null;
+      clock_out_time: string | null;
+      amount: number;
+      total_hours: number;
+      overtime_hours: number;
+    }> = [];
+
+    for (let day = 1; day <= daysInMonth; day++) {
+      const dateKey = `${year}-${String(monthNum).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+      const record = attendanceByDate.get(dateKey);
+      const isSunday = new Date(year, monthNum - 1, day).getDay() === 0;
+      const status = (record?.status || (isSunday ? 'holiday' : 'absent')) as string;
+      const totalHours = Number(record?.total_hours || 0);
+      const overtimeHours = Number(record?.overtime_hours || 0);
+
+      let amount = 0;
+
+      if (employee.salary_type === 'monthly') {
+        if (status === 'present' || status === 'late' || status === 'holiday') amount += dailyRateMonthly;
+        else if (status === 'half_day') amount += dailyRateMonthly / 2;
+        amount += hourlyRate * 1.5 * overtimeHours;
+      } else if (employee.salary_type === 'daily') {
+        if (status === 'present' || status === 'late' || status === 'holiday') amount += dailyRate;
+        else if (status === 'half_day') amount += dailyRate / 2;
+        const dailyHourlyRate = employee.hourly_rate || dailyRate / 8;
+        amount += dailyHourlyRate * 1.5 * overtimeHours;
+      } else {
+        const holidayDefaultHours = status === 'holiday' && totalHours === 0 ? 8 : 0;
+        const standardHours = Math.max(0, (totalHours || holidayDefaultHours) - overtimeHours);
+        amount += standardHours * hourlyRate;
+        amount += overtimeHours * hourlyRate * 1.5;
+      }
+
+      entries.push({
+        date: dateKey,
+        attendance: status,
+        clock_in_time: record?.clock_in_time || null,
+        clock_out_time: record?.clock_out_time || null,
+        amount: round2(amount),
+        total_hours: round2(totalHours),
+        overtime_hours: round2(overtimeHours),
+      });
+    }
+
+    const totalAmount = round2(entries.reduce((sum, entry) => sum + entry.amount, 0));
+    const summary = entries.reduce(
+      (acc, entry) => {
+        const status = String(entry.attendance || '');
+        if (status === 'present' || status === 'late') acc.present += 1;
+        else if (status === 'absent') acc.absent += 1;
+        else if (status === 'holiday') acc.holiday += 1;
+        else if (status === 'half_day') acc.half_day += 1;
+        return acc;
+      },
+      { present: 0, absent: 0, holiday: 0, half_day: 0, month_days: daysInMonth }
+    );
+
+    res.json({
+      employee: {
+        id: employee.id,
+        name: `${employee.first_name} ${employee.last_name}`,
+        employee_code: employee.employee_code,
+        department: employee.department,
+      },
+      month: String(month),
+      period_start: periodStart,
+      period_end: periodEnd,
+      total_amount: totalAmount,
+      summary,
+      entries,
+    });
+  } catch (error) {
+    console.error('Error fetching payroll ledger:', error);
+    res.status(500).json({ error: 'Failed to fetch payroll ledger' });
+  }
+});
+
+// GET /api/payroll/:id - Get single payroll record
 router.get('/:id', async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
-    const businessId = req.user!.userId;
+    const businessId = getBusinessIdFromRequest(req);
     const userType = req.user!.userType;
 
     let query = `
@@ -223,11 +408,8 @@ router.get('/:id', async (req: Request, res: Response) => {
 
     // If employee user, only allow viewing their own payroll
     if (userType === 'employee') {
-      const employee = await dbGet('SELECT id FROM employees WHERE user_id = $1', [req.user?.userId]);
-      if (employee) {
-        query += ` AND p.employee_id = $${params.length + 1}`;
-        params.push(employee.id);
-      }
+      query += ` AND p.employee_id = $${params.length + 1}`;
+      params.push(req.user!.userId);
     }
 
     const payroll = await dbGet(query, params);
@@ -246,7 +428,11 @@ router.get('/:id', async (req: Request, res: Response) => {
 // POST /api/payroll - Create new payroll record
 router.post('/', async (req: Request, res: Response) => {
   try {
-    const businessId = req.user?.userId;
+    if (isEmployeeUser(req)) {
+      return res.status(403).json({ error: 'Employees are not allowed to create payroll records' });
+    }
+
+    const businessId = getBusinessIdFromRequest(req);
     const {
       employee_id,
       pay_period_start,
@@ -342,8 +528,12 @@ router.post('/', async (req: Request, res: Response) => {
 // PUT /api/payroll/:id - Update payroll record
 router.put('/:id', async (req: Request, res: Response) => {
   try {
+    if (isEmployeeUser(req)) {
+      return res.status(403).json({ error: 'Employees are not allowed to update payroll records' });
+    }
+
     const { id } = req.params;
-    const businessId = req.user?.userId;
+    const businessId = getBusinessIdFromRequest(req);
     const {
       basic_salary,
       overtime_amount,
@@ -431,8 +621,12 @@ router.put('/:id', async (req: Request, res: Response) => {
 // PUT /api/payroll/:id/status - Update payroll status
 router.put('/:id/status', async (req: Request, res: Response) => {
   try {
+    if (isEmployeeUser(req)) {
+      return res.status(403).json({ error: 'Employees are not allowed to change payroll status' });
+    }
+
     const { id } = req.params;
-    const businessId = req.user?.userId;
+    const businessId = getBusinessIdFromRequest(req);
     const { status, payment_date } = req.body;
 
     // Validate status
@@ -481,8 +675,12 @@ router.put('/:id/status', async (req: Request, res: Response) => {
 // DELETE /api/payroll/:id - Delete payroll record
 router.delete('/:id', async (req: Request, res: Response) => {
   try {
+    if (isEmployeeUser(req)) {
+      return res.status(403).json({ error: 'Employees are not allowed to delete payroll records' });
+    }
+
     const { id } = req.params;
-    const businessId = req.user?.userId;
+    const businessId = getBusinessIdFromRequest(req);
 
     // Check if payroll record exists and belongs to this business
     const payroll = await dbGet(
@@ -512,7 +710,11 @@ router.delete('/:id', async (req: Request, res: Response) => {
 // POST /api/payroll/bulk-create - Create payroll for multiple employees
 router.post('/bulk-create', async (req: Request, res: Response) => {
   try {
-    const businessId = req.user?.userId;
+    if (isEmployeeUser(req)) {
+      return res.status(403).json({ error: 'Employees are not allowed to bulk create payroll records' });
+    }
+
+    const businessId = getBusinessIdFromRequest(req);
     const { pay_period_start, pay_period_end, employee_ids, auto_calculate = true } = req.body;
 
     // Validate required fields
@@ -612,10 +814,24 @@ router.post('/bulk-create', async (req: Request, res: Response) => {
 // POST /api/payroll/calculate - Calculate payroll based on attendance
 router.post('/calculate', async (req: Request, res: Response) => {
   try {
+    const businessId = getBusinessIdFromRequest(req);
     const { employee_id, pay_period_start, pay_period_end } = req.body;
 
     if (!employee_id || !pay_period_start || !pay_period_end) {
       return res.status(400).json({ error: 'Employee ID, pay period start, and pay period end are required' });
+    }
+
+    if (isEmployeeUser(req) && Number(employee_id) !== req.user!.userId) {
+      return res.status(403).json({ error: 'Employees can only calculate payroll for themselves' });
+    }
+
+    const employee = await dbGet(
+      'SELECT id FROM employees WHERE id = $1 AND business_id = $2',
+      [employee_id, businessId]
+    );
+
+    if (!employee) {
+      return res.status(404).json({ error: 'Employee not found' });
     }
 
     const calculated = await calculatePayroll(employee_id, pay_period_start, pay_period_end);
@@ -629,7 +845,7 @@ router.post('/calculate', async (req: Request, res: Response) => {
 // GET /api/payroll/stats/summary - Get payroll summary statistics
 router.get('/stats/summary', async (req: Request, res: Response) => {
   try {
-    const businessId = req.user!.userId;
+    const businessId = getBusinessIdFromRequest(req);
     const { pay_period_start, pay_period_end } = req.query;
 
     let query = `
@@ -647,6 +863,11 @@ router.get('/stats/summary', async (req: Request, res: Response) => {
       WHERE e.business_id = $1
     `;
     const params: any[] = [businessId];
+
+    if (isEmployeeUser(req)) {
+      query += ` AND p.employee_id = $${params.length + 1}`;
+      params.push(req.user!.userId);
+    }
 
     if (pay_period_start && pay_period_end) {
       query += ` AND p.pay_period_start >= $${params.length + 1} AND p.pay_period_end <= $${params.length + 2}`;

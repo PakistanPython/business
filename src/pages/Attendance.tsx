@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Plus, Search, Clock, Edit, Trash2, MoreHorizontal, Calendar, Users, CheckCircle, XCircle, AlertCircle, Play, Square, Timer, RefreshCw } from 'lucide-react';
+import { Plus, Search, Clock, Edit, Trash2, MoreHorizontal, Calendar, CheckCircle, XCircle, AlertCircle, Play, Square, Timer, RefreshCw } from 'lucide-react';
 import { Button } from '../components/ui/button';
 import { Input } from '../components/ui/input';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../components/ui/card';
@@ -10,20 +10,27 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '.
 import { Label } from '../components/ui/label';
 import { Textarea } from '../components/ui/textarea';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '../components/ui/table';
-import { useAuth } from '../contexts/AuthContext';
-import { useAttendance } from '../contexts/AttendanceContext';
 import { api } from '../lib/api';
 import { Attendance, AttendanceStats, AttendanceForm, Employee } from '../lib/types';
 import toast from 'react-hot-toast';
+
+interface LeaveRequestItem {
+  id: number;
+  employee_id: number;
+  leave_type: string;
+  start_date: string;
+  end_date: string;
+  status: 'approved' | 'pending' | 'rejected';
+  first_name?: string;
+  last_name?: string;
+  employee_code?: string;
+}
 
 interface AttendanceFormData {
   employee_id: string;
   date: string;
   clock_in_time: string;
   clock_out_time: string;
-  total_hours: string;
-  overtime_hours: string;
-  break_hours: string;
   status: string;
   notes: string;
 }
@@ -33,25 +40,13 @@ const initialFormData: AttendanceFormData = {
   date: new Date().toISOString().split('T')[0],
   clock_in_time: '',
   clock_out_time: '',
-  total_hours: '',
-  overtime_hours: '0',
-  break_hours: '0',
   status: 'present',
   notes: '',
 };
 
 export const AttendancePage: React.FC = () => {
-  const { user } = useAuth();
-  const { 
-    todayAttendance, 
-    allAttendance, 
-    loading: attendanceLoading, 
-    refreshAttendance, 
-    refreshTodayAttendance,
-    clockInEmployee,
-    clockOutEmployee 
-  } = useAttendance();
   const [attendanceRecords, setAttendanceRecords] = useState<Attendance[]>([]);
+  const [todayRecords, setTodayRecords] = useState<Attendance[]>([]);
   const [employees, setEmployees] = useState<Employee[]>([]);
   const [stats, setStats] = useState<AttendanceStats | null>(null);
   const [loading, setLoading] = useState(true);
@@ -59,39 +54,118 @@ export const AttendancePage: React.FC = () => {
   const [statusFilter, setStatusFilter] = useState('all');
   const [employeeFilter, setEmployeeFilter] = useState('all');
   const [dateFilter, setDateFilter] = useState('');
-  const [monthFilter, setMonthFilter] = useState('');
+  const [monthFilter, setMonthFilter] = useState(() => new Date().toISOString().slice(0, 7));
+  const [currentPage, setCurrentPage] = useState(1);
+  const [pageSize, setPageSize] = useState(20);
+  const [totalRecords, setTotalRecords] = useState(0);
+  const [totalPages, setTotalPages] = useState(1);
+  const [attendanceEmployeeIdsForAbsentView, setAttendanceEmployeeIdsForAbsentView] = useState<Set<number>>(new Set());
+  const [leaveRequests, setLeaveRequests] = useState<LeaveRequestItem[]>([]);
+  const [leaveRequestsLoading, setLeaveRequestsLoading] = useState(false);
 
   // Dialog states
   const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false);
   const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
   const [isClockInDialogOpen, setIsClockInDialogOpen] = useState(false);
   const [selectedAttendance, setSelectedAttendance] = useState<Attendance | null>(null);
-  const [selectedEmployeeForClock, setSelectedEmployeeForClock] = useState<Employee | null>(null);
   const [formData, setFormData] = useState<AttendanceFormData>(initialFormData);
   const [submitting, setSubmitting] = useState(false);
 
   useEffect(() => {
     fetchAttendanceRecords();
+    fetchTodayRecords();
     fetchEmployees();
     fetchStats();
-    // Note: today's attendance and all attendance are managed by AttendanceContext
-  }, [statusFilter, employeeFilter, dateFilter, monthFilter, searchTerm]);
+    fetchLeaveRequests();
+  }, [statusFilter, employeeFilter, dateFilter, monthFilter, currentPage, pageSize]);
+
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [statusFilter, employeeFilter, dateFilter, monthFilter]);
+
+  const effectiveAbsentDate = dateFilter || new Date().toISOString().split('T')[0];
+
+  useEffect(() => {
+    const fetchAttendanceEmployeeIdsForDate = async () => {
+      if (!effectiveAbsentDate) {
+        setAttendanceEmployeeIdsForAbsentView(new Set());
+        return;
+      }
+
+      try {
+        const response = await api.get(`/attendance?date_from=${effectiveAbsentDate}&date_to=${effectiveAbsentDate}&page=1&limit=5000`);
+        const ids = new Set<number>((response.data.attendance || []).map((record: Attendance) => record.employee_id));
+        setAttendanceEmployeeIdsForAbsentView(ids);
+      } catch (error) {
+        console.error('Error fetching attendance IDs for absent view:', error);
+        setAttendanceEmployeeIdsForAbsentView(new Set());
+      }
+    };
+
+    fetchAttendanceEmployeeIdsForDate();
+  }, [effectiveAbsentDate]);
+
+  const getMonthDateRange = (monthValue: string) => {
+    const [year, month] = monthValue.split('-').map(Number);
+    const from = `${year}-${String(month).padStart(2, '0')}-01`;
+    const toDate = new Date(year, month, 0);
+    const to = `${year}-${String(month).padStart(2, '0')}-${String(toDate.getDate()).padStart(2, '0')}`;
+    return { from, to };
+  };
 
   const fetchAttendanceRecords = async () => {
     try {
       const params = new URLSearchParams();
-      if (statusFilter !== 'all') params.append('status', statusFilter);
+
+      // In month grid mode, fetch full data and apply status filter on client-side
+      // so we can still detect dates that already have some attendance record.
+      if (!monthFilter && statusFilter !== 'all') params.append('status', statusFilter);
       if (employeeFilter !== 'all') params.append('employee_id', employeeFilter);
-      if (dateFilter) params.append('date_from', dateFilter);
-      if (monthFilter) params.append('month', monthFilter);
+
+      if (monthFilter) {
+        params.append('page', '1');
+        params.append('limit', '5000');
+      } else {
+        params.append('page', String(currentPage));
+        params.append('limit', String(pageSize));
+      }
+
+      if (dateFilter) {
+        params.append('date_from', dateFilter);
+        params.append('date_to', dateFilter);
+      }
+      if (monthFilter) {
+        const [year, month] = monthFilter.split('-');
+        params.append('month', month);
+        params.append('year', year);
+      }
 
       const response = await api.get(`/attendance?${params.toString()}`);
       setAttendanceRecords(response.data.attendance || []);
+
+      if (monthFilter) {
+        setTotalRecords((response.data.attendance || []).length);
+        setTotalPages(1);
+      } else {
+        setTotalRecords(response.data.pagination?.total || 0);
+        setTotalPages(response.data.pagination?.totalPages || 1);
+      }
     } catch (error) {
       console.error('Error fetching attendance records:', error);
       toast.error('Failed to fetch attendance records');
     } finally {
       setLoading(false);
+    }
+  };
+
+  const fetchTodayRecords = async () => {
+    try {
+      const today = new Date().toISOString().split('T')[0];
+      const response = await api.get(`/attendance?date_from=${today}&date_to=${today}&limit=500`);
+      setTodayRecords(response.data.attendance || []);
+    } catch (error) {
+      console.error('Error fetching today records:', error);
+      setTodayRecords([]);
     }
   };
 
@@ -106,11 +180,19 @@ export const AttendancePage: React.FC = () => {
 
   const fetchStats = async () => {
     try {
-      let statsUrl = '/attendance/stats/summary';
-      if (monthFilter) {
-        const [year, month] = monthFilter.split('-');
-        statsUrl += `?year=${year}&month=${month}`;
+      const params = new URLSearchParams();
+      
+      if (dateFilter) {
+        params.append('date_from', dateFilter);
+        params.append('date_to', dateFilter);
       }
+      if (monthFilter) {
+        const range = getMonthDateRange(monthFilter);
+        params.set('date_from', range.from);
+        params.set('date_to', range.to);
+      }
+
+      const statsUrl = `/attendance/stats/summary${params.toString() ? `?${params.toString()}` : ''}`;
       const response = await api.get(statsUrl);
       setStats(response.data);
     } catch (error) {
@@ -118,10 +200,34 @@ export const AttendancePage: React.FC = () => {
     }
   };
 
-  // Convert today attendance array to map for easier lookup
+  const fetchLeaveRequests = async () => {
+    try {
+      setLeaveRequestsLoading(true);
+      const response = await api.get('/leaves');
+      const all = response.data || [];
+      setLeaveRequests(all.filter((r: LeaveRequestItem) => r.status === 'pending'));
+    } catch (error) {
+      console.error('Error fetching leave requests:', error);
+      setLeaveRequests([]);
+    } finally {
+      setLeaveRequestsLoading(false);
+    }
+  };
+
+  const handleLeaveRequestAction = async (leaveId: number, status: 'approved' | 'rejected') => {
+    try {
+      await api.put(`/leaves/${leaveId}/status`, { status });
+      toast.success(`Leave request ${status} successfully`);
+      await Promise.all([fetchLeaveRequests(), fetchAttendanceRecords(), fetchTodayRecords(), fetchStats()]);
+    } catch (error: any) {
+      console.error(`Error ${status} leave request:`, error);
+      toast.error(error.response?.data?.error || `Failed to ${status} leave request`);
+    }
+  };
+
   const getTodayAttendanceMap = () => {
     const todayMap: { [key: number]: Attendance } = {};
-    (todayAttendance || []).forEach((record: any) => {
+    (todayRecords || []).forEach((record: any) => {
       todayMap[record.employee_id] = record;
     });
     return todayMap;
@@ -139,9 +245,6 @@ export const AttendancePage: React.FC = () => {
         date: formData.date,
         clock_in_time: formData.clock_in_time || undefined,
         clock_out_time: formData.clock_out_time || undefined,
-        total_hours: formData.total_hours ? parseFloat(formData.total_hours) : undefined,
-        overtime_hours: parseFloat(formData.overtime_hours) || 0,
-        break_hours: parseFloat(formData.break_hours) || 0,
         status: formData.status,
         notes: formData.notes,
       };
@@ -151,9 +254,8 @@ export const AttendancePage: React.FC = () => {
       setIsCreateDialogOpen(false);
       setFormData(initialFormData);
       fetchAttendanceRecords();
+      fetchTodayRecords();
       fetchStats();
-      refreshTodayAttendance();
-      refreshAttendance();
     } catch (error: any) {
       console.error('Error creating attendance:', error);
       toast.error(error.response?.data?.error || 'Failed to create attendance record');
@@ -171,9 +273,6 @@ export const AttendancePage: React.FC = () => {
       const attendanceData: Partial<AttendanceForm> = {
         clock_in_time: formData.clock_in_time || undefined,
         clock_out_time: formData.clock_out_time || undefined,
-        total_hours: formData.total_hours ? parseFloat(formData.total_hours) : undefined,
-        overtime_hours: parseFloat(formData.overtime_hours) || 0,
-        break_hours: parseFloat(formData.break_hours) || 0,
         status: formData.status,
         notes: formData.notes,
       };
@@ -184,9 +283,8 @@ export const AttendancePage: React.FC = () => {
       setSelectedAttendance(null);
       setFormData(initialFormData);
       fetchAttendanceRecords();
+      fetchTodayRecords();
       fetchStats();
-      refreshTodayAttendance();
-      refreshAttendance();
     } catch (error: any) {
       console.error('Error updating attendance:', error);
       toast.error(error.response?.data?.error || 'Failed to update attendance record');
@@ -204,9 +302,8 @@ export const AttendancePage: React.FC = () => {
       await api.delete(`/attendance/${attendance.id}`);
       toast.success('Attendance record deleted successfully!');
       fetchAttendanceRecords();
+      fetchTodayRecords();
       fetchStats();
-      refreshTodayAttendance();
-      refreshAttendance();
     } catch (error: any) {
       console.error('Error deleting attendance:', error);
       toast.error(error.response?.data?.error || 'Failed to delete attendance record');
@@ -216,10 +313,8 @@ export const AttendancePage: React.FC = () => {
   const handleManualRefresh = async () => {
     setLoading(true);
     try {
-      // Manually refresh all data
-      await refreshTodayAttendance();
-      await refreshAttendance(); 
       await fetchAttendanceRecords();
+      await fetchTodayRecords();
       await fetchStats();
     } catch (error) {
       console.error('Error refreshing data:', error);
@@ -230,11 +325,9 @@ export const AttendancePage: React.FC = () => {
 
   const handleClockIn = async (employee: Employee) => {
     try {
-      await clockInEmployee(employee.id);
+      await api.post('/attendance/clock-in', { employee_id: employee.id });
       toast.success(`${employee.first_name} ${employee.last_name} clocked in successfully!`);
-      // Manually trigger refresh after action
-      await refreshTodayAttendance();
-      await refreshAttendance();
+      await fetchTodayRecords();
       fetchAttendanceRecords();
       fetchStats();
     } catch (error: any) {
@@ -245,11 +338,9 @@ export const AttendancePage: React.FC = () => {
 
   const handleClockOut = async (employee: Employee) => {
     try {
-      await clockOutEmployee(employee.id);
+      await api.post('/attendance/clock-out', { employee_id: employee.id });
       toast.success(`${employee.first_name} ${employee.last_name} clocked out successfully!`);
-      // Manually trigger refresh after action
-      await refreshTodayAttendance();
-      await refreshAttendance();
+      await fetchTodayRecords();
       fetchAttendanceRecords();
       fetchStats();
     } catch (error: any) {
@@ -271,9 +362,6 @@ export const AttendancePage: React.FC = () => {
       date: attendance.date,
       clock_in_time: formatToTimeInput(attendance.clock_in_time),
       clock_out_time: formatToTimeInput(attendance.clock_out_time),
-      total_hours: attendance.total_hours?.toString() || '',
-      overtime_hours: attendance.overtime_hours?.toString() || '0',
-      break_hours: attendance.break_hours?.toString() || '0',
       status: attendance.status,
       notes: attendance.notes || '',
     });
@@ -302,8 +390,41 @@ export const AttendancePage: React.FC = () => {
     return new Date(timeString).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
   };
 
-  const formatDate = (dateString: string) => {
-    return new Date(dateString).toLocaleDateString();
+  const formatDate = (dateString?: string | null) => {
+    if (!dateString) return '-';
+    const parsed = new Date(dateString);
+    if (Number.isNaN(parsed.getTime())) return String(dateString);
+    return parsed.toLocaleDateString();
+  };
+
+  const toDateKey = (dateString?: string | null) => {
+    if (!dateString) return '';
+    const parsed = new Date(dateString);
+    if (Number.isNaN(parsed.getTime())) return String(dateString).slice(0, 10);
+    return parsed.toISOString().slice(0, 10);
+  };
+
+  const getMonthDates = (monthValue: string) => {
+    const [year, month] = monthValue.split('-').map(Number);
+    if (!year || !month) return [] as string[];
+    const daysInMonth = new Date(year, month, 0).getDate();
+    return Array.from({ length: daysInMonth }, (_, i) => {
+      const day = String(i + 1).padStart(2, '0');
+      return `${year}-${String(month).padStart(2, '0')}-${day}`;
+    });
+  };
+
+  const getEffectiveMonthDates = (monthValue: string) => {
+    const dates = getMonthDates(monthValue);
+    const [year, month] = monthValue.split('-').map(Number);
+    if (!year || !month) return dates;
+
+    const now = new Date();
+    const isCurrentMonth = year === now.getFullYear() && month === now.getMonth() + 1;
+    if (!isCurrentMonth) return dates;
+
+    const todayKey = now.toISOString().slice(0, 10);
+    return dates.filter((d) => d <= todayKey);
   };
 
   const canClockOut = (employee: Employee) => {
@@ -324,6 +445,248 @@ export const AttendancePage: React.FC = () => {
     
     return searchMatch;
   });
+
+  const tableAttendanceRecords = React.useMemo(() => {
+    const searchLower = searchTerm.toLowerCase();
+    const employeeMatchesSearch = (employee: Employee) => {
+      return (
+        `${employee.first_name} ${employee.last_name}`.toLowerCase().includes(searchLower) ||
+        employee.employee_code?.toLowerCase().includes(searchLower) ||
+        employee.department?.toLowerCase().includes(searchLower)
+      );
+    };
+
+    // For month + ALL employees view, show every date for every employee
+    if (monthFilter && employeeFilter === 'all') {
+      const monthDates = getEffectiveMonthDates(monthFilter);
+      if (monthDates.length === 0) return filteredAttendanceRecords;
+
+      const scopedEmployees = employees.filter(employeeMatchesSearch);
+
+      const recordsByEmpDate = new Map<string, Attendance>();
+      attendanceRecords.forEach((record) => {
+        const key = `${record.employee_id}-${toDateKey(record.date)}`;
+        if (!recordsByEmpDate.has(key)) recordsByEmpDate.set(key, record);
+      });
+
+      const allRows: Attendance[] = [];
+
+      scopedEmployees.forEach((employee) => {
+        monthDates.forEach((dateKey, index) => {
+          const key = `${employee.id}-${dateKey}`;
+          const existing = recordsByEmpDate.get(key);
+
+          if (existing) {
+            allRows.push(existing);
+            return;
+          }
+
+          const dayOfWeek = new Date(dateKey).getDay();
+          const isWeekend = dayOfWeek === 0;
+
+          allRows.push({
+            id: -(employee.id * 100000 + index + 1),
+            business_id: (employee as any).business_id || 0,
+            employee_id: employee.id,
+            date: dateKey,
+            clock_in_time: null,
+            clock_out_time: null,
+            total_hours: 0 as any,
+            overtime_hours: 0 as any,
+            status: isWeekend ? 'holiday' : 'absent',
+            notes: isWeekend ? 'Weekly off / no attendance record' : 'No attendance record for this date',
+            first_name: employee.first_name,
+            last_name: employee.last_name,
+            employee_code: employee.employee_code,
+            department: employee.department,
+            position: employee.position,
+            created_at: new Date().toISOString(),
+          } as Attendance);
+        });
+      });
+
+      const statusFiltered = statusFilter === 'all'
+        ? allRows
+        : allRows.filter((r) => r.status === statusFilter);
+
+      return statusFiltered.sort((a, b) => {
+        const dateCompare = toDateKey(b.date).localeCompare(toDateKey(a.date));
+        if (dateCompare !== 0) return dateCompare;
+        return `${a.first_name} ${a.last_name}`.localeCompare(`${b.first_name} ${b.last_name}`);
+      });
+    }
+
+    // For month + single employee view, show EVERY date of month (present or missing)
+    if (monthFilter && employeeFilter !== 'all') {
+      const employee = employees.find((e) => e.id.toString() === employeeFilter);
+      if (!employee) return filteredAttendanceRecords;
+
+      const monthDates = getEffectiveMonthDates(monthFilter);
+      const employeeRecords = filteredAttendanceRecords.filter((r) => r.employee_id === employee.id);
+      const byDate = new Map<string, Attendance>();
+      employeeRecords.forEach((r) => {
+        const key = toDateKey(r.date);
+        if (key && !byDate.has(key)) byDate.set(key, r);
+      });
+
+      const fullMonthRows: Attendance[] = monthDates.map((dateKey, index) => {
+        const existing = byDate.get(dateKey);
+        if (existing) return existing;
+
+        const dayOfWeek = new Date(dateKey).getDay();
+        const isWeekend = dayOfWeek === 0;
+
+        return {
+          id: -(employee.id * 100000 + index + 1),
+          business_id: (employee as any).business_id || 0,
+          employee_id: employee.id,
+          date: dateKey,
+          clock_in_time: null,
+          clock_out_time: null,
+          total_hours: 0 as any,
+          overtime_hours: 0 as any,
+          status: isWeekend ? 'holiday' : 'absent',
+          notes: isWeekend ? 'Weekly off / no attendance record' : 'No attendance record for this date',
+          first_name: employee.first_name,
+          last_name: employee.last_name,
+          employee_code: employee.employee_code,
+          department: employee.department,
+          position: employee.position,
+          created_at: new Date().toISOString(),
+        } as Attendance;
+      });
+
+      const statusFiltered = statusFilter === 'all'
+        ? fullMonthRows
+        : fullMonthRows.filter((r) => r.status === statusFilter);
+
+      return statusFiltered.sort((a, b) => (toDateKey(b.date)).localeCompare(toDateKey(a.date)));
+    }
+
+    // Show synthetic absents for the selected date (or today by default if no month filter)
+    if (!effectiveAbsentDate) return filteredAttendanceRecords;
+
+    // If user is specifically filtering to non-absent statuses, don't inject absent rows
+    if (statusFilter !== 'all' && statusFilter !== 'absent') {
+      return filteredAttendanceRecords;
+    }
+
+    const syntheticAbsents: Attendance[] = employees
+      .filter((employee) => {
+        if (employeeFilter !== 'all' && employee.id.toString() !== employeeFilter) return false;
+        if (attendanceEmployeeIdsForAbsentView.has(employee.id)) return false;
+
+        const searchMatch =
+          `${employee.first_name} ${employee.last_name}`.toLowerCase().includes(searchTerm.toLowerCase()) ||
+          employee.employee_code?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+          employee.department?.toLowerCase().includes(searchTerm.toLowerCase());
+
+        return searchMatch;
+      })
+      .map((employee, index) => ({
+        id: -(employee.id * 100000 + index + 1),
+        business_id: (employee as any).business_id || 0,
+        employee_id: employee.id,
+        date: effectiveAbsentDate || new Date().toISOString().split('T')[0],
+        clock_in_time: null,
+        clock_out_time: null,
+        total_hours: 0 as any,
+        overtime_hours: 0 as any,
+        status: 'absent',
+        notes: 'No attendance entry for selected date',
+        first_name: employee.first_name,
+        last_name: employee.last_name,
+        employee_code: employee.employee_code,
+        department: employee.department,
+        position: employee.position,
+        created_at: new Date().toISOString(),
+      } as Attendance));
+
+    if (statusFilter === 'absent') {
+      const realAbsents = filteredAttendanceRecords.filter((r) => r.status === 'absent');
+      return [...realAbsents, ...syntheticAbsents];
+    }
+
+    return [...filteredAttendanceRecords, ...syntheticAbsents];
+  }, [
+    attendanceRecords,
+    filteredAttendanceRecords,
+    employees,
+    monthFilter,
+    effectiveAbsentDate,
+    employeeFilter,
+    searchTerm,
+    statusFilter,
+    attendanceEmployeeIdsForAbsentView,
+  ]);
+
+  const isMonthGridMode = Boolean(monthFilter);
+  const effectiveTotalRecords = isMonthGridMode ? tableAttendanceRecords.length : totalRecords;
+  const effectiveTotalPages = isMonthGridMode
+    ? Math.max(1, Math.ceil(effectiveTotalRecords / pageSize))
+    : Math.max(1, totalPages);
+
+  const visibleAttendanceRecords = React.useMemo(() => {
+    if (!isMonthGridMode) return tableAttendanceRecords;
+    const start = (currentPage - 1) * pageSize;
+    const end = start + pageSize;
+    return tableAttendanceRecords.slice(start, end);
+  }, [tableAttendanceRecords, isMonthGridMode, currentPage, pageSize]);
+
+  const summaryStats = React.useMemo(() => {
+    if (!stats) return null;
+
+    // In month mode, compute operational counts including missing-date absents.
+    if (monthFilter) {
+      const monthDates = getEffectiveMonthDates(monthFilter);
+      if (monthDates.length === 0) return stats;
+
+      const scopedEmployees = employeeFilter === 'all'
+        ? employees
+        : employees.filter((e) => e.id.toString() === employeeFilter);
+
+      const statusByEmpDate = new Map<string, string>();
+      attendanceRecords.forEach((record) => {
+        const key = `${record.employee_id}-${toDateKey(record.date)}`;
+        if (!statusByEmpDate.has(key)) {
+          statusByEmpDate.set(key, record.status);
+        }
+      });
+
+      let present = 0;
+      let late = 0;
+      let halfDay = 0;
+      let absent = 0;
+
+      scopedEmployees.forEach((employee) => {
+        monthDates.forEach((dateKey) => {
+          const key = `${employee.id}-${dateKey}`;
+          const status = statusByEmpDate.get(key);
+
+          if (!status) {
+            const isSunday = new Date(dateKey).getDay() === 0;
+            if (!isSunday) absent += 1;
+            return;
+          }
+
+          if (status === 'present') present += 1;
+          else if (status === 'late') late += 1;
+          else if (status === 'half_day') halfDay += 1;
+          else if (status === 'absent') absent += 1;
+        });
+      });
+
+      return {
+        ...stats,
+        present_count: present,
+        late_count: late,
+        half_day_count: halfDay,
+        absent_count: absent,
+      };
+    }
+
+    return stats;
+  }, [stats, monthFilter, employeeFilter, employees, attendanceRecords]);
 
   if (loading) {
     return (
@@ -362,27 +725,15 @@ export const AttendancePage: React.FC = () => {
       </div>
 
       {/* Stats Cards */}
-      {stats && (
+      {summaryStats && (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-          <Card>
-            <CardContent className="p-6">
-              <div className="flex items-center">
-                <Calendar className="h-8 w-8 text-blue-600" />
-                <div className="ml-4">
-                  <p className="text-sm font-medium text-gray-600">Total Records</p>
-                  <p className="text-2xl font-bold text-gray-900">{stats.total_records}</p>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-
           <Card>
             <CardContent className="p-6">
               <div className="flex items-center">
                 <CheckCircle className="h-8 w-8 text-green-600" />
                 <div className="ml-4">
                   <p className="text-sm font-medium text-gray-600">Present Days</p>
-                  <p className="text-2xl font-bold text-gray-900">{stats.present_count}</p>
+                  <p className="text-2xl font-bold text-gray-900">{summaryStats.present_count || 0}</p>
                 </div>
               </div>
             </CardContent>
@@ -391,10 +742,10 @@ export const AttendancePage: React.FC = () => {
           <Card>
             <CardContent className="p-6">
               <div className="flex items-center">
-                <Timer className="h-8 w-8 text-purple-600" />
+                <AlertCircle className="h-8 w-8 text-yellow-600" />
                 <div className="ml-4">
-                  <p className="text-sm font-medium text-gray-600">Total Hours</p>
-                  <p className="text-2xl font-bold text-gray-900">{stats.total_hours ? parseFloat(stats.total_hours as any).toFixed(1) : '0.0'}</p>
+                  <p className="text-sm font-medium text-gray-600">Late Come</p>
+                  <p className="text-2xl font-bold text-gray-900">{summaryStats.late_count || 0}</p>
                 </div>
               </div>
             </CardContent>
@@ -403,10 +754,22 @@ export const AttendancePage: React.FC = () => {
           <Card>
             <CardContent className="p-6">
               <div className="flex items-center">
-                <Clock className="h-8 w-8 text-orange-600" />
+                <Clock className="h-8 w-8 text-blue-600" />
                 <div className="ml-4">
-                  <p className="text-sm font-medium text-gray-600">Overtime Hours</p>
-                  <p className="text-2xl font-bold text-gray-900">{stats.total_overtime_hours ? parseFloat(stats.total_overtime_hours as any).toFixed(1) : '0.0'}</p>
+                  <p className="text-sm font-medium text-gray-600">Half Day</p>
+                  <p className="text-2xl font-bold text-gray-900">{(summaryStats as any).half_day_count || 0}</p>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardContent className="p-6">
+              <div className="flex items-center">
+                <XCircle className="h-8 w-8 text-red-600" />
+                <div className="ml-4">
+                  <p className="text-sm font-medium text-gray-600">Absent Count</p>
+                  <p className="text-2xl font-bold text-gray-900">{summaryStats.absent_count || 0}</p>
                 </div>
               </div>
             </CardContent>
@@ -417,8 +780,50 @@ export const AttendancePage: React.FC = () => {
       {/* Quick Clock In/Out Section */}
       <Card>
         <CardHeader>
+          <CardTitle>Pending Leave Requests</CardTitle>
+          <CardDescription>
+            Review employee leave requests. On approval, attendance for leave dates is auto-marked as absent.
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          {leaveRequestsLoading ? (
+            <div className="text-sm text-gray-500">Loading leave requests...</div>
+          ) : leaveRequests.length === 0 ? (
+            <div className="text-sm text-gray-500">No pending leave requests.</div>
+          ) : (
+            <div className="space-y-3">
+              {leaveRequests.map((leave) => (
+                <div key={leave.id} className="rounded-lg border p-3 flex flex-col md:flex-row md:items-center md:justify-between gap-3">
+                  <div>
+                    <p className="font-medium">
+                      {leave.first_name} {leave.last_name} ({leave.employee_code})
+                    </p>
+                    <p className="text-sm text-gray-600">
+                      {leave.leave_type} • {formatDate(leave.start_date)} to {formatDate(leave.end_date)}
+                    </p>
+                  </div>
+                  <div className="flex gap-2">
+                    <Button size="sm" onClick={() => handleLeaveRequestAction(leave.id, 'approved')}>
+                      Approve
+                    </Button>
+                    <Button size="sm" variant="outline" onClick={() => handleLeaveRequestAction(leave.id, 'rejected')}>
+                      Reject
+                    </Button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* Quick Clock In/Out Section */}
+      <Card>
+        <CardHeader>
           <CardTitle>Today's Attendance</CardTitle>
-          <CardDescription>Quick clock in/out for employees</CardDescription>
+          <CardDescription>
+            Quick clock in/out for employees (requires active work schedule and no approved leave for today)
+          </CardDescription>
         </CardHeader>
         <CardContent>
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
@@ -556,8 +961,8 @@ export const AttendancePage: React.FC = () => {
           <Table>
             <TableHeader>
               <TableRow>
-                <TableHead>Employee</TableHead>
                 <TableHead>Date</TableHead>
+                <TableHead>Employee</TableHead>
                 <TableHead>Clock In</TableHead>
                 <TableHead>Clock Out</TableHead>
                 <TableHead>Hours</TableHead>
@@ -566,19 +971,28 @@ export const AttendancePage: React.FC = () => {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {filteredAttendanceRecords.map((attendance) => (
+              {visibleAttendanceRecords.map((attendance, index) => {
+                const currentDateKey = toDateKey(attendance.date || effectiveAbsentDate);
+                const previousDateKey = index > 0
+                  ? toDateKey(visibleAttendanceRecords[index - 1].date || effectiveAbsentDate)
+                  : '';
+                const showDate = index === 0 || currentDateKey !== previousDateKey;
+
+                return (
                 <TableRow key={attendance.id}>
+                  <TableCell className="font-medium">
+                    {showDate ? formatDate(attendance.date || effectiveAbsentDate) : ''}
+                  </TableCell>
                   <TableCell>
                     <div>
                       <div className="font-medium">
                         {attendance.first_name} {attendance.last_name}
                       </div>
                       <div className="text-sm text-gray-500">
-                        {attendance.employee_code} • {attendance.department}
+                        {attendance.employee_code} • {attendance.department || '-'}
                       </div>
                     </div>
                   </TableCell>
-                  <TableCell>{formatDate(attendance.date)}</TableCell>
                   <TableCell>{formatTime(attendance.clock_in_time)}</TableCell>
                   <TableCell>{formatTime(attendance.clock_out_time)}</TableCell>
                   <TableCell>
@@ -603,6 +1017,7 @@ export const AttendancePage: React.FC = () => {
                           Edit
                         </DropdownMenuItem>
                         <DropdownMenuItem
+                          disabled={attendance.id < 0}
                           onClick={() => handleDeleteAttendance(attendance)}
                           className="text-red-600"
                         >
@@ -613,9 +1028,58 @@ export const AttendancePage: React.FC = () => {
                     </DropdownMenu>
                   </TableCell>
                 </TableRow>
-              ))}
+              );})}
             </TableBody>
           </Table>
+
+          <div className="mt-4 flex flex-col sm:flex-row items-center justify-between gap-3">
+            <div className="text-sm text-gray-600">
+              {effectiveTotalRecords > 0
+                ? `Showing ${(currentPage - 1) * pageSize + 1} to ${Math.min(currentPage * pageSize, effectiveTotalRecords)} of ${effectiveTotalRecords} records`
+                : 'No records found'}
+            </div>
+
+            <div className="flex items-center gap-2">
+              <Select
+                value={String(pageSize)}
+                onValueChange={(value) => {
+                  setPageSize(parseInt(value, 10));
+                  setCurrentPage(1);
+                }}
+              >
+                <SelectTrigger className="w-[120px]">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="10">10 / page</SelectItem>
+                  <SelectItem value="20">20 / page</SelectItem>
+                  <SelectItem value="50">50 / page</SelectItem>
+                </SelectContent>
+              </Select>
+
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setCurrentPage((prev) => Math.max(1, prev - 1))}
+                disabled={currentPage <= 1}
+              >
+                Previous
+              </Button>
+
+              <span className="text-sm text-gray-700 min-w-[90px] text-center">
+                Page {currentPage} of {effectiveTotalPages}
+              </span>
+
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setCurrentPage((prev) => Math.min(effectiveTotalPages, prev + 1))}
+                disabled={currentPage >= effectiveTotalPages}
+              >
+                Next
+              </Button>
+            </div>
+          </div>
         </CardContent>
       </Card>
 
@@ -753,39 +1217,6 @@ export const AttendancePage: React.FC = () => {
                     />
                   </div>
                 </div>
-
-                <div className="grid grid-cols-3 gap-4">
-                  <div>
-                    <Label htmlFor="total_hours">Total Hours</Label>
-                    <Input
-                      id="total_hours"
-                      type="number"
-                      step="0.1"
-                      value={formData.total_hours}
-                      onChange={(e) => setFormData({ ...formData, total_hours: e.target.value })}
-                    />
-                  </div>
-                  <div>
-                    <Label htmlFor="overtime_hours">Overtime Hours</Label>
-                    <Input
-                      id="overtime_hours"
-                      type="number"
-                      step="0.1"
-                      value={formData.overtime_hours}
-                      onChange={(e) => setFormData({ ...formData, overtime_hours: e.target.value })}
-                    />
-                  </div>
-                  <div>
-                    <Label htmlFor="break_hours">Break Hours</Label>
-                    <Input
-                      id="break_hours"
-                      type="number"
-                      step="0.1"
-                      value={formData.break_hours}
-                      onChange={(e) => setFormData({ ...formData, break_hours: e.target.value })}
-                    />
-                  </div>
-                </div>
               </>
             )}
 
@@ -871,39 +1302,6 @@ export const AttendancePage: React.FC = () => {
                       type="time"
                       value={formData.clock_out_time}
                       onChange={(e) => setFormData({ ...formData, clock_out_time: e.target.value })}
-                    />
-                  </div>
-                </div>
-
-                <div className="grid grid-cols-3 gap-4">
-                  <div>
-                    <Label htmlFor="edit_total_hours">Total Hours</Label>
-                    <Input
-                      id="edit_total_hours"
-                      type="number"
-                      step="0.1"
-                      value={formData.total_hours}
-                      onChange={(e) => setFormData({ ...formData, total_hours: e.target.value })}
-                    />
-                  </div>
-                  <div>
-                    <Label htmlFor="edit_overtime_hours">Overtime Hours</Label>
-                    <Input
-                      id="edit_overtime_hours"
-                      type="number"
-                      step="0.1"
-                      value={formData.overtime_hours}
-                      onChange={(e) => setFormData({ ...formData, overtime_hours: e.target.value })}
-                    />
-                  </div>
-                  <div>
-                    <Label htmlFor="edit_break_hours">Break Hours</Label>
-                    <Input
-                      id="edit_break_hours"
-                      type="number"
-                      step="0.1"
-                      value={formData.break_hours}
-                      onChange={(e) => setFormData({ ...formData, break_hours: e.target.value })}
                     />
                   </div>
                 </div>

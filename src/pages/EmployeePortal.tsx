@@ -4,8 +4,12 @@ import { useAuth } from '@/contexts/AuthContext';
 import { useAttendance } from '@/contexts/AttendanceContext';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Badge } from '@/components/ui/badge';
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Clock, MapPin, Calendar, Users, AlertCircle, CheckCircle, RefreshCw, Building2, Trophy, Target, Zap, BarChart3, TrendingUp, Home, Activity, RotateCcw } from 'lucide-react';
 import { toast } from 'sonner';
 
@@ -37,6 +41,69 @@ interface AttendanceRecord {
   location_longitude?: number;
 }
 
+interface PayrollLedgerEntry {
+  date: string;
+  attendance: string;
+  clock_in_time?: string | null;
+  clock_out_time?: string | null;
+  amount: number;
+}
+
+interface PayrollLedgerData {
+  employee: {
+    id: number;
+    name: string;
+    employee_code?: string;
+    department?: string;
+  };
+  month: string;
+  total_amount: number;
+  summary?: {
+    present: number;
+    absent: number;
+    holiday: number;
+    half_day: number;
+    month_days?: number;
+  };
+  entries: PayrollLedgerEntry[];
+}
+
+interface LeaveSummaryItem {
+  leave_type: string;
+  description?: string;
+  is_paid: boolean;
+  leave_limit_period: 'month' | 'year';
+  limit_per_period: number;
+  accrued_periods: number;
+  accrued_total: number;
+  used_total: number;
+  used_current_period: number;
+  remaining_total: number;
+}
+
+interface LeaveSummaryData {
+  employee: {
+    id: number;
+    name: string;
+    hire_date: string;
+  };
+  as_of: string;
+  summary: LeaveSummaryItem[];
+}
+
+interface LeaveTypeOption {
+  id: number;
+  name: string;
+}
+
+interface LeaveRequest {
+  id: number;
+  leave_type: string;
+  start_date: string;
+  end_date: string;
+  status: 'approved' | 'pending' | 'rejected';
+}
+
 const EmployeePortal: React.FC = () => {
   const { user } = useAuth();
   const { todayAttendance, allAttendance, clockIn, clockOut, loading: attendanceLoading, refreshAttendance } = useAttendance();
@@ -46,6 +113,20 @@ const EmployeePortal: React.FC = () => {
   const [clockingOut, setClockingOut] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [currentTime, setCurrentTime] = useState(new Date());
+  const [ledgerMonth, setLedgerMonth] = useState(new Date().toISOString().slice(0, 7));
+  const [ledgerLoading, setLedgerLoading] = useState(false);
+  const [ledgerData, setLedgerData] = useState<PayrollLedgerData | null>(null);
+  const [leaveSummaryLoading, setLeaveSummaryLoading] = useState(false);
+  const [leaveSummaryData, setLeaveSummaryData] = useState<LeaveSummaryData | null>(null);
+  const [leaveTypes, setLeaveTypes] = useState<LeaveTypeOption[]>([]);
+  const [leaveRequests, setLeaveRequests] = useState<LeaveRequest[]>([]);
+  const [leaveRequestLoading, setLeaveRequestLoading] = useState(false);
+  const [submittingLeaveRequest, setSubmittingLeaveRequest] = useState(false);
+  const [leaveRequestForm, setLeaveRequestForm] = useState({
+    leave_type: '',
+    start_date: '',
+    end_date: '',
+  });
   
   // Get current user's attendance records
   const userTodayAttendance = Array.isArray(todayAttendance) 
@@ -194,6 +275,7 @@ const EmployeePortal: React.FC = () => {
       late: { color: 'bg-yellow-100 text-yellow-800', icon: AlertCircle },
       absent: { color: 'bg-red-100 text-red-800', icon: AlertCircle },
       half_day: { color: 'bg-blue-100 text-blue-800', icon: Clock },
+      holiday: { color: 'bg-purple-100 text-purple-800', icon: Calendar },
       on_leave: { color: 'bg-purple-100 text-purple-800', icon: Calendar },
     };
 
@@ -207,6 +289,167 @@ const EmployeePortal: React.FC = () => {
       </Badge>
     );
   };
+
+  const formatCurrency = (amount: number) => {
+    return new Intl.NumberFormat(undefined, { maximumFractionDigits: 2 }).format(amount || 0);
+  };
+
+  const parseLedgerDate = (dateString: string) => {
+    const [year, month, day] = String(dateString).split('-').map(Number);
+    return new Date(year, (month || 1) - 1, day || 1);
+  };
+
+  const getDayName = (dateString: string) => {
+    return parseLedgerDate(dateString).toLocaleDateString(undefined, { weekday: 'long' });
+  };
+
+  const formatLedgerDate = (dateString: string) => {
+    return parseLedgerDate(dateString).toLocaleDateString();
+  };
+
+  const loadEmployeeLedger = async () => {
+    if (!user?.id || !ledgerMonth) return;
+
+    try {
+      setLedgerLoading(true);
+      const response = await api.get(`/payroll/ledger?employee_id=${user.id}&month=${ledgerMonth}`);
+      setLedgerData(response.data);
+    } catch (err: any) {
+      console.error('Error loading employee ledger:', err);
+      toast.error(err.response?.data?.error || 'Failed to load employee ledger');
+      setLedgerData(null);
+    } finally {
+      setLedgerLoading(false);
+    }
+  };
+
+  const loadLeaveSummary = async () => {
+    if (!user?.id) return;
+
+    try {
+      setLeaveSummaryLoading(true);
+      const response = await api.get(`/leaves/summary?employee_id=${user.id}`);
+      setLeaveSummaryData(response.data);
+    } catch (err: any) {
+      console.error('Error loading leave summary:', err);
+      toast.error(err.response?.data?.error || 'Failed to load leave summary');
+      setLeaveSummaryData(null);
+    } finally {
+      setLeaveSummaryLoading(false);
+    }
+  };
+
+  const loadLeaveTypes = async () => {
+    try {
+      const response = await api.get('/leaves/types');
+      setLeaveTypes(response.data || []);
+    } catch (err) {
+      console.error('Error loading leave types:', err);
+    }
+  };
+
+  const loadLeaveRequests = async () => {
+    try {
+      setLeaveRequestLoading(true);
+      const response = await api.get('/leaves');
+      setLeaveRequests(response.data || []);
+    } catch (err: any) {
+      console.error('Error loading leave requests:', err);
+      toast.error(err.response?.data?.error || 'Failed to load leave requests');
+      setLeaveRequests([]);
+    } finally {
+      setLeaveRequestLoading(false);
+    }
+  };
+
+  const handleApplyLeave = async () => {
+    try {
+      if (!leaveRequestForm.leave_type || !leaveRequestForm.start_date || !leaveRequestForm.end_date) {
+        toast.error('Please select leave type, start date, and end date');
+        return;
+      }
+
+      const start = new Date(leaveRequestForm.start_date);
+      const end = new Date(leaveRequestForm.end_date);
+      if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime()) || end < start) {
+        toast.error('Invalid leave date range');
+        return;
+      }
+
+      const requestedDays = Math.floor((end.getTime() - start.getTime()) / (24 * 60 * 60 * 1000)) + 1;
+      const selectedLeaveSummary = leaveSummaryData?.summary?.find(
+        (item) => item.leave_type === leaveRequestForm.leave_type
+      );
+      const availableDays = Number(selectedLeaveSummary?.remaining_total || 0);
+
+      if (!selectedLeaveSummary || availableDays <= 0) {
+        toast.error('You do not have available leave for this leave type');
+        return;
+      }
+
+      if (requestedDays > availableDays) {
+        toast.error(`You have available leave count ${availableDays} day(s) only`);
+        return;
+      }
+
+      setSubmittingLeaveRequest(true);
+      await api.post('/leaves', {
+        leave_type: leaveRequestForm.leave_type,
+        start_date: leaveRequestForm.start_date,
+        end_date: leaveRequestForm.end_date,
+      });
+
+      toast.success('Leave request submitted successfully');
+      setLeaveRequestForm({ leave_type: '', start_date: '', end_date: '' });
+      await Promise.all([loadLeaveRequests(), loadLeaveSummary()]);
+    } catch (err: any) {
+      console.error('Error applying leave:', err);
+      toast.error(err.response?.data?.error || 'Failed to submit leave request');
+    } finally {
+      setSubmittingLeaveRequest(false);
+    }
+  };
+
+  useEffect(() => {
+    if (user?.id) {
+      loadEmployeeLedger();
+      loadLeaveSummary();
+      loadLeaveTypes();
+      loadLeaveRequests();
+    }
+  }, [user?.id, ledgerMonth]);
+
+  const getLeaveStatusBadge = (status: string) => {
+    if (status === 'approved') return <Badge className="bg-green-100 text-green-800">APPROVED</Badge>;
+    if (status === 'rejected') return <Badge className="bg-red-100 text-red-800">REJECTED</Badge>;
+    return <Badge className="bg-yellow-100 text-yellow-800">PENDING</Badge>;
+  };
+
+  const selectedLeaveSummary = leaveSummaryData?.summary?.find(
+    (item) => item.leave_type === leaveRequestForm.leave_type
+  );
+  const availableLeaveDays = Number(selectedLeaveSummary?.remaining_total || 0);
+
+  const requestedLeaveDays = (() => {
+    if (!leaveRequestForm.start_date || !leaveRequestForm.end_date) return 0;
+    const start = new Date(leaveRequestForm.start_date);
+    const end = new Date(leaveRequestForm.end_date);
+    if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime()) || end < start) return 0;
+    return Math.floor((end.getTime() - start.getTime()) / (24 * 60 * 60 * 1000)) + 1;
+  })();
+
+  const hasInvalidDateRange = Boolean(leaveRequestForm.start_date && leaveRequestForm.end_date) && requestedLeaveDays === 0;
+  const hasAnyLeaveBalance = availableLeaveDays > 0;
+  const isOverLimit = requestedLeaveDays > 0 && requestedLeaveDays > availableLeaveDays;
+  const remainingAfterRequest = Math.max(0, availableLeaveDays - requestedLeaveDays);
+  const canSubmitLeaveRequest = Boolean(
+    leaveRequestForm.leave_type &&
+    leaveRequestForm.start_date &&
+    leaveRequestForm.end_date &&
+    requestedLeaveDays > 0 &&
+    hasAnyLeaveBalance &&
+    !isOverLimit
+  );
 
   if (loading) {
     return (
@@ -251,11 +494,14 @@ const EmployeePortal: React.FC = () => {
   const initials = `${first_name?.[0] ?? ''}${last_name?.[0] ?? ''}`.toUpperCase();
   const isClockInDisabled = userTodayAttendance?.clock_in_time && !userTodayAttendance?.clock_out_time;
   const isClockOutDisabled = !userTodayAttendance?.clock_in_time || userTodayAttendance?.clock_out_time;
+  const weeklyPresent = userRecentAttendance.filter(r => r.status === 'present').length;
+  const weeklyTrackedDays = userRecentAttendance.length;
+  const weeklyOnTimeRate = weeklyTrackedDays > 0 ? Math.round((weeklyPresent / weeklyTrackedDays) * 100) : 0;
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50 to-indigo-50">
+    <div className="min-h-screen bg-slate-50">
       {/* Hero Header Section */}
-      <div className="relative bg-gradient-to-r from-slate-900 via-blue-900 to-indigo-900 text-white overflow-hidden">
+      <div className="relative bg-gradient-to-r from-slate-800 via-indigo-800 to-blue-800 text-white overflow-hidden">
         <div className="absolute inset-0 bg-black/20"></div>
         <div className="absolute inset-0 opacity-50">
           <div className="w-full h-full bg-gradient-to-br from-transparent via-white/5 to-transparent"></div>
@@ -314,57 +560,57 @@ const EmployeePortal: React.FC = () => {
       </div>
 
       {/* Main Dashboard Content */}
-      <div className="container mx-auto px-6 -mt-6 relative z-10">
+      <div className="container mx-auto max-w-7xl px-6 -mt-6 relative z-10">
         {/* Stats Overview Cards */}
         <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
-          <Card className="bg-gradient-to-br from-green-500 to-emerald-600 text-white border-0 shadow-lg hover:shadow-xl transition-all duration-300 hover:scale-105">
+          <Card className="bg-white border border-slate-200 shadow-sm hover:shadow-md transition-all duration-300">
             <CardContent className="p-6">
               <div className="flex items-center justify-between">
                 <div>
-                  <p className="text-green-100 text-sm font-medium">Hours Today</p>
-                  <p className="text-2xl font-bold">{formatDuration(userTodayAttendance?.total_hours)}</p>
+                  <p className="text-slate-500 text-sm font-medium">Hours Today</p>
+                  <p className="text-2xl font-bold text-emerald-700">{formatDuration(userTodayAttendance?.total_hours)}</p>
                 </div>
-                <div className="bg-white/20 rounded-full p-3">
-                  <Clock className="w-6 h-6" />
+                <div className="bg-emerald-100 rounded-full p-3">
+                  <Clock className="w-6 h-6 text-emerald-700" />
                 </div>
               </div>
             </CardContent>
           </Card>
           
-          <Card className="bg-gradient-to-br from-blue-500 to-cyan-600 text-white border-0 shadow-lg hover:shadow-xl transition-all duration-300 hover:scale-105">
+          <Card className="bg-white border border-slate-200 shadow-sm hover:shadow-md transition-all duration-300">
             <CardContent className="p-6">
               <div className="flex items-center justify-between">
                 <div>
-                  <p className="text-blue-100 text-sm font-medium">This Week</p>
-                  <p className="text-2xl font-bold">{userRecentAttendance.length} Days</p>
+                  <p className="text-slate-500 text-sm font-medium">Tracked Days</p>
+                  <p className="text-2xl font-bold text-blue-700">{weeklyTrackedDays} Days</p>
                 </div>
-                <div className="bg-white/20 rounded-full p-3">
-                  <BarChart3 className="w-6 h-6" />
+                <div className="bg-blue-100 rounded-full p-3">
+                  <BarChart3 className="w-6 h-6 text-blue-700" />
                 </div>
               </div>
             </CardContent>
           </Card>
           
-          <Card className="bg-gradient-to-br from-purple-500 to-violet-600 text-white border-0 shadow-lg hover:shadow-xl transition-all duration-300 hover:scale-105">
+          <Card className="bg-white border border-slate-200 shadow-sm hover:shadow-md transition-all duration-300">
             <CardContent className="p-6">
               <div className="flex items-center justify-between">
                 <div>
-                  <p className="text-purple-100 text-sm font-medium">Performance</p>
-                  <p className="text-2xl font-bold">Excellent</p>
+                  <p className="text-slate-500 text-sm font-medium">On-Time Rate</p>
+                  <p className="text-2xl font-bold text-violet-700">{weeklyOnTimeRate}%</p>
                 </div>
-                <div className="bg-white/20 rounded-full p-3">
-                  <Trophy className="w-6 h-6" />
+                <div className="bg-violet-100 rounded-full p-3">
+                  <Trophy className="w-6 h-6 text-violet-700" />
                 </div>
               </div>
             </CardContent>
           </Card>
           
-          <Card className="bg-gradient-to-br from-orange-500 to-red-600 text-white border-0 shadow-lg hover:shadow-xl transition-all duration-300 hover:scale-105">
+          <Card className="bg-white border border-slate-200 shadow-sm hover:shadow-md transition-all duration-300">
             <CardContent className="p-6">
               <div className="flex items-center justify-between">
                 <div>
-                  <p className="text-orange-100 text-sm font-medium">Current Time</p>
-                  <p className="text-xl font-bold font-mono">
+                  <p className="text-slate-500 text-sm font-medium">Current Time</p>
+                  <p className="text-xl font-bold font-mono text-rose-700">
                     {currentTime.toLocaleTimeString('en-US', {
                       hour: '2-digit',
                       minute: '2-digit',
@@ -372,8 +618,8 @@ const EmployeePortal: React.FC = () => {
                     })}
                   </p>
                 </div>
-                <div className="bg-white/20 rounded-full p-3">
-                  <Activity className="w-6 h-6" />
+                <div className="bg-rose-100 rounded-full p-3">
+                  <Activity className="w-6 h-6 text-rose-700" />
                 </div>
               </div>
             </CardContent>
@@ -473,6 +719,163 @@ const EmployeePortal: React.FC = () => {
                       <div className="font-bold">{currentTime.getDay() + 1}/7</div>
                     </div>
                   </div>
+                </div>
+              </CardContent>
+            </Card>
+
+            {/* Leave Summary Card */}
+            <Card className="bg-white/80 backdrop-blur-sm border-0 shadow-xl hover:shadow-2xl transition-all duration-300">
+              <CardHeader className="bg-gradient-to-r from-emerald-600 to-teal-600 text-white rounded-t-lg">
+                <CardTitle className="text-lg flex items-center justify-between gap-2">
+                  <span className="flex items-center gap-2">
+                    <Calendar className="w-5 h-5" />
+                    Leave Summary
+                  </span>
+                  <Button
+                    onClick={loadLeaveSummary}
+                    variant="secondary"
+                    size="sm"
+                    className="bg-white/20 hover:bg-white/30 text-white border-white/30"
+                    disabled={leaveSummaryLoading}
+                  >
+                    {leaveSummaryLoading ? 'Loading...' : 'Refresh'}
+                  </Button>
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="p-4 space-y-3">
+                {leaveSummaryLoading ? (
+                  <div className="text-sm text-slate-500">Loading leave summary...</div>
+                ) : leaveSummaryData?.summary?.length ? (
+                  leaveSummaryData.summary.map((item) => (
+                    <div key={item.leave_type} className="rounded-lg border p-3 bg-slate-50">
+                      <div className="flex items-center justify-between">
+                        <p className="font-semibold text-slate-800">{item.leave_type}</p>
+                        <Badge className="capitalize">{item.leave_limit_period}</Badge>
+                      </div>
+                      <div className="mt-2 grid grid-cols-2 gap-2 text-xs">
+                        <div className="rounded bg-white p-2 border">
+                          <p className="text-slate-500">Per {item.leave_limit_period}</p>
+                          <p className="font-bold text-slate-800">{item.limit_per_period} day(s)</p>
+                        </div>
+                        <div className="rounded bg-white p-2 border">
+                          <p className="text-slate-500">Accrued</p>
+                          <p className="font-bold text-slate-800">{item.accrued_total} day(s)</p>
+                        </div>
+                        <div className="rounded bg-white p-2 border">
+                          <p className="text-slate-500">Used</p>
+                          <p className="font-bold text-rose-700">{item.used_total} day(s)</p>
+                        </div>
+                        <div className="rounded bg-emerald-50 p-2 border border-emerald-200">
+                          <p className="text-emerald-700">Available</p>
+                          <p className="font-bold text-emerald-800">{item.remaining_total} day(s)</p>
+                        </div>
+                      </div>
+                      <p className="text-[11px] text-slate-500 mt-2">
+                        {item.leave_limit_period === 'month'
+                          ? `Monthly accrual: each month adds ${item.limit_per_period} day(s).`
+                          : `Yearly accrual: each year adds ${item.limit_per_period} day(s).`}
+                      </p>
+                    </div>
+                  ))
+                ) : (
+                  <div className="text-sm text-slate-500">No leave summary available yet.</div>
+                )}
+              </CardContent>
+            </Card>
+
+            {/* Apply Leave Request Card (Sidebar) */}
+            <Card className="bg-white/80 backdrop-blur-sm border-0 shadow-xl hover:shadow-2xl transition-all duration-300">
+              <CardHeader className="bg-gradient-to-r from-violet-700 to-purple-700 text-white rounded-t-lg">
+                <CardTitle className="text-lg flex items-center gap-2">
+                  <Calendar className="w-5 h-5" />
+                  Apply Leave Request
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="p-4 space-y-3">
+                <div>
+                  <Label>Leave Type</Label>
+                  <Select
+                    value={leaveRequestForm.leave_type}
+                    onValueChange={(value) => setLeaveRequestForm((prev) => ({ ...prev, leave_type: value }))}
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="Select leave type" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {leaveTypes.map((lt) => (
+                        <SelectItem key={lt.id} value={lt.name}>
+                          {lt.name}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                <div className="grid grid-cols-1 gap-3">
+                  <div>
+                    <Label>Start Date</Label>
+                    <Input
+                      type="date"
+                      value={leaveRequestForm.start_date}
+                      onChange={(e) => setLeaveRequestForm((prev) => ({ ...prev, start_date: e.target.value }))}
+                    />
+                  </div>
+                  <div>
+                    <Label>End Date</Label>
+                    <Input
+                      type="date"
+                      value={leaveRequestForm.end_date}
+                      onChange={(e) => setLeaveRequestForm((prev) => ({ ...prev, end_date: e.target.value }))}
+                    />
+                  </div>
+                </div>
+
+                <div className="rounded-md border bg-slate-50 p-3 text-sm space-y-1">
+                  <p><span className="font-medium">Selected days:</span> {requestedLeaveDays || 0}</p>
+                  <p><span className="font-medium">Available days:</span> {availableLeaveDays}</p>
+                  <p><span className="font-medium">Remaining after request:</span> {remainingAfterRequest}</p>
+
+                  {hasInvalidDateRange && (
+                    <p className="text-red-600">Invalid date range. End date must be same or after start date.</p>
+                  )}
+                  {!selectedLeaveSummary && leaveRequestForm.leave_type && (
+                    <p className="text-red-600">No leave balance information found for selected leave type.</p>
+                  )}
+                  {selectedLeaveSummary && !hasAnyLeaveBalance && (
+                    <p className="text-red-600">You do not have leave for apply.</p>
+                  )}
+                  {isOverLimit && (
+                    <p className="text-red-600">You have available leave count only {availableLeaveDays} day(s). Please select within this limit.</p>
+                  )}
+                </div>
+
+                {canSubmitLeaveRequest ? (
+                  <Button onClick={handleApplyLeave} disabled={submittingLeaveRequest} className="w-full">
+                    {submittingLeaveRequest ? 'Submitting...' : 'Submit Leave Request'}
+                  </Button>
+                ) : null}
+
+                <div className="pt-2 border-t">
+                  <h4 className="font-semibold mb-2">My Leave Requests</h4>
+                  {leaveRequestLoading ? (
+                    <p className="text-sm text-slate-500">Loading leave requests...</p>
+                  ) : leaveRequests.length === 0 ? (
+                    <p className="text-sm text-slate-500">No leave requests yet.</p>
+                  ) : (
+                    <div className="space-y-2">
+                      {leaveRequests.slice(0, 8).map((lr) => (
+                        <div key={lr.id} className="flex items-center justify-between rounded border p-2 bg-slate-50">
+                          <div>
+                            <p className="text-sm font-medium">{lr.leave_type}</p>
+                            <p className="text-xs text-slate-500">
+                              {new Date(lr.start_date).toLocaleDateString()} - {new Date(lr.end_date).toLocaleDateString()}
+                            </p>
+                          </div>
+                          {getLeaveStatusBadge(lr.status)}
+                        </div>
+                      ))}
+                    </div>
+                  )}
                 </div>
               </CardContent>
             </Card>
@@ -649,65 +1052,86 @@ const EmployeePortal: React.FC = () => {
               </CardContent>
             </Card>
 
-            {/* Recent Attendance - Enhanced */}
+            {/* Employee Ledger - Monthly (Same logic as Payroll page) */}
             <Card className="bg-white/80 backdrop-blur-sm border-0 shadow-xl hover:shadow-2xl transition-all duration-300">
               <CardHeader className="bg-gradient-to-r from-slate-700 to-slate-800 text-white rounded-t-lg">
                 <CardTitle className="flex items-center gap-3 text-xl">
                   <div className="bg-white/20 rounded-full p-2">
                     <BarChart3 className="w-6 h-6" />
                   </div>
-                  Recent Attendance History
-                  <Badge className="bg-white/20 text-white border-white/30 ml-auto">
-                    Last 7 Days
-                  </Badge>
+                  Employee Ledger
+                  <Badge className="bg-white/20 text-white border-white/30 ml-auto">Monthly</Badge>
                 </CardTitle>
               </CardHeader>
               <CardContent className="p-6">
-                {userRecentAttendance.length > 0 ? (
+                <div className="flex flex-col md:flex-row gap-3 md:items-end mb-4">
+                  <div>
+                    <label className="text-sm text-slate-600">Ledger Month</label>
+                    <Input
+                      type="month"
+                      value={ledgerMonth}
+                      onChange={(e) => setLedgerMonth(e.target.value)}
+                      className="w-[220px]"
+                    />
+                  </div>
+                  <Button onClick={loadEmployeeLedger} disabled={ledgerLoading} variant="outline">
+                    {ledgerLoading ? 'Loading...' : 'Refresh Ledger'}
+                  </Button>
+                </div>
+
+                {ledgerLoading ? (
+                  <div className="text-center py-8 text-slate-500">Loading employee ledger...</div>
+                ) : ledgerData ? (
                   <div className="space-y-4">
-                    {userRecentAttendance.map((record, index) => (
-                      <div 
-                        key={record.id} 
-                        className="group relative overflow-hidden bg-gradient-to-r from-slate-50 to-gray-50 hover:from-slate-100 hover:to-gray-100 p-5 rounded-xl border border-slate-200 hover:border-slate-300 transition-all duration-300 hover:shadow-lg"
-                        style={{ animationDelay: `${index * 100}ms` }}
-                      >
-                        <div className="absolute top-0 left-0 w-2 h-full bg-gradient-to-b from-blue-500 to-indigo-500 group-hover:w-3 transition-all duration-300"></div>
-                        <div className="flex items-center justify-between">
-                          <div className="flex items-center gap-4">
-                            <div className="bg-white rounded-full p-3 shadow-md group-hover:shadow-lg transition-shadow duration-300">
-                              <Calendar className="w-5 h-5 text-slate-600" />
-                            </div>
-                            <div>
-                              <div className="font-semibold text-slate-800 text-lg">
-                                {new Date(record.date).toLocaleDateString('en-US', {
-                                  weekday: 'long',
-                                  month: 'short',
-                                  day: 'numeric',
-                                })}
-                              </div>
-                              <div className="text-slate-600 text-sm mt-1">
-                                {formatTime(record.clock_in_time)} - {formatTime(record.clock_out_time)}
-                              </div>
-                              <div className="flex items-center gap-2 mt-2">
-                                <span className="text-sm font-medium text-slate-700">Duration:</span>
-                                <span className="bg-blue-100 text-blue-800 px-2 py-1 rounded-full text-xs font-medium">
-                                  {formatDuration(record.total_hours)}
-                                </span>
-                              </div>
-                            </div>
-                          </div>
-                          <div className="flex flex-col items-end gap-2">
-                            {getStatusBadge(record.status)}
-                            {record.late_minutes > 0 && (
-                              <div className="flex items-center gap-1 bg-yellow-100 text-yellow-700 px-2 py-1 rounded-full text-xs">
-                                <AlertCircle className="w-3 h-3" />
-                                +{Math.round(record.late_minutes)}m late
-                              </div>
-                            )}
-                          </div>
+                    {ledgerData.summary && (
+                      <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
+                        <div className="rounded-lg border bg-green-50 p-3 text-center">
+                          <p className="text-xs text-green-700">Present</p>
+                          <p className="text-xl font-bold text-green-800">{ledgerData.summary.present}</p>
+                        </div>
+                        <div className="rounded-lg border bg-red-50 p-3 text-center">
+                          <p className="text-xs text-red-700">Absent</p>
+                          <p className="text-xl font-bold text-red-800">{ledgerData.summary.absent}</p>
+                        </div>
+                        <div className="rounded-lg border bg-purple-50 p-3 text-center">
+                          <p className="text-xs text-purple-700">Holiday</p>
+                          <p className="text-xl font-bold text-purple-800">{ledgerData.summary.holiday}</p>
+                        </div>
+                        <div className="rounded-lg border bg-blue-50 p-3 text-center">
+                          <p className="text-xs text-blue-700">Half Day</p>
+                          <p className="text-xl font-bold text-blue-800">{ledgerData.summary.half_day}</p>
+                        </div>
+                        <div className="rounded-lg border bg-slate-100 p-3 text-center">
+                          <p className="text-xs text-slate-600">Total Amount</p>
+                          <p className="text-xl font-bold text-slate-800">{formatCurrency(ledgerData.total_amount)}</p>
                         </div>
                       </div>
-                    ))}
+                    )}
+
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead>Date</TableHead>
+                          <TableHead>Day</TableHead>
+                          <TableHead>In</TableHead>
+                          <TableHead>Out</TableHead>
+                          <TableHead>Attendance</TableHead>
+                          <TableHead className="text-right">Amount</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {ledgerData.entries.map((entry) => (
+                          <TableRow key={entry.date}>
+                            <TableCell>{formatLedgerDate(entry.date)}</TableCell>
+                            <TableCell>{getDayName(entry.date)}</TableCell>
+                            <TableCell>{formatTime(entry.clock_in_time)}</TableCell>
+                            <TableCell>{formatTime(entry.clock_out_time)}</TableCell>
+                            <TableCell>{getStatusBadge(entry.attendance)}</TableCell>
+                            <TableCell className="text-right font-medium">{formatCurrency(entry.amount)}</TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
                   </div>
                 ) : (
                   <div className="text-center py-12">
@@ -717,8 +1141,8 @@ const EmployeePortal: React.FC = () => {
                         <Clock className="w-12 h-12 text-slate-400" />
                       </div>
                     </div>
-                    <h3 className="text-lg font-semibold text-slate-700 mb-2">No Recent Records</h3>
-                    <p className="text-slate-500">Start clocking in to see your attendance history here!</p>
+                    <h3 className="text-lg font-semibold text-slate-700 mb-2">No Ledger Data</h3>
+                    <p className="text-slate-500">No payroll ledger entries found for selected month.</p>
                   </div>
                 )}
               </CardContent>

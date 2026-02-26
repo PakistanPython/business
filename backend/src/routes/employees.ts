@@ -247,7 +247,7 @@ router.put('/:id', async (req: Request, res: Response) => {
     // Dynamically build the update query
     const fieldsToUpdate: { [key: string]: any } = {};
     const allowedFields = [
-      'first_name', 'last_name', 'email', 'phone', 'address', 'employment_type',
+      'first_name', 'last_name', 'email', 'phone', 'address', 'hire_date', 'employment_type',
       'salary_type', 'base_salary', 'daily_wage', 'hourly_rate', 'department',
       'position', 'status'
     ];

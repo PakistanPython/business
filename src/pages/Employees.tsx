@@ -1,10 +1,10 @@
 import React, { useState, useEffect } from 'react';
-import { Plus, Search, Filter, Edit, Trash2, Eye, MoreHorizontal, Users, UserCheck, UserX, Building, Clock, Calendar, Settings, FileText, Activity } from 'lucide-react';
+import { Plus, Search, Edit, Trash2, Eye, MoreHorizontal, Users, UserCheck, UserX, Building, Clock, Calendar, Settings, FileText, Activity, BarChart3, ArrowRight } from 'lucide-react';
 import { Button } from '../components/ui/button';
 import { Input } from '../components/ui/input';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../components/ui/card';
 import { Badge } from '../components/ui/badge';
-import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from '../components/ui/dialog';
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '../components/ui/dialog';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '../components/ui/dropdown-menu';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../components/ui/select';
 import { Label } from '../components/ui/label';
@@ -12,7 +12,7 @@ import { Textarea } from '../components/ui/textarea';
 import { Switch } from '../components/ui/switch';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '../components/ui/table';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '../components/ui/tabs';
-import { useAuth } from '../contexts/AuthContext';
+import { Link } from 'react-router-dom';
 import { api } from '../lib/api';
 import toast from 'react-hot-toast';
 import { usePreferences } from '../contexts/PreferencesContext';
@@ -99,26 +99,14 @@ interface LeaveType {
   name: string;
   description: string;
   max_days_per_year: number;
-  max_days_per_month: number;
-  carry_forward: boolean;
+  max_days_per_month?: number;
+  leave_limit_period?: 'month' | 'year';
+  carry_forward?: boolean;
   is_paid: boolean;
-  requires_approval: boolean;
-  advance_notice_days: number;
-  color: string;
+  requires_approval?: boolean;
+  advance_notice_days?: number;
+  color?: string;
   business_id: number | null;
-}
-
-interface LeaveBalance {
-  id: number;
-  employee_id: number;
-  leave_type_id: number;
-  year: number;
-  total_days: number;
-  used_days: number;
-  remaining_days: number;
-  carried_forward: number;
-  leave_type_name: string;
-  leave_type_color: string;
 }
 
 interface AttendanceRule {
@@ -168,11 +156,8 @@ interface LeaveTypeFormData {
   description: string;
   max_days_per_year: number;
   max_days_per_month: number;
-  carry_forward: boolean;
+  leave_limit_period: 'month' | 'year';
   is_paid: boolean;
-  requires_approval: boolean;
-  advance_notice_days: number;
-  color: string;
 }
 
 interface AttendanceRuleFormData {
@@ -205,6 +190,7 @@ const initialFormData: EmployeeFormData = {
   department: '',
   position: '',
   create_login: true,
+  password: '',
 };
 
 const initialScheduleFormData: ScheduleFormData = {
@@ -236,11 +222,8 @@ const initialLeaveTypeFormData: LeaveTypeFormData = {
   description: '',
   max_days_per_year: 21,
   max_days_per_month: 2,
-  carry_forward: false,
+  leave_limit_period: 'year',
   is_paid: true,
-  requires_approval: true,
-  advance_notice_days: 1,
-  color: '#3b82f6',
 };
 
 const initialAttendanceRuleFormData: AttendanceRuleFormData = {
@@ -260,7 +243,6 @@ const initialAttendanceRuleFormData: AttendanceRuleFormData = {
 
 export const EmployeesPage: React.FC = () => {
   const { formatCurrency } = usePreferences();
-  const { user } = useAuth();
   const [employees, setEmployees] = useState<Employee[]>([]);
   const [stats, setStats] = useState<EmployeeStats | null>(null);
   const [loading, setLoading] = useState(true);
@@ -276,7 +258,6 @@ export const EmployeesPage: React.FC = () => {
   const [workSchedules, setWorkSchedules] = useState<WorkSchedule[]>([]);
   const [leaveTypes, setLeaveTypes] = useState<LeaveType[]>([]);
   const [attendanceRules, setAttendanceRules] = useState<AttendanceRule[]>([]);
-  const [selectedEmployeeForSchedule, setSelectedEmployeeForSchedule] = useState<Employee | null>(null);
   const [isScheduleDialogOpen, setIsScheduleDialogOpen] = useState(false);
   const [isLeaveTypeDialogOpen, setIsLeaveTypeDialogOpen] = useState(false);
   const [isAttendanceRuleDialogOpen, setIsAttendanceRuleDialogOpen] = useState(false);
@@ -301,6 +282,23 @@ export const EmployeesPage: React.FC = () => {
   const handleScheduleTimeChange = (day: string, part: 'start' | 'end', value: string) => {
     const key = `${day.toLowerCase()}_${part}` as keyof ScheduleFormData;
     setScheduleFormData(prev => ({ ...prev, [key]: value }));
+  };
+
+  const isScheduleDayEnabled = (day: string): boolean => {
+    const startKey = `${day.toLowerCase()}_start` as keyof ScheduleFormData;
+    const endKey = `${day.toLowerCase()}_end` as keyof ScheduleFormData;
+    return Boolean(scheduleFormData[startKey] && scheduleFormData[endKey]);
+  };
+
+  const handleScheduleDayToggle = (day: string, checked: boolean) => {
+    const startKey = `${day.toLowerCase()}_start` as keyof ScheduleFormData;
+    const endKey = `${day.toLowerCase()}_end` as keyof ScheduleFormData;
+
+    setScheduleFormData(prev => ({
+      ...prev,
+      [startKey]: checked ? (prev[startKey] || '09:00') : null,
+      [endKey]: checked ? (prev[endKey] || '17:00') : null,
+    }));
   };
 
   const getScheduleTimeValue = (day: string, part: 'start' | 'end'): string => {
@@ -367,7 +365,15 @@ export const EmployeesPage: React.FC = () => {
 
   const handleCreateWorkSchedule = async (scheduleData: any) => {
     try {
-      await api.post('/work-schedules', scheduleData);
+      const payload = {
+        ...scheduleData,
+        employee_id: parseInt(scheduleData.employee_id, 10),
+        break_duration: Number(scheduleData.break_duration) || 0,
+        weekly_hours: Number(scheduleData.weekly_hours) || 0,
+        is_active: Boolean(scheduleData.is_active),
+      };
+
+      await api.post('/work-schedules', payload);
       toast.success('Work schedule created successfully!');
       fetchWorkSchedules();
       setIsScheduleDialogOpen(false);
@@ -380,7 +386,15 @@ export const EmployeesPage: React.FC = () => {
   const handleUpdateWorkSchedule = async (scheduleData: any) => {
     if (!selectedSchedule) return;
     try {
-      await api.put(`/work-schedules/${selectedSchedule.id}`, scheduleData);
+      const payload = {
+        ...scheduleData,
+        employee_id: parseInt(scheduleData.employee_id, 10),
+        break_duration: Number(scheduleData.break_duration) || 0,
+        weekly_hours: Number(scheduleData.weekly_hours) || 0,
+        is_active: Boolean(scheduleData.is_active),
+      };
+
+      await api.put(`/work-schedules/${selectedSchedule.id}`, payload);
       toast.success('Work schedule updated successfully!');
       fetchWorkSchedules();
       setIsScheduleDialogOpen(false);
@@ -393,7 +407,13 @@ export const EmployeesPage: React.FC = () => {
 
   const handleCreateLeaveType = async (leaveTypeData: any) => {
     try {
-      await api.post('/leaves/types', leaveTypeData);
+      const payload = {
+        ...leaveTypeData,
+        max_days_per_year: leaveTypeData.leave_limit_period === 'year' ? Number(leaveTypeData.max_days_per_year || 0) : null,
+        max_days_per_month: leaveTypeData.leave_limit_period === 'month' ? Number(leaveTypeData.max_days_per_month || 0) : null,
+      };
+
+      await api.post('/leaves/types', payload);
       toast.success('Leave type created successfully!');
       fetchLeaveTypes();
       setIsLeaveTypeDialogOpen(false);
@@ -407,7 +427,13 @@ export const EmployeesPage: React.FC = () => {
   const handleUpdateLeaveType = async (leaveTypeData: any) => {
     if (!selectedLeaveType) return;
     try {
-      await api.put(`/leaves/types/${selectedLeaveType.id}`, leaveTypeData);
+      const payload = {
+        ...leaveTypeData,
+        max_days_per_year: leaveTypeData.leave_limit_period === 'year' ? Number(leaveTypeData.max_days_per_year || 0) : null,
+        max_days_per_month: leaveTypeData.leave_limit_period === 'month' ? Number(leaveTypeData.max_days_per_month || 0) : null,
+      };
+
+      await api.put(`/leaves/types/${selectedLeaveType.id}`, payload);
       toast.success('Leave type updated successfully!');
       fetchLeaveTypes();
       setIsLeaveTypeDialogOpen(false);
@@ -447,6 +473,11 @@ export const EmployeesPage: React.FC = () => {
     setSubmitting(true);
 
     try {
+      if (!formData.password) {
+        toast.error('Password is required for employee login');
+        return;
+      }
+
       const employeeData = {
         ...formData,
         base_salary: parseFloat(formData.base_salary),
@@ -454,16 +485,8 @@ export const EmployeesPage: React.FC = () => {
         hourly_rate: formData.hourly_rate ? parseFloat(formData.hourly_rate) : undefined,
       };
 
-      const response = await api.post('/employees', employeeData);
-      
-      if (response.data.loginCredentials) {
-        toast.success(
-          `Employee created successfully! Login credentials: ${response.data.loginCredentials.username} / ${response.data.loginCredentials.temporaryPassword}`,
-          { duration: 8000 }
-        );
-      } else {
-        toast.success('Employee created successfully!');
-      }
+      await api.post('/employees', employeeData);
+      toast.success('Employee created successfully!');
 
       setIsCreateDialogOpen(false);
       setFormData(initialFormData);
@@ -522,12 +545,14 @@ export const EmployeesPage: React.FC = () => {
   };
 
   const handleResetPassword = async (employee: Employee) => {
+    const newPassword = window.prompt(`Enter a new password for ${employee.first_name} ${employee.last_name}:`);
+    if (!newPassword) {
+      return;
+    }
+
     try {
-      const response = await api.post(`/employees/${employee.id}/reset-password`);
-      toast.success(
-        `Password reset successfully! New temporary password: ${response.data.temporaryPassword}`,
-        { duration: 8000 }
-      );
+      await api.post(`/employees/${employee.id}/reset-password`, { password: newPassword });
+      toast.success('Password reset successfully!');
     } catch (error: any) {
       console.error('Error resetting password:', error);
       toast.error(error.response?.data?.error || 'Failed to reset password');
@@ -536,13 +561,14 @@ export const EmployeesPage: React.FC = () => {
 
   const openEditDialog = (employee: Employee) => {
     setSelectedEmployee(employee);
+    const normalizedHireDate = employee.hire_date ? String(employee.hire_date).split('T')[0] : '';
     setFormData({
       first_name: employee.first_name,
       last_name: employee.last_name,
       email: employee.email,
       phone: employee.phone || '',
       address: employee.address || '',
-      hire_date: employee.hire_date,
+      hire_date: normalizedHireDate,
       employment_type: employee.employment_type,
       salary_type: employee.salary_type,
       base_salary: employee.base_salary.toString(),
@@ -788,7 +814,7 @@ export const EmployeesPage: React.FC = () => {
                               Edit
                             </DropdownMenuItem>
                             <DropdownMenuItem onClick={() => {
-                              setSelectedEmployeeForSchedule(employee);
+                              setScheduleFormData(prev => ({ ...prev, employee_id: employee.id.toString() }));
                               setIsScheduleDialogOpen(true);
                             }}>
                               <Clock className="mr-2 h-4 w-4" />
@@ -914,10 +940,6 @@ export const EmployeesPage: React.FC = () => {
                               <Edit className="mr-2 h-4 w-4" />
                               Edit
                             </DropdownMenuItem>
-                            <DropdownMenuItem className="text-red-600">
-                              <Trash2 className="mr-2 h-4 w-4" />
-                              Delete
-                            </DropdownMenuItem>
                           </DropdownMenuContent>
                         </DropdownMenu>
                       </TableCell>
@@ -954,7 +976,7 @@ export const EmployeesPage: React.FC = () => {
                       <div className="flex items-center space-x-3">
                         <div 
                           className="w-4 h-4 rounded-full" 
-                          style={{ backgroundColor: leaveType.color }}
+                          style={{ backgroundColor: leaveType.color || '#3b82f6' }}
                         ></div>
                         <div className="flex-1">
                           <h3 className="font-medium">{leaveType.name}</h3>
@@ -962,12 +984,14 @@ export const EmployeesPage: React.FC = () => {
                         </div>
                       </div>
                       <div className="mt-3 space-y-1 text-xs text-gray-600">
-                        <div>Max per year: {leaveType.max_days_per_year} days</div>
-                        <div>Max per month: {leaveType.max_days_per_month} days</div>
+                        <div>
+                          {leaveType.leave_limit_period === 'month'
+                            ? `Max per month: ${leaveType.max_days_per_month || 0} days`
+                            : `Max per year: ${leaveType.max_days_per_year || 0} days`}
+                        </div>
+                        <div className="capitalize">Limit Period: {leaveType.leave_limit_period || 'year'}</div>
                         <div className="flex space-x-2">
                           {leaveType.is_paid && <Badge variant="outline" className="text-xs">Paid</Badge>}
-                          {leaveType.carry_forward && <Badge variant="outline" className="text-xs">Carry Forward</Badge>}
-                          {leaveType.requires_approval && <Badge variant="outline" className="text-xs">Approval Required</Badge>}
                         </div>
                       </div>
                     </CardContent>
@@ -981,7 +1005,14 @@ export const EmployeesPage: React.FC = () => {
                           <DropdownMenuContent align="end">
                             <DropdownMenuItem onClick={() => {
                               setSelectedLeaveType(leaveType);
-                              setLeaveTypeFormData(leaveType);
+                              setLeaveTypeFormData({
+                                name: leaveType.name,
+                                description: leaveType.description,
+                                max_days_per_year: leaveType.max_days_per_year || 0,
+                                max_days_per_month: leaveType.max_days_per_month || 0,
+                                leave_limit_period: leaveType.leave_limit_period || 'year',
+                                is_paid: leaveType.is_paid,
+                              });
                               setIsLeaveTypeDialogOpen(true);
                             }}>
                               <Edit className="mr-2 h-4 w-4" />
@@ -1036,6 +1067,10 @@ export const EmployeesPage: React.FC = () => {
                         <div>
                           <span className="font-medium">Late Grace:</span>
                           <br />{rule.late_grace_period} minutes
+                        </div>
+                        <div>
+                          <span className="font-medium">Penalty:</span>
+                          <br />{rule.late_penalty_type}
                         </div>
                         <div>
                           <span className="font-medium">Half Day:</span>
@@ -1094,11 +1129,19 @@ export const EmployeesPage: React.FC = () => {
                 <Card>
                   <CardContent className="p-4">
                     <div className="flex items-center space-x-3">
-                      <Calendar className="h-8 w-8 text-purple-600" />
+                      <BarChart3 className="h-8 w-8 text-purple-600" />
                       <div>
-                        <h3 className="font-medium">Leave Report</h3>
-                        <p className="text-sm text-gray-500">Leave balances and requests</p>
+                        <h3 className="font-medium">Business Analytics</h3>
+                        <p className="text-sm text-gray-500">Open full analytics dashboard</p>
                       </div>
+                    </div>
+                    <div className="mt-4">
+                      <Link to="/analytics">
+                        <Button variant="outline" size="sm" className="w-full justify-between">
+                          Open Analytics
+                          <ArrowRight className="h-4 w-4" />
+                        </Button>
+                      </Link>
                     </div>
                   </CardContent>
                 </Card>
@@ -1114,7 +1157,7 @@ export const EmployeesPage: React.FC = () => {
           <DialogHeader>
             <DialogTitle>Add New Employee</DialogTitle>
             <DialogDescription>
-              Create a new employee record. You can optionally create a login account for the employee.
+              Create a new employee record and assign a login password.
             </DialogDescription>
           </DialogHeader>
           <form onSubmit={handleCreateEmployee} className="space-y-4">
@@ -1150,27 +1193,16 @@ export const EmployeesPage: React.FC = () => {
               />
             </div>
 
-            <div className="flex items-center space-x-2">
-              <Switch
-                id="create_login"
-                checked={formData.create_login}
-                onCheckedChange={(checked) => setFormData({ ...formData, create_login: checked })}
+            <div>
+              <Label htmlFor="password">Password *</Label>
+              <Input
+                id="password"
+                type="password"
+                value={formData.password || ''}
+                onChange={(e) => setFormData({ ...formData, password: e.target.value })}
+                required
               />
-              <Label htmlFor="create_login">Create Login Account</Label>
             </div>
-
-            {formData.create_login && (
-              <div>
-                <Label htmlFor="password">Password *</Label>
-                <Input
-                  id="password"
-                  type="password"
-                  value={formData.password || ''}
-                  onChange={(e) => setFormData({ ...formData, password: e.target.value })}
-                  required={formData.create_login}
-                />
-              </div>
-            )}
 
             <div className="grid grid-cols-2 gap-4">
               <div>
@@ -1533,6 +1565,15 @@ export const EmployeesPage: React.FC = () => {
                 />
               </div>
             </div>
+
+            <div className="flex items-center space-x-2 rounded border p-3">
+              <Switch
+                id="schedule_is_active"
+                checked={scheduleFormData.is_active}
+                onCheckedChange={(checked) => setScheduleFormData(prev => ({ ...prev, is_active: checked }))}
+              />
+              <Label htmlFor="schedule_is_active">Active Schedule</Label>
+            </div>
             
             <div className="space-y-3">
               <h3 className="font-medium">Weekly Schedule</h3>
@@ -1553,9 +1594,17 @@ export const EmployeesPage: React.FC = () => {
                       type="time"
                       value={getScheduleTimeValue(day, 'end')}
                       onChange={(e) => handleScheduleTimeChange(day, 'end', e.target.value)}
+                      disabled={!isScheduleDayEnabled(day)}
                     />
                   </div>
-                  <Switch />
+                  <div className="flex items-center justify-end space-x-2">
+                    <Switch
+                      id={`schedule-day-${day}`}
+                      checked={isScheduleDayEnabled(day)}
+                      onCheckedChange={(checked) => handleScheduleDayToggle(day, checked)}
+                    />
+                    <Label htmlFor={`schedule-day-${day}`} className="text-xs text-gray-500">Enable</Label>
+                  </div>
                 </div>
               ))}
             </div>
@@ -1625,44 +1674,40 @@ export const EmployeesPage: React.FC = () => {
                 placeholder="Brief description of this leave type" 
               />
             </div>
-            <div className="grid grid-cols-2 gap-4">
-              <div>
-                <Label>Max Days Per Year</Label>
-                <Input 
-                  type="number" 
-                  value={leaveTypeFormData.max_days_per_year}
-                  onChange={(e) => setLeaveTypeFormData(prev => ({...prev, max_days_per_year: parseInt(e.target.value) || 0}))}
-                  placeholder="21" 
-                />
-              </div>
-              <div>
-                <Label>Max Days Per Month</Label>
-                <Input 
-                  type="number" 
-                  value={leaveTypeFormData.max_days_per_month}
-                  onChange={(e) => setLeaveTypeFormData(prev => ({...prev, max_days_per_month: parseInt(e.target.value) || 0}))}
-                  placeholder="2" 
-                />
-              </div>
+            <div>
+              <Label>Leave Limit Period</Label>
+              <Select
+                value={leaveTypeFormData.leave_limit_period}
+                onValueChange={(value: 'month' | 'year') =>
+                  setLeaveTypeFormData((prev) => ({ ...prev, leave_limit_period: value }))
+                }
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="Select limit period" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="month">For Month</SelectItem>
+                  <SelectItem value="year">For Year</SelectItem>
+                </SelectContent>
+              </Select>
             </div>
-            <div className="grid grid-cols-2 gap-4">
-              <div>
-                <Label>Advance Notice (Days)</Label>
-                <Input 
-                  type="number" 
-                  value={leaveTypeFormData.advance_notice_days}
-                  onChange={(e) => setLeaveTypeFormData(prev => ({...prev, advance_notice_days: parseInt(e.target.value) || 0}))}
-                  placeholder="1" 
-                />
-              </div>
-              <div>
-                <Label>Color</Label>
-                <Input 
-                  type="color" 
-                  value={leaveTypeFormData.color}
-                  onChange={(e) => setLeaveTypeFormData(prev => ({...prev, color: e.target.value}))}
-                />
-              </div>
+            <div>
+              <Label>
+                {leaveTypeFormData.leave_limit_period === 'month' ? 'Max Days Per Month' : 'Max Days Per Year'}
+              </Label>
+              <Input
+                type="number"
+                value={leaveTypeFormData.leave_limit_period === 'month' ? leaveTypeFormData.max_days_per_month : leaveTypeFormData.max_days_per_year}
+                onChange={(e) => {
+                  const value = parseInt(e.target.value) || 0;
+                  setLeaveTypeFormData((prev) =>
+                    prev.leave_limit_period === 'month'
+                      ? { ...prev, max_days_per_month: value }
+                      : { ...prev, max_days_per_year: value }
+                  );
+                }}
+                placeholder={leaveTypeFormData.leave_limit_period === 'month' ? '2' : '21'}
+              />
             </div>
             <div className="space-y-2">
               <div className="flex items-center space-x-2">
@@ -1672,22 +1717,6 @@ export const EmployeesPage: React.FC = () => {
                   onCheckedChange={(checked) => setLeaveTypeFormData(prev => ({...prev, is_paid: checked}))}
                 />
                 <Label htmlFor="is_paid">Paid Leave</Label>
-              </div>
-              <div className="flex items-center space-x-2">
-                <Switch 
-                  id="carry_forward" 
-                  checked={leaveTypeFormData.carry_forward}
-                  onCheckedChange={(checked) => setLeaveTypeFormData(prev => ({...prev, carry_forward: checked}))}
-                />
-                <Label htmlFor="carry_forward">Allow Carry Forward</Label>
-              </div>
-              <div className="flex items-center space-x-2">
-                <Switch 
-                  id="requires_approval" 
-                  checked={leaveTypeFormData.requires_approval}
-                  onCheckedChange={(checked) => setLeaveTypeFormData(prev => ({...prev, requires_approval: checked}))}
-                />
-                <Label htmlFor="requires_approval">Requires Approval</Label>
               </div>
             </div>
             <div className="flex justify-end space-x-2 pt-4">
