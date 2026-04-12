@@ -5,17 +5,16 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.refreshToken = exports.verifyToken = exports.generateToken = void 0;
 const jsonwebtoken_1 = __importDefault(require("jsonwebtoken"));
-const dotenv_1 = __importDefault(require("dotenv"));
-dotenv_1.default.config();
 const JWT_SECRET = process.env.JWT_SECRET || 'fallback_secret_key';
 const JWT_EXPIRES_IN = process.env.JWT_EXPIRES_IN || '7d';
-const generateToken = (userId, username, email, userType, businessId) => {
+const generateToken = (userId, username, email, userType, businessId, businessName) => {
     const payload = {
         userId,
         username: username || '',
         email: email || '',
         userType: userType || '',
-        businessId
+        businessId,
+        businessName
     };
     return jsonwebtoken_1.default.sign(payload, JWT_SECRET, {
         expiresIn: JWT_EXPIRES_IN,
@@ -40,7 +39,7 @@ exports.verifyToken = verifyToken;
 const refreshToken = (token) => {
     try {
         const decoded = (0, exports.verifyToken)(token);
-        return (0, exports.generateToken)(decoded.userId, decoded.username, decoded.email, decoded.userType, decoded.businessId);
+        return (0, exports.generateToken)(decoded.userId, decoded.username, decoded.email, decoded.userType, decoded.businessId, decoded.businessName);
     }
     catch (error) {
         throw new Error('Unable to refresh token');

@@ -12,10 +12,9 @@ router.use(auth_1.authenticateToken);
 router.get('/', [
     (0, express_validator_1.query)('page').optional().isInt({ min: 1 }).withMessage('Page must be a positive integer'),
     (0, express_validator_1.query)('limit').optional().isInt({ min: 1, max: 100 }).withMessage('Limit must be between 1 and 100'),
-    (0, express_validator_1.query)('status').optional().isIn(['pending', 'partial', 'paid']).withMessage('Invalid status'),
     (0, express_validator_1.query)('start_date').optional().isISO8601().withMessage('Start date must be valid ISO date'),
     (0, express_validator_1.query)('end_date').optional().isISO8601().withMessage('End date must be valid ISO date'),
-    (0, express_validator_1.query)('sort_by').optional().isIn(['created_at', 'amount_required', 'amount_remaining']).withMessage('Invalid sort field'),
+    (0, express_validator_1.query)('sort_by').optional().isIn(['amount_required', 'created_at']).withMessage('Invalid sort field'),
     (0, express_validator_1.query)('sort_order').optional().isIn(['asc', 'desc']).withMessage('Sort order must be asc or desc')
 ], async (req, res) => {
     try {
@@ -31,36 +30,44 @@ router.get('/', [
         const page = parseInt(req.query.page) || 1;
         const limit = parseInt(req.query.limit) || 10;
         const offset = (page - 1) * limit;
-        const status = req.query.status;
         const startDate = req.query.start_date;
         const endDate = req.query.end_date;
         const sortBy = req.query.sort_by || 'created_at';
         const sortOrder = req.query.sort_order || 'desc';
-        let whereClause = 'WHERE c.user_id = ?';
+        let whereClause = 'WHERE business_id = $1';
         const whereParams = [userId];
-        if (status) {
-            whereClause += ' AND c.status = ?';
-            whereParams.push(status);
-        }
+        let paramIndex = 2;
         if (startDate) {
-            whereClause += ' AND c.created_at >= $1';
+            whereClause += ` AND created_at >= $${paramIndex++}`;
             whereParams.push(startDate);
         }
         if (endDate) {
-            whereClause += ' AND c.created_at <= $1';
+            whereClause += ` AND created_at <= $${paramIndex++}`;
             whereParams.push(endDate);
         }
-        const countResult = await (0, database_1.dbGet)(`SELECT COUNT(*) as total FROM charity c ${whereClause}`, whereParams);
+        const countResult = await (0, database_1.dbGet)(`SELECT COUNT(*) as total FROM charity ${whereClause}`, whereParams);
         const total = countResult.total;
         const charityRecords = await (0, database_1.dbAll)(`SELECT 
-        c.id, c.income_id, c.amount_required, c.amount_paid, c.amount_remaining,
-        c.status, c.payment_date, c.description, c.recipient, c.created_at, c.updated_at,
-        i.amount as income_amount, i.description as income_description, i.date as income_date
-       FROM charity c 
+        c.id, 
+        c.amount_required, 
+        COALESCE(c.amount_paid, 0) as amount_paid, 
+        c.status, 
+        c.description, 
+        c.recipient, 
+        c.created_at, 
+        c.updated_at,
+        (c.amount_required - COALESCE(c.amount_paid, 0)) as amount_remaining,
+        (COALESCE(c.amount_paid, 0) * 100 / c.amount_required) as progress,
+        i.description as income_description,
+        i.source as income_source,
+        i.date as income_date,
+        cat.name as income_category
+       FROM charity c
        LEFT JOIN income i ON c.income_id = i.id
-       ${whereClause} 
+       LEFT JOIN categories cat ON i.category_id = cat.id
+       ${whereClause.replace('business_id', 'c.business_id')} 
        ORDER BY c.${sortBy} ${sortOrder.toUpperCase()}
-       LIMIT $1 OFFSET $2`, [...whereParams, limit, offset]);
+       LIMIT $${paramIndex++} OFFSET $${paramIndex++}`, [...whereParams, limit, offset]);
         const totalPages = Math.ceil(total / limit);
         const hasNext = page < totalPages;
         const hasPrev = page > 1;
@@ -87,36 +94,24 @@ router.get('/', [
         });
     }
 });
-router.get('/:id', async (req, res) => {
+router.get('/summary', async (req, res) => {
     try {
         const userId = req.user.userId;
-        const charityId = parseInt(req.params.id);
-        if (isNaN(charityId)) {
-            return res.status(400).json({
-                success: false,
-                message: 'Invalid charity ID'
-            });
-        }
-        const charityRecord = await (0, database_1.dbGet)(`SELECT 
-        c.id, c.income_id, c.amount_required, c.amount_paid, c.amount_remaining,
-        c.status, c.payment_date, c.description, c.recipient, c.created_at, c.updated_at,
-        i.amount as income_amount, i.description as income_description, i.date as income_date
-       FROM charity c 
-       LEFT JOIN income i ON c.income_id = i.id
-       WHERE c.id = $1 AND c.user_id = $2`, [charityId, userId]);
-        if (!charityRecord) {
-            return res.status(404).json({
-                success: false,
-                message: 'Charity record not found'
-            });
-        }
+        const summary = await (0, database_1.dbGet)(`SELECT 
+                SUM(amount_required) as total_required,
+                SUM(COALESCE(amount_paid, 0)) as total_paid,
+                SUM(amount_required - COALESCE(amount_paid, 0)) as total_remaining
+             FROM charity
+             WHERE business_id = $1`, [userId]);
         res.json({
             success: true,
-            data: { charity: charityRecord }
+            data: {
+                summary
+            }
         });
     }
     catch (error) {
-        console.error('Get charity by ID error:', error);
+        console.error('Get charity summary error:', error);
         res.status(500).json({
             success: false,
             message: 'Internal server error'
@@ -124,227 +119,33 @@ router.get('/:id', async (req, res) => {
     }
 });
 router.post('/payment', [
-    (0, express_validator_1.body)('charity_id')
-        .isInt({ min: 1 })
-        .withMessage('Valid charity ID is required'),
-    (0, express_validator_1.body)('payment_amount')
-        .isFloat({ min: 0.01 })
-        .withMessage('Payment amount must be a positive number'),
-    (0, express_validator_1.body)('payment_date')
-        .isISO8601()
-        .withMessage('Payment date must be valid ISO date'),
-    (0, express_validator_1.body)('recipient')
-        .optional()
-        .trim()
-        .isLength({ max: 100 })
-        .withMessage('Recipient cannot exceed 100 characters'),
-    (0, express_validator_1.body)('description')
-        .optional()
-        .trim()
-        .isLength({ max: 500 })
-        .withMessage('Description cannot exceed 500 characters')
+    (0, express_validator_1.body)('charity_id').isInt(),
+    (0, express_validator_1.body)('payment_amount').isFloat({ gt: 0 }),
+    (0, express_validator_1.body)('payment_date').isISO8601().toDate(),
 ], async (req, res) => {
     try {
         const errors = (0, express_validator_1.validationResult)(req);
         if (!errors.isEmpty()) {
-            return res.status(400).json({
-                success: false,
-                message: 'Validation failed',
-                errors: errors.array()
-            });
+            return res.status(400).json({ errors: errors.array() });
         }
         const userId = req.user.userId;
         const { charity_id, payment_amount, payment_date, recipient, description } = req.body;
-        try {
-            await (0, database_1.dbRun)('BEGIN TRANSACTION');
-            const charity = await (0, database_1.dbGet)('SELECT id, amount_required, amount_paid, amount_remaining, status FROM charity WHERE id = $1 AND user_id = $2', [charity_id, userId]);
-            if (!charity) {
-                await (0, database_1.dbRun)('ROLLBACK');
-                return res.status(404).json({
-                    success: false,
-                    message: 'Charity record not found'
-                });
-            }
-            if (payment_amount > charity.amount_remaining) {
-                await (0, database_1.dbRun)('ROLLBACK');
-                return res.status(400).json({
-                    success: false,
-                    message: `Payment amount cannot exceed remaining balance of ${charity.amount_remaining}`
-                });
-            }
-            const newAmountPaid = parseFloat(charity.amount_paid) + parseFloat(payment_amount);
-            const newAmountRemaining = parseFloat(charity.amount_required) - newAmountPaid;
-            let newStatus = 'partial';
-            if (newAmountRemaining <= 0) {
-                newStatus = 'paid';
-            }
-            else if (newAmountPaid === 0) {
-                newStatus = 'pending';
-            }
-            await (0, database_1.dbRun)(`UPDATE charity SET 
-          amount_paid = $1, 
-          status = $2, 
-          payment_date = $3,
-          recipient = COALESCE($4, recipient),
-          description = COALESCE($5, description),
-          updated_at = NOW() 
-         WHERE id = $6`, [newAmountPaid, newStatus, payment_date, recipient, description, charity_id]);
-            await (0, database_1.dbRun)('INSERT INTO transactions (user_id, transaction_type, reference_id, reference_table, amount, description, date) VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING id', [userId, 'charity', charity_id, 'charity', payment_amount, `Charity payment: ${description || 'Charity contribution'}`, payment_date]);
-            const updatedRecord = await (0, database_1.dbGet)(`SELECT 
-          c.id, c.income_id, c.amount_required, c.amount_paid, c.amount_remaining,
-          c.status, c.payment_date, c.description, c.recipient, c.created_at, c.updated_at,
-          i.amount as income_amount, i.description as income_description, i.date as income_date
-         FROM charity c 
-         LEFT JOIN income i ON c.income_id = i.id
-         WHERE c.id = $1`, [charity_id]);
-            await (0, database_1.dbRun)('COMMIT');
-            res.json({
-                success: true,
-                message: 'Charity payment recorded successfully',
-                data: {
-                    charity: updatedRecord,
-                    payment: {
-                        amount: payment_amount,
-                        date: payment_date,
-                        recipient,
-                        description
-                    }
-                }
-            });
+        const charityRecord = await (0, database_1.dbGet)('SELECT *, COALESCE(amount_paid, 0) as amount_paid FROM charity WHERE id = $1 AND business_id = $2', [charity_id, userId]);
+        if (!charityRecord) {
+            return res.status(404).json({ message: 'Charity record not found' });
         }
-        catch (error) {
-            await (0, database_1.dbRun)('ROLLBACK');
-            throw error;
-        }
+        const newAmountPaid = Number(charityRecord.amount_paid) + payment_amount;
+        const newStatus = newAmountPaid >= charityRecord.amount_required ? 'paid' : 'partial';
+        await (0, database_1.dbRun)('UPDATE charity SET amount_paid = $1, status = $2, updated_at = NOW() WHERE id = $3', [newAmountPaid, newStatus, charity_id]);
+        await (0, database_1.dbRun)('INSERT INTO charity_payments (charity_id, business_id, payment_amount, payment_date, recipient, description) VALUES ($1, $2, $3, $4, $5, $6)', [charity_id, userId, payment_amount, payment_date, recipient, description]);
+        res.status(200).json({ message: 'Payment recorded successfully' });
     }
     catch (error) {
-        console.error('Record charity payment error:', error);
-        res.status(500).json({
-            success: false,
-            message: 'Internal server error'
-        });
+        console.error('Error recording payment:', error);
+        res.status(500).json({ message: 'Internal server error' });
     }
 });
-router.post('/', [
-    (0, express_validator_1.body)('amount_required')
-        .isFloat({ min: 0.01 })
-        .withMessage('Amount required must be a positive number'),
-    (0, express_validator_1.body)('description')
-        .trim()
-        .notEmpty()
-        .isLength({ max: 500 })
-        .withMessage('Description is required and cannot exceed 500 characters'),
-    (0, express_validator_1.body)('recipient')
-        .optional()
-        .trim()
-        .isLength({ max: 100 })
-        .withMessage('Recipient cannot exceed 100 characters')
-], async (req, res) => {
-    try {
-        const errors = (0, express_validator_1.validationResult)(req);
-        if (!errors.isEmpty()) {
-            return res.status(400).json({
-                success: false,
-                message: 'Validation failed',
-                errors: errors.array()
-            });
-        }
-        const userId = req.user.userId;
-        const { amount_required, description, recipient } = req.body;
-        const result = await (0, database_1.dbRun)('INSERT INTO charity (user_id, amount_required, description, recipient) VALUES ($1, $2, $3, $4) RETURNING id', [userId, amount_required, description, recipient]);
-        const charityId = result.lastID;
-        const newCharity = await (0, database_1.dbGet)('SELECT * FROM charity WHERE id = $5', [charityId]);
-        res.status(201).json({
-            success: true,
-            message: 'Manual charity record created successfully',
-            data: { charity: newCharity }
-        });
-    }
-    catch (error) {
-        console.error('Create manual charity error:', error);
-        res.status(500).json({
-            success: false,
-            message: 'Internal server error'
-        });
-    }
-});
-router.put('/:id', [
-    (0, express_validator_1.body)('description')
-        .optional()
-        .trim()
-        .isLength({ max: 500 })
-        .withMessage('Description cannot exceed 500 characters'),
-    (0, express_validator_1.body)('recipient')
-        .optional()
-        .trim()
-        .isLength({ max: 100 })
-        .withMessage('Recipient cannot exceed 100 characters')
-], async (req, res) => {
-    try {
-        const errors = (0, express_validator_1.validationResult)(req);
-        if (!errors.isEmpty()) {
-            return res.status(400).json({
-                success: false,
-                message: 'Validation failed',
-                errors: errors.array()
-            });
-        }
-        const userId = req.user.userId;
-        const charityId = parseInt(req.params.id);
-        if (isNaN(charityId)) {
-            return res.status(400).json({
-                success: false,
-                message: 'Invalid charity ID'
-            });
-        }
-        const existingRecord = await (0, database_1.dbGet)('SELECT id FROM charity WHERE id = $1 AND user_id = $2', [charityId, userId]);
-        if (!existingRecord) {
-            return res.status(404).json({
-                success: false,
-                message: 'Charity record not found'
-            });
-        }
-        const { description, recipient } = req.body;
-        const updates = [];
-        const values = [];
-        if (description !== undefined) {
-            updates.push('description = $6');
-            values.push(description);
-        }
-        if (recipient !== undefined) {
-            updates.push('recipient = $7');
-            values.push(recipient);
-        }
-        if (updates.length === 0) {
-            return res.status(400).json({
-                success: false,
-                message: 'No valid fields to update'
-            });
-        }
-        values.push(charityId);
-        await (0, database_1.dbRun)(`UPDATE charity SET ${updates.join(', ')}, updated_at = NOW() WHERE id = $1`, values);
-        const updatedRecord = await (0, database_1.dbGet)(`SELECT 
-        c.id, c.income_id, c.amount_required, c.amount_paid, c.amount_remaining,
-        c.status, c.payment_date, c.description, c.recipient, c.created_at, c.updated_at,
-        i.amount as income_amount, i.description as income_description, i.date as income_date
-       FROM charity c 
-       LEFT JOIN income i ON c.income_id = i.id
-       WHERE c.id = $2`, [charityId]);
-        res.json({
-            success: true,
-            message: 'Charity record updated successfully',
-            data: { charity: updatedRecord }
-        });
-    }
-    catch (error) {
-        console.error('Update charity error:', error);
-        res.status(500).json({
-            success: false,
-            message: 'Internal server error'
-        });
-    }
-});
-router.delete('/:id', async (req, res) => {
+router.get('/payments/:id', async (req, res) => {
     try {
         const userId = req.user.userId;
         const charityId = parseInt(req.params.id);
@@ -354,84 +155,24 @@ router.delete('/:id', async (req, res) => {
                 message: 'Invalid charity ID'
             });
         }
-        const charity = await (0, database_1.dbGet)('SELECT id, income_id FROM charity WHERE id = $1 AND user_id = $2', [charityId, userId]);
-        if (!charity) {
-            return res.status(404).json({
-                success: false,
-                message: 'Charity record not found'
-            });
-        }
-        if (charity.income_id) {
-            return res.status(400).json({
-                success: false,
-                message: 'Cannot delete auto-generated charity records. Delete the related income record instead.'
-            });
-        }
-        try {
-            await (0, database_1.dbRun)('BEGIN TRANSACTION');
-            await (0, database_1.dbRun)('DELETE FROM transactions WHERE reference_id = $1 AND reference_table = $2 AND user_id = $3', [charityId, 'charity', userId]);
-            await (0, database_1.dbRun)('DELETE FROM charity WHERE id = $4 AND user_id = $5', [charityId, userId]);
-            await (0, database_1.dbRun)('COMMIT');
-            res.json({
-                success: true,
-                message: 'Charity record deleted successfully'
-            });
-        }
-        catch (error) {
-            await (0, database_1.dbRun)('ROLLBACK');
-            throw error;
-        }
-    }
-    catch (error) {
-        console.error('Delete charity error:', error);
-        res.status(500).json({
-            success: false,
-            message: 'Internal server error'
-        });
-    }
-});
-router.get('/stats/summary', async (req, res) => {
-    try {
-        const userId = req.user.userId;
-        const stats = await (0, database_1.dbGet)(`SELECT 
-        COUNT(*) as total_records,
-        SUM(amount_required) as total_required,
-        SUM(amount_paid) as total_paid,
-        SUM(amount_remaining) as total_remaining,
-        SUM(CASE WHEN status = 'pending' THEN 1 ELSE 0 END) as pending_count,
-        SUM(CASE WHEN status = 'partial' THEN 1 ELSE 0 END) as partial_count,
-        SUM(CASE WHEN status = 'paid' THEN 1 ELSE 0 END) as paid_count
-       FROM charity 
-       WHERE user_id = $1`, [userId]);
-        const monthlyStats = await (0, database_1.dbAll)(`SELECT 
-        strftime('%m', payment_date) as month,
-        strftime('%Y', payment_date) as year,
-        SUM(amount_paid) as monthly_payments,
-        COUNT(*) as monthly_count
-       FROM charity 
-       WHERE user_id = $1 AND payment_date IS NOT NULL AND strftime('%Y', payment_date) = strftime('%Y', 'now')
-       GROUP BY strftime('%Y', payment_date), strftime('%m', payment_date)
-       ORDER BY month`, [userId]);
-        const recentActivities = await (0, database_1.dbAll)(`SELECT 
-        c.id, c.amount_required, c.amount_paid, c.amount_remaining, c.status,
-        c.description, c.payment_date, c.created_at,
-        i.description as income_description
-       FROM charity c
-       LEFT JOIN income i ON c.income_id = i.id
-       WHERE c.user_id = $1
-       ORDER BY c.updated_at DESC
-       LIMIT 10`, [userId]);
+        const paymentHistory = await (0, database_1.dbAll)(`SELECT 
+                id,
+                payment_amount,
+                payment_date,
+                recipient,
+                description
+             FROM charity_payments
+             WHERE charity_id = $1 AND business_id = $2
+             ORDER BY payment_date DESC`, [charityId, userId]);
         res.json({
             success: true,
             data: {
-                summary: stats,
-                monthly_payments: monthlyStats,
-                recent_activities: recentActivities
+                payments: paymentHistory
             }
         });
     }
     catch (error) {
-        console.error('Charity stats error:', error);
+        console.error('Get payment history error:', error);
         res.status(500).json({
             success: false,
             message: 'Internal server error'

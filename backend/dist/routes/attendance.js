@@ -30,6 +30,70 @@ const calculateLateMinutes = (clockInTime, expectedStartTime) => {
     const diffMinutes = (actual.getTime() - expected.getTime()) / (1000 * 60);
     return Math.max(0, diffMinutes);
 };
+const calculateScheduledHours = (startTime, endTime, breakDuration = 0) => {
+    if (!startTime || !endTime)
+        return 0;
+    const start = new Date(`1970-01-01T${startTime}`);
+    const end = new Date(`1970-01-01T${endTime}`);
+    const diffMinutes = (end.getTime() - start.getTime()) / (1000 * 60);
+    return Math.max(0, (diffMinutes - breakDuration) / 60);
+};
+const CLOCK_OUT_GRACE_MINUTES = 30;
+const timeToMinutes = (timeValue) => {
+    const [hours = '0', minutes = '0', seconds = '0'] = String(timeValue).split(':');
+    return (Number(hours) * 60) + Number(minutes) + Math.floor(Number(seconds) / 60);
+};
+const hasMetExpectedClockOutTime = (clockOutTime, expectedEndTime, allowedEarlyMinutes = CLOCK_OUT_GRACE_MINUTES) => {
+    return timeToMinutes(clockOutTime) >= (timeToMinutes(expectedEndTime) - Math.max(0, allowedEarlyMinutes));
+};
+const getEmployeeScheduleForDate = async (employeeId, businessId, targetDate) => {
+    const schedule = await (0, database_1.dbGet)(`
+      SELECT *
+      FROM employee_work_schedules
+      WHERE employee_id = $1
+        AND business_id = $2
+        AND is_active = true
+        AND effective_from <= $3
+        AND (effective_to IS NULL OR effective_to >= $3)
+      ORDER BY effective_from DESC
+      LIMIT 1
+    `, [employeeId, businessId, targetDate]);
+    if (!schedule)
+        return null;
+    const dayOfWeek = new Date(targetDate).getDay();
+    const dayKeyMap = {
+        0: { start: 'sunday_start', end: 'sunday_end' },
+        1: { start: 'monday_start', end: 'monday_end' },
+        2: { start: 'tuesday_start', end: 'tuesday_end' },
+        3: { start: 'wednesday_start', end: 'wednesday_end' },
+        4: { start: 'thursday_start', end: 'thursday_end' },
+        5: { start: 'friday_start', end: 'friday_end' },
+        6: { start: 'saturday_start', end: 'saturday_end' }
+    };
+    const dayKeys = dayKeyMap[dayOfWeek];
+    const startTime = schedule[dayKeys.start] || null;
+    const endTime = schedule[dayKeys.end] || null;
+    const breakDuration = Number(schedule.break_duration || 0);
+    return {
+        startTime,
+        endTime,
+        breakDuration,
+        expectedHours: startTime && endTime ? calculateScheduledHours(startTime, endTime, breakDuration) : 0,
+        lateComeThresholdMinutes: schedule.late_come_threshold_minutes != null ? Number(schedule.late_come_threshold_minutes) : null,
+        halfDayHours: schedule.half_day_hours != null ? Number(schedule.half_day_hours) : null,
+    };
+};
+const hasApprovedLeaveOnDate = async (employeeId, targetDate) => {
+    const leave = await (0, database_1.dbGet)(`
+      SELECT id
+      FROM leaves
+      WHERE employee_id = $1
+        AND status = 'approved'
+        AND $2 BETWEEN start_date AND end_date
+      LIMIT 1
+    `, [employeeId, targetDate]);
+    return !!leave;
+};
 const calculateEarlyDepartureMinutes = (clockOutTime, expectedEndTime) => {
     if (!clockOutTime || !expectedEndTime)
         return 0;
@@ -38,39 +102,46 @@ const calculateEarlyDepartureMinutes = (clockOutTime, expectedEndTime) => {
     const diffMinutes = (expected.getTime() - actual.getTime()) / (1000 * 60);
     return Math.max(0, diffMinutes);
 };
-const determineAttendanceStatus = async (employeeId, businessId, clockInTime, clockOutTime, totalHours, lateMinutes) => {
+const determineAttendanceStatus = async (businessId, totalHours, lateMinutes, clockOutTime, scheduleConfig) => {
     const rule = await (0, database_1.dbGet)(`
     SELECT * FROM attendance_rules 
-    WHERE business_id = AND is_active = 1
+    WHERE business_id = $1 AND is_active = true
     ORDER BY created_at DESC LIMIT 1
   `, [businessId]);
     if (!rule) {
-        if (lateMinutes > 30)
-            return 'late';
-        if (totalHours < 4)
-            return 'half_day';
-        return 'present';
+        const lateGracePeriod = scheduleConfig?.lateComeThresholdMinutes ?? 30;
+        const halfDayThresholdHours = scheduleConfig?.halfDayHours ?? 4;
+        const isLate = lateMinutes > lateGracePeriod;
+        const hasMetScheduleTime = scheduleConfig?.endTime && clockOutTime
+            ? hasMetExpectedClockOutTime(clockOutTime, scheduleConfig.endTime)
+            : true;
+        if (totalHours <= 0)
+            return 'absent';
+        if (!hasMetScheduleTime)
+            return totalHours >= halfDayThresholdHours ? 'half_day' : 'absent';
+        return isLate ? 'late' : 'present';
     }
-    if (lateMinutes > rule.late_grace_period) {
-        if (rule.late_penalty_type === 'half_day' && totalHours < (rule.half_day_threshold / 60)) {
-            return 'half_day';
-        }
-        return 'late';
-    }
-    if (totalHours < (rule.half_day_threshold / 60)) {
-        return 'half_day';
-    }
-    return 'present';
+    const lateGracePeriod = scheduleConfig?.lateComeThresholdMinutes ?? rule.late_grace_period ?? 15;
+    const halfDayThresholdHours = scheduleConfig?.halfDayHours ?? ((rule.half_day_threshold ?? 240) / 60);
+    const isLate = lateMinutes > lateGracePeriod;
+    const hasMetScheduleTime = scheduleConfig?.endTime && clockOutTime
+        ? hasMetExpectedClockOutTime(clockOutTime, scheduleConfig.endTime)
+        : true;
+    if (totalHours <= 0)
+        return 'absent';
+    if (!hasMetScheduleTime)
+        return totalHours >= halfDayThresholdHours ? 'half_day' : 'absent';
+    return isLate ? 'late' : 'present';
 };
 const calculateOvertime = async (businessId, totalHours, isWeekend, isHoliday) => {
     const rule = await (0, database_1.dbGet)(`
     SELECT * FROM attendance_rules 
-    WHERE business_id = AND is_active = 1
+    WHERE business_id = $1 AND is_active = true
     ORDER BY created_at DESC LIMIT 1
   `, [businessId]);
     if (!rule)
         return 0;
-    const regularThreshold = rule.overtime_threshold / 60;
+    const regularThreshold = (rule.overtime_threshold ?? 480) / 60;
     if ((isWeekend && rule.weekend_overtime) || (isHoliday && rule.holiday_overtime)) {
         return totalHours;
     }
@@ -89,7 +160,15 @@ router.get('/', async (req, res) => {
         }
         let query = `
       SELECT 
-        a.*,
+        a.id,
+        a.employee_id,
+        a.date,
+        a.check_in_time AS clock_in_time,
+        a.check_out_time AS clock_out_time,
+        a.total_hours,
+        a.overtime_hours,
+        a.status,
+        a.notes,
         e.first_name,
         e.last_name,
         e.employee_code,
@@ -97,59 +176,61 @@ router.get('/', async (req, res) => {
         e.position
       FROM attendance a
       JOIN employees e ON a.employee_id = e.id
-      WHERE a.business_id = `;
+      WHERE e.business_id = $1`;
         const params = [businessId];
+        let paramIndex = 2;
         if (userType === 'employee') {
             const actualEmployeeId = req.user?.userId;
-            query += ' AND a.employee_id = ?';
+            query += ` AND a.employee_id = $${paramIndex++}`;
             params.push(actualEmployeeId);
         }
         else if (employee_id) {
-            query += ' AND a.employee_id = ?';
+            query += ` AND a.employee_id = $${paramIndex++}`;
             params.push(employee_id);
         }
         if (date_from && date_to) {
-            query += ' AND a.date BETWEEN ? AND ?';
+            query += ` AND a.date BETWEEN $${paramIndex++} AND $${paramIndex++}`;
             params.push(date_from, date_to);
         }
         else if (month && year) {
-            query += ' AND strftime("%m", a.date) = ? AND strftime("%Y", a.date) = $1';
+            query += ` AND to_char(a.date, 'MM') = $${paramIndex++} AND to_char(a.date, 'YYYY') = $${paramIndex++}`;
             params.push(month.padStart(2, '0'), year);
         }
         if (status && status !== 'all') {
-            query += ' AND a.status = $2';
+            query += ` AND a.status = $${paramIndex++}`;
             params.push(status);
         }
-        query += ' ORDER BY a.date DESC, a.clock_in_time DESC';
+        query += ' ORDER BY a.date DESC, a.check_in_time DESC';
         const offset = (parseInt(page) - 1) * parseInt(limit);
-        query += ` LIMIT ? OFFSET $2`;
+        query += ` LIMIT $${paramIndex++} OFFSET $${paramIndex++}`;
         params.push(parseInt(limit), offset);
         const attendanceRecords = await (0, database_1.dbAll)(query, params);
         let countQuery = `
       SELECT COUNT(*) as total
       FROM attendance a
       JOIN employees e ON a.employee_id = e.id
-      WHERE a.business_id = `;
+      WHERE e.business_id = $1`;
         const countParams = [businessId];
+        let countParamIndex = 2;
         if (userType === 'employee') {
             const actualEmployeeId = req.user.userId;
-            countQuery += ' AND a.employee_id = $4';
+            countQuery += ` AND a.employee_id = $${countParamIndex++}`;
             countParams.push(actualEmployeeId);
         }
         else if (employee_id) {
-            countQuery += ' AND a.employee_id = $5';
+            countQuery += ` AND a.employee_id = $${countParamIndex++}`;
             countParams.push(employee_id);
         }
         if (date_from && date_to) {
-            countQuery += ' AND a.date BETWEEN ? AND $7';
+            countQuery += ` AND a.date BETWEEN $${countParamIndex++} AND $${countParamIndex++}`;
             countParams.push(date_from, date_to);
         }
         else if (month && year) {
-            countQuery += ' AND strftime("%m", a.date) = ? AND strftime("%Y", a.date) = $1';
+            countQuery += ` AND to_char(a.date, 'MM') = $${countParamIndex++} AND to_char(a.date, 'YYYY') = $${countParamIndex++}`;
             countParams.push(month.padStart(2, '0'), year);
         }
         if (status && status !== 'all') {
-            countQuery += ' AND a.status = $2';
+            countQuery += ` AND a.status = $${countParamIndex++}`;
             countParams.push(status);
         }
         const { total } = await (0, database_1.dbGet)(countQuery, countParams);
@@ -188,13 +269,21 @@ router.get('/today', async (req, res) => {
         const today = new Date().toISOString().split('T')[0];
         const attendance = await (0, database_1.dbGet)(`
       SELECT 
-        a.*,
+        a.id,
+        a.employee_id,
+        a.date,
+        a.check_in_time AS clock_in_time,
+        a.check_out_time AS clock_out_time,
+        a.total_hours,
+        a.overtime_hours,
+        a.status,
+        a.notes,
         e.first_name,
         e.last_name,
         e.employee_code
       FROM attendance a
       JOIN employees e ON a.employee_id = e.id
-      WHERE a.employee_id = AND a.business_id = AND a.date = `, [actualEmployeeId, businessId, today]);
+      WHERE a.employee_id = $1 AND e.business_id = $2 AND a.date::date = $3`, [actualEmployeeId, businessId, today]);
         res.json(attendance || null);
     }
     catch (error) {
@@ -220,58 +309,52 @@ router.post('/clock-in', async (req, res) => {
             return res.status(400).json({ error: 'Employee ID is required' });
         }
         const today = new Date().toISOString().split('T')[0];
-        const currentTime = new Date().toTimeString().split(' ')[0];
-        const currentDate = new Date();
-        const dayOfWeek = currentDate.getDay();
+        const currentTimestamp = new Date();
+        const currentTime = currentTimestamp.toTimeString().split(' ')[0];
+        const dayOfWeek = currentTimestamp.getDay();
         const isWeekend = dayOfWeek === 0 || dayOfWeek === 6;
-        const existingAttendance = await (0, database_1.dbGet)('SELECT * FROM attendance WHERE employee_id = AND business_id = AND date = $3', [actualEmployeeId, businessId, today]);
+        const onLeaveToday = await hasApprovedLeaveOnDate(actualEmployeeId, today);
+        if (onLeaveToday) {
+            return res.status(400).json({ error: 'Employee is on approved leave for today' });
+        }
+        const existingAttendance = await (0, database_1.dbGet)('SELECT * FROM attendance WHERE employee_id = $1 AND date::date = $2', [actualEmployeeId, today]);
         if (existingAttendance) {
             return res.status(400).json({ error: 'Already clocked in today' });
         }
-        const workSchedule = await (0, database_1.dbGet)(`
-      SELECT * FROM employee_work_schedules 
-      WHERE employee_id = AND business_id = AND is_active = 1
-        AND effective_from <= AND (effective_to IS NULL OR effective_to >= $4)
-      ORDER BY effective_from DESC LIMIT 1
-    `, [actualEmployeeId, businessId, today, today]);
-        let expectedStartTime = '09:00:00';
-        let attendanceType = 'regular';
-        let lateMinutes = 0;
-        if (workSchedule) {
-            const dayMap = {
-                0: { start: workSchedule.sunday_start, end: workSchedule.sunday_end },
-                1: { start: workSchedule.monday_start, end: workSchedule.monday_end },
-                2: { start: workSchedule.tuesday_start, end: workSchedule.tuesday_end },
-                3: { start: workSchedule.wednesday_start, end: workSchedule.wednesday_end },
-                4: { start: workSchedule.thursday_start, end: workSchedule.thursday_end },
-                5: { start: workSchedule.friday_start, end: workSchedule.friday_end },
-                6: { start: workSchedule.saturday_start, end: workSchedule.saturday_end }
-            };
-            const daySchedule = dayMap[dayOfWeek];
-            if (daySchedule.start) {
-                expectedStartTime = daySchedule.start;
-            }
+        const scheduleForDate = await getEmployeeScheduleForDate(actualEmployeeId, businessId, today);
+        if (!isWeekend && (!scheduleForDate || !scheduleForDate.startTime || !scheduleForDate.endTime)) {
+            return res.status(400).json({
+                error: 'No active work schedule found for this employee today'
+            });
         }
-        lateMinutes = calculateLateMinutes(currentTime, expectedStartTime);
-        if (isWeekend) {
-            attendanceType = 'weekend';
-        }
+        const lateMinutes = scheduleForDate?.startTime
+            ? calculateLateMinutes(currentTime, scheduleForDate.startTime)
+            : 0;
+        const activeRule = await (0, database_1.dbGet)(`SELECT late_grace_period FROM attendance_rules WHERE business_id = $1 AND is_active = true ORDER BY created_at DESC LIMIT 1`, [businessId]);
+        const lateGracePeriod = scheduleForDate?.lateComeThresholdMinutes ?? activeRule?.late_grace_period ?? 15;
+        const initialStatus = lateMinutes > lateGracePeriod ? 'late' : 'present';
         const result = await (0, database_1.dbRun)(`
       INSERT INTO attendance (
-        employee_id, business_id, date, clock_in_time, entry_method, notes, 
-        attendance_type, late_minutes, location_latitude, location_longitude, status
-      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, 'present')
-    `, [actualEmployeeId, businessId, today, currentTime, entry_method, notes,
-            attendanceType, lateMinutes, location_latitude, location_longitude]);
+        employee_id, date, check_in_time, status
+      ) VALUES ($1, $2, $3, $4) RETURNING id
+    `, [actualEmployeeId, today, currentTimestamp, initialStatus]);
         const newAttendance = await (0, database_1.dbGet)(`
       SELECT 
-        a.*,
+        a.id,
+        a.employee_id,
+        a.date,
+        a.check_in_time AS clock_in_time,
+        a.check_out_time AS clock_out_time,
+        a.total_hours,
+        a.overtime_hours,
+        a.status,
+        a.notes,
         e.first_name,
         e.last_name,
         e.employee_code
       FROM attendance a
       JOIN employees e ON a.employee_id = e.id
-      WHERE a.id = `, [result.lastID]);
+      WHERE a.id = $1`, [result.lastID]);
         res.status(201).json(newAttendance);
     }
     catch (error) {
@@ -297,65 +380,53 @@ router.post('/clock-out', async (req, res) => {
             return res.status(400).json({ error: 'Employee ID is required' });
         }
         const today = new Date().toISOString().split('T')[0];
-        const currentTime = new Date().toTimeString().split(' ')[0];
-        const currentDate = new Date();
-        const dayOfWeek = currentDate.getDay();
+        const currentTimestamp = new Date();
+        const currentTime = currentTimestamp.toTimeString().split(' ')[0];
+        const dayOfWeek = currentTimestamp.getDay();
         const isWeekend = dayOfWeek === 0 || dayOfWeek === 6;
-        const attendance = await (0, database_1.dbGet)('SELECT * FROM attendance WHERE employee_id = AND business_id = AND date = $3', [actualEmployeeId, businessId, today]);
+        const attendance = await (0, database_1.dbGet)('SELECT * FROM attendance WHERE employee_id = $1 AND date::date = $2', [actualEmployeeId, today]);
         if (!attendance) {
             return res.status(400).json({ error: 'No clock-in record found for today' });
         }
-        if (attendance.clock_out_time) {
+        if (attendance.check_out_time) {
             return res.status(400).json({ error: 'Already clocked out today' });
         }
-        const workSchedule = await (0, database_1.dbGet)(`
-      SELECT * FROM employee_work_schedules 
-      WHERE employee_id = AND business_id = AND is_active = 1
-        AND effective_from <= AND (effective_to IS NULL OR effective_to >= $4)
-      ORDER BY effective_from DESC LIMIT 1
-    `, [actualEmployeeId, businessId, today, today]);
-        let expectedEndTime = '17:00:00';
-        if (workSchedule) {
-            const dayMap = {
-                0: { start: workSchedule.sunday_start, end: workSchedule.sunday_end },
-                1: { start: workSchedule.monday_start, end: workSchedule.monday_end },
-                2: { start: workSchedule.tuesday_start, end: workSchedule.tuesday_end },
-                3: { start: workSchedule.wednesday_start, end: workSchedule.wednesday_end },
-                4: { start: workSchedule.thursday_start, end: workSchedule.thursday_end },
-                5: { start: workSchedule.friday_start, end: workSchedule.friday_end },
-                6: { start: workSchedule.saturday_start, end: workSchedule.saturday_end }
-            };
-            const daySchedule = dayMap[dayOfWeek];
-            if (daySchedule.end) {
-                expectedEndTime = daySchedule.end;
-            }
-        }
-        const totalHours = calculateWorkingHours(attendance.clock_in_time, currentTime, break_start_time, break_end_time);
-        const earlyDepartureMinutes = calculateEarlyDepartureMinutes(currentTime, expectedEndTime);
+        const scheduleForDate = await getEmployeeScheduleForDate(actualEmployeeId, businessId, today);
+        const totalHours = calculateWorkingHours(new Date(attendance.check_in_time).toTimeString().split(' ')[0], currentTime, break_start_time, break_end_time);
         const overtimeHours = await calculateOvertime(businessId, totalHours, isWeekend, false);
-        const finalStatus = await determineAttendanceStatus(actualEmployeeId, businessId, attendance.clock_in_time, currentTime, totalHours, attendance.late_minutes);
+        const clockInForStatus = new Date(attendance.check_in_time).toTimeString().split(' ')[0];
+        const lateMinutes = scheduleForDate?.startTime
+            ? calculateLateMinutes(clockInForStatus, scheduleForDate.startTime)
+            : 0;
+        let finalStatus = await determineAttendanceStatus(businessId, totalHours, lateMinutes, currentTime, scheduleForDate);
+        if (attendance.status === 'late' && finalStatus === 'present') {
+            finalStatus = 'late';
+        }
         await (0, database_1.dbRun)(`
       UPDATE attendance SET
-        clock_out_time = $1,
-        break_start_time = $2,
-        break_end_time = $3,
-        total_hours = $4,
-        overtime_hours = $5,
-        early_departure_minutes = $6,
-        status = $7,
-        notes = $8,
+        check_out_time = $1,
+        status = $2,
+        total_hours = $3,
+        overtime_hours = $4,
         updated_at = NOW()
-      WHERE id = `, [currentTime, break_start_time, break_end_time, totalHours, overtimeHours,
-            earlyDepartureMinutes, finalStatus, notes, attendance.id]);
+      WHERE id = $5`, [currentTimestamp, finalStatus, totalHours, overtimeHours, attendance.id]);
         const updatedAttendance = await (0, database_1.dbGet)(`
       SELECT 
-        a.*,
+        a.id,
+        a.employee_id,
+        a.date,
+        a.check_in_time AS clock_in_time,
+        a.check_out_time AS clock_out_time,
+        a.total_hours,
+        a.overtime_hours,
+        a.status,
+        a.notes,
         e.first_name,
         e.last_name,
         e.employee_code
       FROM attendance a
       JOIN employees e ON a.employee_id = e.id
-      WHERE a.id = `, [attendance.id]);
+      WHERE a.id = $1`, [attendance.id]);
         res.json(updatedAttendance);
     }
     catch (error) {
@@ -370,73 +441,72 @@ router.post('/', async (req, res) => {
         if (!employee_id || !date) {
             return res.status(400).json({ error: 'Employee ID and date are required' });
         }
-        const employee = await (0, database_1.dbGet)('SELECT id FROM employees WHERE id = AND business_id = $2', [employee_id, businessId]);
+        const employee = await (0, database_1.dbGet)('SELECT id FROM employees WHERE id = $1 AND business_id = $2', [employee_id, businessId]);
         if (!employee) {
             return res.status(404).json({ error: 'Employee not found' });
         }
-        const existingAttendance = await (0, database_1.dbGet)('SELECT id FROM attendance WHERE employee_id = AND date = $2', [employee_id, date]);
+        const existingAttendance = await (0, database_1.dbGet)('SELECT id FROM attendance WHERE employee_id = $1 AND date::date = $2', [employee_id, date]);
         if (existingAttendance) {
             return res.status(400).json({ error: 'Attendance record already exists for this date' });
+        }
+        const onLeaveOnDate = await hasApprovedLeaveOnDate(employee_id, date);
+        if (onLeaveOnDate && status !== 'absent' && status !== 'holiday') {
+            return res.status(400).json({
+                error: 'Employee is on approved leave for this date. Mark as absent/holiday or remove leave approval first.'
+            });
         }
         let totalHours = 0;
         let overtimeHours = 0;
         let lateMinutes = 0;
-        let earlyDepartureMinutes = 0;
         let finalStatus = status;
-        if (clock_in_time && clock_out_time) {
+        const checkInTimestamp = clock_in_time ? new Date(`${date}T${clock_in_time}`) : null;
+        const checkOutTimestamp = clock_out_time ? new Date(`${date}T${clock_out_time}`) : null;
+        const shouldAutoDetermineStatus = !status || status === 'present';
+        if (clock_in_time && clock_out_time && shouldAutoDetermineStatus) {
             totalHours = calculateWorkingHours(clock_in_time, clock_out_time, break_start_time, break_end_time);
-            const workSchedule = await (0, database_1.dbGet)(`
-        SELECT * FROM employee_work_schedules 
-        WHERE employee_id = AND business_id = AND is_active = 1
-          AND effective_from <= AND (effective_to IS NULL OR effective_to >= $4)
-        ORDER BY effective_from DESC LIMIT 1
-      `, [employee_id, businessId, date, date]);
-            if (workSchedule) {
-                const inputDate = new Date(date);
-                const dayOfWeek = inputDate.getDay();
-                const dayMap = {
-                    0: { start: workSchedule.sunday_start, end: workSchedule.sunday_end },
-                    1: { start: workSchedule.monday_start, end: workSchedule.monday_end },
-                    2: { start: workSchedule.tuesday_start, end: workSchedule.tuesday_end },
-                    3: { start: workSchedule.wednesday_start, end: workSchedule.wednesday_end },
-                    4: { start: workSchedule.thursday_start, end: workSchedule.thursday_end },
-                    5: { start: workSchedule.friday_start, end: workSchedule.friday_end },
-                    6: { start: workSchedule.saturday_start, end: workSchedule.saturday_end }
-                };
-                const daySchedule = dayMap[dayOfWeek];
-                if (daySchedule.start) {
-                    lateMinutes = calculateLateMinutes(clock_in_time, daySchedule.start);
-                }
-                if (daySchedule.end) {
-                    earlyDepartureMinutes = calculateEarlyDepartureMinutes(clock_out_time, daySchedule.end);
-                }
-            }
             const inputDate = new Date(date);
-            const isWeekend = inputDate.getDay() === 0 || inputDate.getDay() === 6;
+            const dayOfWeek = inputDate.getDay();
+            const scheduleForDate = await getEmployeeScheduleForDate(employee_id, businessId, date);
+            if (scheduleForDate?.startTime) {
+                lateMinutes = calculateLateMinutes(clock_in_time, scheduleForDate.startTime);
+            }
+            const isWeekend = dayOfWeek === 0 || dayOfWeek === 6;
+            if (!isWeekend && (!scheduleForDate || !scheduleForDate.startTime || !scheduleForDate.endTime)) {
+                return res.status(400).json({
+                    error: 'No active work schedule found for this employee on selected date'
+                });
+            }
             overtimeHours = await calculateOvertime(businessId, totalHours, isWeekend, false);
-            finalStatus = await determineAttendanceStatus(employee_id, businessId, clock_in_time, clock_out_time, totalHours, lateMinutes);
+            finalStatus = await determineAttendanceStatus(businessId, totalHours, lateMinutes, clock_out_time, scheduleForDate);
+        }
+        if (status && ['present', 'late', 'half_day', 'absent', 'holiday'].includes(status)) {
+            finalStatus = status;
         }
         const result = await (0, database_1.dbRun)(`
       INSERT INTO attendance (
-        employee_id, business_id, date, clock_in_time, clock_out_time,
-        break_start_time, break_end_time, total_hours, overtime_hours,
-        late_minutes, early_departure_minutes, attendance_type, entry_method, status, notes
-      ) VALUES ($5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19) RETURNING id
+        employee_id, date, check_in_time, check_out_time, status, total_hours, overtime_hours
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING id
     `, [
-            employee_id, businessId, date, clock_in_time, clock_out_time,
-            break_start_time, break_end_time, totalHours, overtimeHours,
-            lateMinutes, earlyDepartureMinutes, attendance_type, entry_method, finalStatus, notes
+            employee_id, date, checkInTimestamp, checkOutTimestamp, finalStatus, totalHours, overtimeHours
         ]);
         const newAttendance = await (0, database_1.dbGet)(`
       SELECT 
-        a.*,
+        a.id,
+        a.employee_id,
+        a.date,
+        a.check_in_time AS clock_in_time,
+        a.check_out_time AS clock_out_time,
+        a.total_hours,
+        a.overtime_hours,
+        a.status,
+        a.notes,
         e.first_name,
         e.last_name,
         e.employee_code,
         e.department
       FROM attendance a
       JOIN employees e ON a.employee_id = e.id
-      WHERE a.id = `, [result.lastID]);
+      WHERE a.id = $1`, [result.lastID]);
         res.status(201).json(newAttendance);
     }
     catch (error) {
@@ -449,47 +519,74 @@ router.put('/:id', async (req, res) => {
         const { id } = req.params;
         const businessId = req.user.userId;
         const { date, clock_in_time, clock_out_time, break_start_time, break_end_time, attendance_type, status, notes } = req.body;
-        const existingAttendance = await (0, database_1.dbGet)('SELECT * FROM attendance WHERE id = AND business_id = $2', [id, businessId]);
+        const existingAttendance = await (0, database_1.dbGet)('SELECT * FROM attendance a JOIN employees e ON a.employee_id = e.id WHERE a.id = $1 AND e.business_id = $2', [id, businessId]);
         if (!existingAttendance) {
             return res.status(404).json({ error: 'Attendance record not found' });
         }
+        const employeeIdForRecord = existingAttendance.employee_id;
         let totalHours = existingAttendance.total_hours;
         let overtimeHours = existingAttendance.overtime_hours;
-        const finalClockIn = clock_in_time || existingAttendance.clock_in_time;
-        const finalClockOut = clock_out_time || existingAttendance.clock_out_time;
-        if (finalClockIn && finalClockOut) {
-            totalHours = calculateWorkingHours(finalClockIn, finalClockOut, break_start_time || existingAttendance.break_start_time, break_end_time || existingAttendance.break_end_time);
-            overtimeHours = totalHours > 8 ? totalHours - 8 : 0;
+        let finalStatus = status || existingAttendance.status;
+        const finalDate = date || new Date(existingAttendance.date).toISOString().split('T')[0];
+        const finalClockInTimestamp = clock_in_time ? new Date(`${finalDate}T${clock_in_time}`) : existingAttendance.check_in_time;
+        const finalClockOutTimestamp = clock_out_time ? new Date(`${finalDate}T${clock_out_time}`) : existingAttendance.check_out_time;
+        const clockInForCalc = clock_in_time || (existingAttendance.check_in_time ? new Date(existingAttendance.check_in_time).toTimeString().split(' ')[0] : null);
+        const clockOutForCalc = clock_out_time || (existingAttendance.check_out_time ? new Date(existingAttendance.check_out_time).toTimeString().split(' ')[0] : null);
+        if (clockInForCalc && clockOutForCalc) {
+            const scheduleForDate = await getEmployeeScheduleForDate(employeeIdForRecord, businessId, finalDate);
+            totalHours = calculateWorkingHours(clockInForCalc, clockOutForCalc, break_start_time || existingAttendance.break_start_time, break_end_time || existingAttendance.break_end_time);
+            const inputDate = new Date(finalDate);
+            const dayOfWeek = inputDate.getDay();
+            const isWeekend = dayOfWeek === 0 || dayOfWeek === 6;
+            if (!isWeekend && (!scheduleForDate || !scheduleForDate.startTime || !scheduleForDate.endTime)) {
+                return res.status(400).json({ error: 'No active work schedule found for this employee on selected date' });
+            }
+            const lateMinutes = scheduleForDate?.startTime
+                ? calculateLateMinutes(clockInForCalc, scheduleForDate.startTime)
+                : 0;
+            overtimeHours = await calculateOvertime(businessId, totalHours, isWeekend, false);
+            finalStatus = await determineAttendanceStatus(businessId, totalHours, lateMinutes, clockOutForCalc, scheduleForDate);
+        }
+        if (status && ['present', 'late', 'half_day', 'absent', 'holiday'].includes(status)) {
+            finalStatus = status;
+        }
+        const onLeaveOnDate = await hasApprovedLeaveOnDate(employeeIdForRecord, finalDate);
+        if (onLeaveOnDate && finalStatus !== 'absent' && finalStatus !== 'holiday') {
+            return res.status(400).json({
+                error: 'Employee is on approved leave for this date. Mark as absent/holiday or remove leave approval first.'
+            });
         }
         await (0, database_1.dbRun)(`
       UPDATE attendance SET
-        date = $2, clock_in_time = $3, clock_out_time = $4, break_start_time = $5,
-        break_end_time = $6, total_hours = $7, overtime_hours = $8,
-        attendance_type = $9, status = $10, notes = $11, updated_at = NOW()
-      WHERE id = AND business_id = `, [
-            date || existingAttendance.date,
-            finalClockIn,
-            finalClockOut,
-            break_start_time || existingAttendance.break_start_time,
-            break_end_time || existingAttendance.break_end_time,
+        date = $1, check_in_time = $2, check_out_time = $3, status = $4, total_hours = $5, overtime_hours = $6, notes = $7, updated_at = NOW()
+      WHERE id = $8`, [
+            finalDate,
+            finalClockInTimestamp,
+            finalClockOutTimestamp,
+            finalStatus,
             totalHours,
             overtimeHours,
-            attendance_type || existingAttendance.attendance_type,
-            status || existingAttendance.status,
-            notes || existingAttendance.notes,
-            id,
-            businessId
+            notes ?? existingAttendance.notes,
+            id
         ]);
         const updatedAttendance = await (0, database_1.dbGet)(`
       SELECT 
-        a.*,
+        a.id,
+        a.employee_id,
+        a.date,
+        a.check_in_time AS clock_in_time,
+        a.check_out_time AS clock_out_time,
+        a.total_hours,
+        a.overtime_hours,
+        a.status,
+        a.notes,
         e.first_name,
         e.last_name,
         e.employee_code,
         e.department
       FROM attendance a
       JOIN employees e ON a.employee_id = e.id
-      WHERE a.id = `, [id]);
+      WHERE a.id = $1`, [id]);
         res.json(updatedAttendance);
     }
     catch (error) {
@@ -501,11 +598,11 @@ router.delete('/:id', async (req, res) => {
     try {
         const { id } = req.params;
         const businessId = req.user.userId;
-        const attendance = await (0, database_1.dbGet)('SELECT id FROM attendance WHERE id = AND business_id = $2', [id, businessId]);
+        const attendance = await (0, database_1.dbGet)('SELECT id FROM attendance a JOIN employees e ON a.employee_id = e.id WHERE a.id = $1 AND e.business_id = $2', [id, businessId]);
         if (!attendance) {
             return res.status(404).json({ error: 'Attendance record not found' });
         }
-        await (0, database_1.dbRun)('DELETE FROM attendance WHERE id = AND business_id = $19', [id, businessId]);
+        await (0, database_1.dbRun)('DELETE FROM attendance WHERE id = $1', [id]);
         res.json({ message: 'Attendance record deleted successfully' });
     }
     catch (error) {
@@ -535,11 +632,12 @@ router.get('/stats/monthly', async (req, res) => {
         ROUND(SUM(a.overtime_hours), 2) as total_overtime_hours
       FROM employees e
       LEFT JOIN attendance a ON e.id = a.employee_id 
-        AND strftime('%m', a.date) = AND strftime('%Y', a.date) = WHERE e.business_id = AND e.status = 'active'
+        AND to_char(a.date, 'MM') = $1 AND to_char(a.date, 'YYYY') = $2
+      WHERE e.business_id = $3 AND e.status = 'active'
     `;
         const params = [targetMonth.padStart(2, '0'), targetYear, businessId];
         if (employee_id) {
-            query += ' AND e.id = $23';
+            query += ' AND e.id = $4';
             params.push(employee_id);
         }
         query += ' GROUP BY e.id ORDER BY e.first_name, e.last_name';
@@ -575,19 +673,22 @@ router.get('/stats/summary', async (req, res) => {
         COUNT(a.id) as total_records,
         COUNT(CASE WHEN a.status = 'present' THEN 1 END) as present_count,
         COUNT(CASE WHEN a.status = 'absent' THEN 1 END) as absent_count,
+        COUNT(CASE WHEN a.status = 'half_day' THEN 1 END) as half_day_count,
         COUNT(CASE WHEN a.status = 'late' THEN 1 END) as late_count,
         ROUND(AVG(a.total_hours), 2) as avg_working_hours,
         ROUND(SUM(a.overtime_hours), 2) as total_overtime_hours
       FROM attendance a
-      WHERE a.business_id = AND a.date BETWEEN ? AND `;
+      JOIN employees e ON a.employee_id = e.id
+      WHERE e.business_id = $1 AND a.date BETWEEN $2 AND $3`;
         const params = [businessId, defaultFrom, defaultTo];
+        let summaryParamIndex = 4;
         if (userType === 'employee') {
             const actualEmployeeId = req.user.userId;
-            query += ' AND a.employee_id = $31';
+            query += ` AND a.employee_id = $${summaryParamIndex++}`;
             params.push(actualEmployeeId);
         }
         const summary = await (0, database_1.dbGet)(query, params);
-        const { total_employees } = await (0, database_1.dbGet)('SELECT COUNT(*) as total_employees FROM employees WHERE business_id = AND status = "active"', [businessId]);
+        const { total_employees } = await (0, database_1.dbGet)('SELECT COUNT(*) as total_employees FROM employees WHERE business_id = $1 AND status = \'active\'', [businessId]);
         res.json({
             ...summary,
             total_active_employees: total_employees,

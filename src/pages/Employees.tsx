@@ -89,6 +89,8 @@ interface WorkSchedule {
   sunday_end: string | null;
   break_duration: number;
   weekly_hours: number;
+  late_come_threshold_minutes: number;
+  half_day_hours: number;
   is_active: boolean;
   first_name?: string;
   last_name?: string;
@@ -148,6 +150,8 @@ interface ScheduleFormData {
   sunday_end: string | null;
   break_duration: number;
   weekly_hours: number;
+  late_come_threshold_minutes: number;
+  half_day_hours: number;
   is_active: boolean;
 }
 
@@ -214,6 +218,8 @@ const initialScheduleFormData: ScheduleFormData = {
   sunday_end: null,
   break_duration: 60,
   weekly_hours: 40,
+  late_come_threshold_minutes: 15,
+  half_day_hours: 4,
   is_active: true,
 };
 
@@ -263,6 +269,7 @@ export const EmployeesPage: React.FC = () => {
   const [isAttendanceRuleDialogOpen, setIsAttendanceRuleDialogOpen] = useState(false);
   const [selectedSchedule, setSelectedSchedule] = useState<WorkSchedule | null>(null);
   const [selectedLeaveType, setSelectedLeaveType] = useState<LeaveType | null>(null);
+  const [selectedAttendanceRule, setSelectedAttendanceRule] = useState<AttendanceRule | null>(null);
   const [scheduleFormData, setScheduleFormData] = useState<ScheduleFormData>(initialScheduleFormData);
   const [leaveTypeFormData, setLeaveTypeFormData] = useState<LeaveTypeFormData>(initialLeaveTypeFormData);
   const [attendanceRuleFormData, setAttendanceRuleFormData] = useState<AttendanceRuleFormData>(initialAttendanceRuleFormData);
@@ -370,6 +377,8 @@ export const EmployeesPage: React.FC = () => {
         employee_id: parseInt(scheduleData.employee_id, 10),
         break_duration: Number(scheduleData.break_duration) || 0,
         weekly_hours: Number(scheduleData.weekly_hours) || 0,
+        late_come_threshold_minutes: Number(scheduleData.late_come_threshold_minutes) || 0,
+        half_day_hours: Number(scheduleData.half_day_hours) || 0,
         is_active: Boolean(scheduleData.is_active),
       };
 
@@ -391,6 +400,8 @@ export const EmployeesPage: React.FC = () => {
         employee_id: parseInt(scheduleData.employee_id, 10),
         break_duration: Number(scheduleData.break_duration) || 0,
         weekly_hours: Number(scheduleData.weekly_hours) || 0,
+        late_come_threshold_minutes: Number(scheduleData.late_come_threshold_minutes) || 0,
+        half_day_hours: Number(scheduleData.half_day_hours) || 0,
         is_active: Boolean(scheduleData.is_active),
       };
 
@@ -462,9 +473,26 @@ export const EmployeesPage: React.FC = () => {
       toast.success('Attendance rule created successfully!');
       fetchAttendanceRules();
       setIsAttendanceRuleDialogOpen(false);
+      setAttendanceRuleFormData(initialAttendanceRuleFormData);
     } catch (error: any) {
       console.error('Error creating attendance rule:', error);
       toast.error(error.response?.data?.error || 'Failed to create attendance rule');
+    }
+  };
+
+  const handleUpdateAttendanceRule = async (ruleData: any) => {
+    if (!selectedAttendanceRule) return;
+
+    try {
+      await api.put(`/attendance-rules/${selectedAttendanceRule.id}`, ruleData);
+      toast.success('Attendance rule updated successfully!');
+      fetchAttendanceRules();
+      setIsAttendanceRuleDialogOpen(false);
+      setSelectedAttendanceRule(null);
+      setAttendanceRuleFormData(initialAttendanceRuleFormData);
+    } catch (error: any) {
+      console.error('Error updating attendance rule:', error);
+      toast.error(error.response?.data?.error || 'Failed to update attendance rule');
     }
   };
 
@@ -869,6 +897,8 @@ export const EmployeesPage: React.FC = () => {
                     <TableHead>Schedule Name</TableHead>
                     <TableHead>Effective Period</TableHead>
                     <TableHead>Weekly Hours</TableHead>
+                    <TableHead>Late Come</TableHead>
+                    <TableHead>Half Day</TableHead>
                     <TableHead>Status</TableHead>
                     <TableHead>Actions</TableHead>
                   </TableRow>
@@ -895,6 +925,8 @@ export const EmployeesPage: React.FC = () => {
                         </div>
                       </TableCell>
                       <TableCell>{schedule.weekly_hours} hours</TableCell>
+                      <TableCell>{schedule.late_come_threshold_minutes} min</TableCell>
+                      <TableCell>{schedule.half_day_hours} hours</TableCell>
                       <TableCell>
                         {schedule.is_active ? (
                           <Badge className="bg-green-100 text-green-800">Active</Badge>
@@ -933,6 +965,8 @@ export const EmployeesPage: React.FC = () => {
                                 sunday_end: schedule.sunday_end,
                                 break_duration: schedule.break_duration,
                                 weekly_hours: schedule.weekly_hours,
+                                late_come_threshold_minutes: Number(schedule.late_come_threshold_minutes ?? 15),
+                                half_day_hours: Number(schedule.half_day_hours ?? 4),
                                 is_active: schedule.is_active,
                               });
                               setIsScheduleDialogOpen(true);
@@ -1046,7 +1080,11 @@ export const EmployeesPage: React.FC = () => {
                     Configure attendance policies including late penalties and overtime calculations.
                   </CardDescription>
                 </div>
-                <Button onClick={() => setIsAttendanceRuleDialogOpen(true)}>
+                <Button onClick={() => {
+                  setSelectedAttendanceRule(null);
+                  setAttendanceRuleFormData(initialAttendanceRuleFormData);
+                  setIsAttendanceRuleDialogOpen(true);
+                }}>
                   <Plus className="h-4 w-4 mr-2" />
                   Add Rule
                 </Button>
@@ -1059,9 +1097,36 @@ export const EmployeesPage: React.FC = () => {
                     <CardContent className="p-4">
                       <div className="flex items-center justify-between mb-2">
                         <h3 className="font-medium">{rule.rule_name}</h3>
-                        {rule.is_active && (
-                          <Badge className="bg-green-100 text-green-800">Active</Badge>
-                        )}
+                        <div className="flex items-center gap-2">
+                          {rule.is_active && (
+                            <Badge className="bg-green-100 text-green-800">Active</Badge>
+                          )}
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => {
+                              setSelectedAttendanceRule(rule);
+                              setAttendanceRuleFormData({
+                                rule_name: rule.rule_name,
+                                late_grace_period: rule.late_grace_period,
+                                late_penalty_type: rule.late_penalty_type,
+                                late_penalty_amount: rule.late_penalty_amount,
+                                half_day_threshold: rule.half_day_threshold,
+                                overtime_threshold: rule.overtime_threshold,
+                                overtime_rate: rule.overtime_rate,
+                                auto_clock_out: rule.auto_clock_out,
+                                auto_clock_out_time: rule.auto_clock_out_time ? String(rule.auto_clock_out_time).slice(0, 5) : '23:59',
+                                weekend_overtime: rule.weekend_overtime,
+                                holiday_overtime: rule.holiday_overtime,
+                                is_active: rule.is_active,
+                              });
+                              setIsAttendanceRuleDialogOpen(true);
+                            }}
+                          >
+                            <Edit className="mr-2 h-4 w-4" />
+                            Edit
+                          </Button>
+                        </div>
                       </div>
                       <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm text-gray-600">
                         <div>
@@ -1629,6 +1694,36 @@ export const EmployeesPage: React.FC = () => {
                 />
               </div>
             </div>
+
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <Label>Late Come Threshold (minutes)</Label>
+                <Input
+                  type="number"
+                  min="0"
+                  value={scheduleFormData.late_come_threshold_minutes}
+                  onChange={(e) => setScheduleFormData(prev => ({ ...prev, late_come_threshold_minutes: parseInt(e.target.value) || 0 }))}
+                  placeholder="15"
+                />
+                <p className="text-xs text-gray-500 mt-1">
+                  Mark employee late if clock-in is after this many minutes from schedule start.
+                </p>
+              </div>
+              <div>
+                <Label>Half Day Hours</Label>
+                <Input
+                  type="number"
+                  min="0"
+                  step="0.25"
+                  value={scheduleFormData.half_day_hours}
+                  onChange={(e) => setScheduleFormData(prev => ({ ...prev, half_day_hours: parseFloat(e.target.value) || 0 }))}
+                  placeholder="4"
+                />
+                <p className="text-xs text-gray-500 mt-1">
+                  If employee works less than full schedule but reaches these hours, mark Half Day.
+                </p>
+              </div>
+            </div>
             
             <div className="flex justify-end space-x-2 pt-4">
               <Button type="button" variant="outline" onClick={() => setIsScheduleDialogOpen(false)}>
@@ -1732,12 +1827,18 @@ export const EmployeesPage: React.FC = () => {
       </Dialog>
 
       {/* Attendance Rule Dialog */}
-      <Dialog open={isAttendanceRuleDialogOpen} onOpenChange={setIsAttendanceRuleDialogOpen}>
+      <Dialog open={isAttendanceRuleDialogOpen} onOpenChange={(isOpen) => {
+        setIsAttendanceRuleDialogOpen(isOpen);
+        if (!isOpen) {
+          setSelectedAttendanceRule(null);
+          setAttendanceRuleFormData(initialAttendanceRuleFormData);
+        }
+      }}>
         <DialogContent className="max-w-2xl">
           <DialogHeader>
-            <DialogTitle>Create Attendance Rule</DialogTitle>
+            <DialogTitle>{selectedAttendanceRule ? 'Edit' : 'Create'} Attendance Rule</DialogTitle>
             <DialogDescription>
-              Define attendance policies and overtime calculations.
+              {selectedAttendanceRule ? 'Update attendance policies and overtime calculations.' : 'Define attendance policies and overtime calculations.'}
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4">
@@ -1842,13 +1943,21 @@ export const EmployeesPage: React.FC = () => {
                 />
                 <Label htmlFor="holiday_overtime">Holiday Overtime</Label>
               </div>
+              <div className="flex items-center space-x-2">
+                <Switch 
+                  id="attendance_rule_is_active" 
+                  checked={attendanceRuleFormData.is_active}
+                  onCheckedChange={(checked) => setAttendanceRuleFormData(prev => ({...prev, is_active: checked}))}
+                />
+                <Label htmlFor="attendance_rule_is_active">Active Rule</Label>
+              </div>
             </div>
             <div className="flex justify-end space-x-2 pt-4">
               <Button type="button" variant="outline" onClick={() => setIsAttendanceRuleDialogOpen(false)}>
                 Cancel
               </Button>
-              <Button type="button" onClick={() => handleCreateAttendanceRule(attendanceRuleFormData)}>
-                Create Rule
+              <Button type="button" onClick={() => selectedAttendanceRule ? handleUpdateAttendanceRule(attendanceRuleFormData) : handleCreateAttendanceRule(attendanceRuleFormData)}>
+                {selectedAttendanceRule ? 'Update Rule' : 'Create Rule'}
               </Button>
             </div>
           </div>

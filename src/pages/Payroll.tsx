@@ -427,6 +427,10 @@ export const PayrollPage: React.FC = () => {
 
   const getStatusBadge = (status: string) => {
     switch (status) {
+      case 'short_time':
+        return <Badge className="bg-orange-100 text-orange-800">Short Time</Badge>;
+      case 'late_short_time':
+        return <Badge className="bg-amber-100 text-amber-800">Late &amp; Short Time</Badge>;
       case 'draft':
         return <Badge className="bg-gray-100 text-gray-800">Draft</Badge>;
       case 'approved':

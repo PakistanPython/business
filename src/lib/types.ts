@@ -548,7 +548,7 @@ export interface Attendance {
   total_hours?: number;
   overtime_hours?: number;
   break_hours?: number;
-  status: 'present' | 'absent' | 'late' | 'half_day' | 'holiday';
+  status: 'present' | 'absent' | 'late' | 'short_time' | 'late_short_time' | 'half_day' | 'holiday';
   notes?: string;
   created_at: string;
   updated_at?: string;
@@ -681,7 +681,7 @@ export interface PayrollQueryParams extends BaseQueryParams {
 
 export interface AttendanceQueryParams extends BaseQueryParams {
   employee_id?: number;
-  status?: 'present' | 'absent' | 'late' | 'half_day' | 'holiday' | 'all';
+  status?: 'present' | 'absent' | 'late' | 'short_time' | 'late_short_time' | 'half_day' | 'holiday' | 'all';
   date_from?: string;
   date_to?: string;
   month?: string;

@@ -60,7 +60,11 @@ const calculatePayroll = async (employeeId: number, payPeriodStart: string, payP
 
   // Calculate totals
   const totalWorkingDays = attendanceRecords.length;
-  const totalPresentDays = attendanceRecords.filter(a => a.status === 'present').length;
+  const totalPresentDays = attendanceRecords.reduce((sum, a) => {
+    if (a.status === 'present' || a.status === 'late') return sum + 1;
+    if (a.status === 'half_day') return sum + 0.5;
+    return sum;
+  }, 0);
   const totalOvertimeHours = attendanceRecords.reduce((sum, a) => sum + (a.overtime_hours || 0), 0);
   const totalHours = attendanceRecords.reduce((sum, a) => sum + (a.total_hours || 0), 0);
 
@@ -91,7 +95,7 @@ const calculatePayroll = async (employeeId: number, payPeriodStart: string, payP
     basicSalary: Math.round(basicSalary * 100) / 100,
     overtimeAmount: Math.round(overtimeAmount * 100) / 100,
     totalWorkingDays,
-    totalPresentDays,
+    totalPresentDays: Math.round(totalPresentDays * 100) / 100,
     totalOvertimeHours: Math.round(totalOvertimeHours * 100) / 100,
   };
 };
@@ -354,13 +358,14 @@ router.get('/ledger', async (req: Request, res: Response) => {
     const summary = entries.reduce(
       (acc, entry) => {
         const status = String(entry.attendance || '');
-        if (status === 'present' || status === 'late') acc.present += 1;
+        if (status === 'present') acc.present += 1;
+        else if (status === 'late') acc.late += 1;
         else if (status === 'absent') acc.absent += 1;
         else if (status === 'holiday') acc.holiday += 1;
         else if (status === 'half_day') acc.half_day += 1;
         return acc;
       },
-      { present: 0, absent: 0, holiday: 0, half_day: 0, month_days: daysInMonth }
+      { present: 0, late: 0, absent: 0, holiday: 0, half_day: 0, month_days: daysInMonth }
     );
 
     res.json({

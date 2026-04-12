@@ -39,11 +39,39 @@ const calculateLateMinutes = (clockInTime: string, expectedStartTime: string): n
   return Math.max(0, diffMinutes);
 };
 
+const calculateScheduledHours = (startTime: string, endTime: string, breakDuration = 0): number => {
+  if (!startTime || !endTime) return 0;
+
+  const start = new Date(`1970-01-01T${startTime}`);
+  const end = new Date(`1970-01-01T${endTime}`);
+  const diffMinutes = (end.getTime() - start.getTime()) / (1000 * 60);
+
+  return Math.max(0, (diffMinutes - breakDuration) / 60);
+};
+
+const CLOCK_OUT_GRACE_MINUTES = 30;
+
+const timeToMinutes = (timeValue: string): number => {
+  const [hours = '0', minutes = '0', seconds = '0'] = String(timeValue).split(':');
+  return (Number(hours) * 60) + Number(minutes) + Math.floor(Number(seconds) / 60);
+};
+
+const hasMetExpectedClockOutTime = (clockOutTime: string, expectedEndTime: string, allowedEarlyMinutes = CLOCK_OUT_GRACE_MINUTES): boolean => {
+  return timeToMinutes(clockOutTime) >= (timeToMinutes(expectedEndTime) - Math.max(0, allowedEarlyMinutes));
+};
+
 const getEmployeeScheduleForDate = async (
   employeeId: number,
   businessId: number,
   targetDate: string
-): Promise<{ startTime: string | null; endTime: string | null } | null> => {
+): Promise<{
+  startTime: string | null;
+  endTime: string | null;
+  breakDuration: number;
+  expectedHours: number;
+  lateComeThresholdMinutes: number | null;
+  halfDayHours: number | null;
+} | null> => {
   const schedule = await dbGet(
     `
       SELECT *
@@ -73,9 +101,17 @@ const getEmployeeScheduleForDate = async (
   };
 
   const dayKeys = dayKeyMap[dayOfWeek];
+  const startTime = schedule[dayKeys.start] || null;
+  const endTime = schedule[dayKeys.end] || null;
+  const breakDuration = Number(schedule.break_duration || 0);
+
   return {
-    startTime: schedule[dayKeys.start] || null,
-    endTime: schedule[dayKeys.end] || null
+    startTime,
+    endTime,
+    breakDuration,
+    expectedHours: startTime && endTime ? calculateScheduledHours(startTime, endTime, breakDuration) : 0,
+    lateComeThresholdMinutes: schedule.late_come_threshold_minutes != null ? Number(schedule.late_come_threshold_minutes) : null,
+    halfDayHours: schedule.half_day_hours != null ? Number(schedule.half_day_hours) : null,
   };
 };
 
@@ -107,7 +143,18 @@ const calculateEarlyDepartureMinutes = (clockOutTime: string, expectedEndTime: s
 };
 
 // Helper function to determine attendance status based on rules
-const determineAttendanceStatus = async (businessId: number, totalHours: number, lateMinutes: number) => {
+const determineAttendanceStatus = async (
+  businessId: number,
+  totalHours: number,
+  lateMinutes: number,
+  clockOutTime?: string | null,
+  scheduleConfig?: {
+    expectedHours?: number;
+    endTime?: string | null;
+    lateComeThresholdMinutes?: number | null;
+    halfDayHours?: number | null;
+  } | null
+) => {
   // Get active attendance rule
   const rule = await dbGet(`
     SELECT * FROM attendance_rules 
@@ -117,27 +164,29 @@ const determineAttendanceStatus = async (businessId: number, totalHours: number,
   
   if (!rule) {
     // Default behavior if no rules defined
-    if (lateMinutes > 30) return 'late';
-    if (totalHours < 4) return 'half_day';
-    return 'present';
+    const lateGracePeriod = scheduleConfig?.lateComeThresholdMinutes ?? 30;
+    const halfDayThresholdHours = scheduleConfig?.halfDayHours ?? 4;
+    const isLate = lateMinutes > lateGracePeriod;
+    const hasMetScheduleTime = scheduleConfig?.endTime && clockOutTime
+      ? hasMetExpectedClockOutTime(clockOutTime, scheduleConfig.endTime)
+      : true;
+
+    if (totalHours <= 0) return 'absent';
+    if (!hasMetScheduleTime) return totalHours >= halfDayThresholdHours ? 'half_day' : 'absent';
+    return isLate ? 'late' : 'present';
   }
   
   // Apply attendance rules
-  const lateGracePeriod = rule.late_grace_period ?? 15;
-  const halfDayThresholdHours = (rule.half_day_threshold ?? 240) / 60;
+  const lateGracePeriod = scheduleConfig?.lateComeThresholdMinutes ?? rule.late_grace_period ?? 15;
+  const halfDayThresholdHours = scheduleConfig?.halfDayHours ?? ((rule.half_day_threshold ?? 240) / 60);
+  const isLate = lateMinutes > lateGracePeriod;
+  const hasMetScheduleTime = scheduleConfig?.endTime && clockOutTime
+    ? hasMetExpectedClockOutTime(clockOutTime, scheduleConfig.endTime)
+    : true;
 
-  if (lateMinutes > lateGracePeriod) {
-    if (rule.late_penalty_type === 'half_day' && totalHours < halfDayThresholdHours) {
-      return 'half_day';
-    }
-    return 'late';
-  }
-  
-  if (totalHours < halfDayThresholdHours) {
-    return 'half_day';
-  }
-  
-  return 'present';
+  if (totalHours <= 0) return 'absent';
+  if (!hasMetScheduleTime) return totalHours >= halfDayThresholdHours ? 'half_day' : 'absent';
+  return isLate ? 'late' : 'present';
 };
 
 // Helper function to calculate overtime
@@ -398,7 +447,7 @@ router.post('/clock-in', async (req: Request, res: Response) => {
       `SELECT late_grace_period FROM attendance_rules WHERE business_id = $1 AND is_active = true ORDER BY created_at DESC LIMIT 1`,
       [businessId]
     );
-    const lateGracePeriod = activeRule?.late_grace_period ?? 15;
+    const lateGracePeriod = scheduleForDate?.lateComeThresholdMinutes ?? activeRule?.late_grace_period ?? 15;
     const initialStatus = lateMinutes > lateGracePeriod ? 'late' : 'present';
 
     // Create attendance record
@@ -501,12 +550,14 @@ router.post('/clock-out', async (req: Request, res: Response) => {
     let finalStatus = await determineAttendanceStatus(
       businessId!,
       totalHours,
-      lateMinutes
+      lateMinutes,
+      currentTime,
+      scheduleForDate
     );
 
-    // Preserve already-marked late status from clock-in
-    // (unless a hard manual status like absent/holiday is being set elsewhere)
-    if (attendance.status === 'late' && finalStatus !== 'absent' && finalStatus !== 'holiday') {
+    // Preserve already-marked late status from clock-in only when final result is otherwise present.
+    // If worked hours qualify for half day, half day should take precedence.
+    if (attendance.status === 'late' && finalStatus === 'present') {
       finalStatus = 'late';
     }
 
@@ -628,7 +679,7 @@ router.post('/', async (req: Request, res: Response) => {
       
       // Determine final status
       finalStatus = await determineAttendanceStatus(
-        businessId!, totalHours, lateMinutes
+        businessId!, totalHours, lateMinutes, clock_out_time, scheduleForDate
       );
     }
 
@@ -737,7 +788,7 @@ router.put('/:id', async (req: Request, res: Response) => {
         : 0;
 
       overtimeHours = await calculateOvertime(businessId!, totalHours, isWeekend, false);
-      finalStatus = await determineAttendanceStatus(businessId!, totalHours, lateMinutes);
+      finalStatus = await determineAttendanceStatus(businessId!, totalHours, lateMinutes, clockOutForCalc, scheduleForDate);
     }
 
     if (status && ['present', 'late', 'half_day', 'absent', 'holiday'].includes(status)) {

@@ -60,6 +60,7 @@ interface PayrollLedgerData {
   total_amount: number;
   summary?: {
     present: number;
+    late: number;
     absent: number;
     holiday: number;
     half_day: number;
@@ -273,6 +274,8 @@ const EmployeePortal: React.FC = () => {
     const statusConfig = {
       present: { color: 'bg-green-100 text-green-800', icon: CheckCircle },
       late: { color: 'bg-yellow-100 text-yellow-800', icon: AlertCircle },
+      short_time: { color: 'bg-orange-100 text-orange-800', icon: Clock },
+      late_short_time: { color: 'bg-amber-100 text-amber-800', icon: AlertCircle },
       absent: { color: 'bg-red-100 text-red-800', icon: AlertCircle },
       half_day: { color: 'bg-blue-100 text-blue-800', icon: Clock },
       holiday: { color: 'bg-purple-100 text-purple-800', icon: Calendar },
@@ -281,11 +284,18 @@ const EmployeePortal: React.FC = () => {
 
     const config = statusConfig[status as keyof typeof statusConfig] || statusConfig.present;
     const IconComponent = config.icon;
+    const label = status === 'late'
+      ? 'LATE COME'
+      : status === 'late_short_time'
+        ? 'LATE COME & SHORT TIME'
+        : status === 'short_time'
+          ? 'SHORT TIME'
+          : status.replace('_', ' ').toUpperCase();
 
     return (
       <Badge className={`${config.color} flex items-center gap-1`}>
         <IconComponent className="w-3 h-3" />
-        {status.replace('_', ' ').toUpperCase()}
+        {label}
       </Badge>
     );
   };
@@ -907,10 +917,14 @@ const EmployeePortal: React.FC = () => {
                 ) : ledgerData ? (
                   <div className="space-y-4">
                     {ledgerData.summary && (
-                      <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
+                      <div className="grid grid-cols-2 md:grid-cols-6 gap-3">
                         <div className="rounded-lg border bg-green-50 p-3 text-center">
                           <p className="text-xs text-green-700">Present</p>
                           <p className="text-xl font-bold text-green-800">{ledgerData.summary.present}</p>
+                        </div>
+                        <div className="rounded-lg border bg-yellow-50 p-3 text-center">
+                          <p className="text-xs text-yellow-700">Late Come</p>
+                          <p className="text-xl font-bold text-yellow-800">{ledgerData.summary.late}</p>
                         </div>
                         <div className="rounded-lg border bg-red-50 p-3 text-center">
                           <p className="text-xs text-red-700">Absent</p>

@@ -10,6 +10,8 @@ const morgan_1 = __importDefault(require("morgan"));
 const compression_1 = __importDefault(require("compression"));
 const express_rate_limit_1 = __importDefault(require("express-rate-limit"));
 const dotenv_1 = __importDefault(require("dotenv"));
+const path_1 = __importDefault(require("path"));
+dotenv_1.default.config({ path: path_1.default.resolve(__dirname, '../.env') });
 const database_1 = require("./config/database");
 const auth_1 = __importDefault(require("./routes/auth"));
 const dashboard_1 = __importDefault(require("./routes/dashboard"));
@@ -26,9 +28,15 @@ const attendance_1 = __importDefault(require("./routes/attendance"));
 const payroll_1 = __importDefault(require("./routes/payroll"));
 const accounts_receivable_1 = __importDefault(require("./routes/accounts_receivable"));
 const accounts_payable_1 = __importDefault(require("./routes/accounts_payable"));
-dotenv_1.default.config();
+const work_schedules_1 = __importDefault(require("./routes/work_schedules"));
+const leaves_1 = __importDefault(require("./routes/leaves"));
+const attendance_rules_1 = __importDefault(require("./routes/attendance_rules"));
+const preferences_1 = __importDefault(require("./routes/preferences"));
+const backup_1 = __importDefault(require("./routes/backup"));
+const transaction_1 = __importDefault(require("./routes/transaction"));
 const app = (0, express_1.default)();
 const PORT = process.env.PORT || 5000;
+app.set('trust proxy', 1);
 const limiter = (0, express_rate_limit_1.default)({
     windowMs: 15 * 60 * 1000,
     max: 100,
@@ -36,18 +44,27 @@ const limiter = (0, express_rate_limit_1.default)({
     standardHeaders: true,
     legacyHeaders: false,
 });
-const corsOrigin = process.env.NODE_ENV === 'production'
-    ? process.env.FRONTEND_URL || 'https://your-frontend-domain.com'
-    : process.env.FRONTEND_URL || 'http://localhost:5173';
+const allowedOrigins = [
+    'http://localhost:5173',
+    process.env.FRONTEND_URL || 'https://my-business-app.vercel.app'
+];
+const corsOptions = {
+    origin: (origin, callback) => {
+        if (!origin || allowedOrigins.includes(origin) || (origin && origin.endsWith('.vercel.app'))) {
+            callback(null, true);
+        }
+        else {
+            callback(new Error('Not allowed by CORS'));
+        }
+    },
+    credentials: true,
+    optionsSuccessStatus: 200
+};
 app.use((0, helmet_1.default)({
     crossOriginResourcePolicy: { policy: "cross-origin" },
     crossOriginEmbedderPolicy: false
 }));
-app.use((0, cors_1.default)({
-    origin: corsOrigin,
-    credentials: true,
-    optionsSuccessStatus: 200
-}));
+app.use((0, cors_1.default)(corsOptions));
 app.use((0, morgan_1.default)('combined'));
 app.use((0, compression_1.default)());
 app.use(limiter);
@@ -75,6 +92,12 @@ app.use('/api/attendance', attendance_1.default);
 app.use('/api/payroll', payroll_1.default);
 app.use('/api/accounts-receivable', accounts_receivable_1.default);
 app.use('/api/accounts-payable', accounts_payable_1.default);
+app.use('/api/work-schedules', work_schedules_1.default);
+app.use('/api/leaves', leaves_1.default);
+app.use('/api/attendance-rules', attendance_rules_1.default);
+app.use('/api/preferences', preferences_1.default);
+app.use('/api/backup', backup_1.default);
+app.use('/api/transactions', transaction_1.default);
 app.get('/', (req, res) => {
     res.json({
         message: 'My Business API Server is running!',
@@ -110,7 +133,6 @@ const startServer = async () => {
             console.log(`🚀 Server running on http://localhost:${PORT}`);
             console.log(`📊 Environment: ${process.env.NODE_ENV || 'development'}`);
             console.log(`💾 Database: SQLite`);
-            console.log(`🌐 CORS Origin: ${corsOrigin}`);
         });
     }
     catch (error) {

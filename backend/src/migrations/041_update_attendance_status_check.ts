@@ -10,7 +10,7 @@ export async function up(db: Kysely<any>): Promise<void> {
     .alterTable('attendance')
     .addCheckConstraint(
       'attendance_status_check',
-      sql`status IN ('present', 'absent', 'late', 'holiday', 'half_day')`
+      sql`status IN ('present', 'absent', 'late', 'short_time', 'late_short_time', 'holiday', 'half_day')`
     )
     .execute();
 }

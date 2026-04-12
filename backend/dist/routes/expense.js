@@ -36,29 +36,31 @@ router.get('/', [
         const endDate = req.query.end_date;
         const sortBy = req.query.sort_by || 'date';
         const sortOrder = req.query.sort_order || 'desc';
-        let whereClause = 'WHERE user_id = ?';
+        let whereClause = 'WHERE e.business_id = $1';
         const whereParams = [userId];
+        let paramIndex = 2;
         if (category) {
-            whereClause += ' AND category = ?';
+            whereClause += ` AND c.name = $${paramIndex++}`;
             whereParams.push(category);
         }
         if (startDate) {
-            whereClause += ' AND date >= ?';
+            whereClause += ` AND e.date >= $${paramIndex++}`;
             whereParams.push(startDate);
         }
         if (endDate) {
-            whereClause += ' AND date <= ?';
+            whereClause += ` AND e.date <= $${paramIndex++}`;
             whereParams.push(endDate);
         }
-        const countResult = await (0, database_1.dbGet)(`SELECT COUNT(*) as total FROM expenses ${whereClause}`, whereParams);
+        const countResult = await (0, database_1.dbGet)(`SELECT COUNT(*) as total FROM expenses e JOIN categories c ON e.category_id = c.id ${whereClause}`, whereParams);
         const total = countResult.total;
         const expenseRecords = await (0, database_1.dbAll)(`SELECT 
-        id, amount, description, category, payment_method, date, 
-        receipt_path, created_at, updated_at
-       FROM expenses 
+        e.id, e.amount, e.description, c.name as category, c.color as category_color, c.icon as category_icon, e.payment_method, e.date, 
+        e.created_at, e.updated_at
+       FROM expenses e
+       JOIN categories c ON e.category_id = c.id
        ${whereClause} 
        ORDER BY ${sortBy} ${sortOrder.toUpperCase()}
-       LIMIT $1 OFFSET $2`, [...whereParams, limit, offset]);
+       LIMIT $${paramIndex++} OFFSET $${paramIndex++}`, [...whereParams, limit, offset]);
         const totalPages = Math.ceil(total / limit);
         const hasNext = page < totalPages;
         const hasPrev = page > 1;
@@ -96,10 +98,11 @@ router.get('/:id', async (req, res) => {
             });
         }
         const expense = await (0, database_1.dbGet)(`SELECT 
-        id, amount, description, category, payment_method, date, 
-        receipt_path, created_at, updated_at
-       FROM expenses 
-       WHERE id = $1 AND user_id = $2`, [expenseId, userId]);
+        e.id, e.amount, e.description, c.name as category, c.color as category_color, c.icon as category_icon, e.payment_method, e.date, 
+        e.created_at, e.updated_at
+       FROM expenses e
+       JOIN categories c ON e.category_id = c.id
+       WHERE e.id = $1 AND e.business_id = $2`, [expenseId, userId]);
         if (!expense) {
             return res.status(404).json({
                 success: false,
@@ -128,24 +131,16 @@ router.post('/', [
         .trim()
         .isLength({ max: 500 })
         .withMessage('Description cannot exceed 500 characters'),
-    (0, express_validator_1.body)('category')
+    (0, express_validator_1.body)('category_id')
+        .isInt({ min: 1 })
+        .withMessage('Category is required'),
+    (0, express_validator_1.body)('payment_method')
         .trim()
         .notEmpty()
-        .isLength({ max: 50 })
-        .withMessage('Category is required and cannot exceed 50 characters'),
-    (0, express_validator_1.body)('payment_method')
-        .optional()
-        .trim()
-        .isLength({ max: 50 })
-        .withMessage('Payment method cannot exceed 50 characters'),
+        .withMessage('Payment method is required'),
     (0, express_validator_1.body)('date')
         .isISO8601()
-        .withMessage('Date must be valid ISO date'),
-    (0, express_validator_1.body)('receipt_path')
-        .optional()
-        .trim()
-        .isLength({ max: 255 })
-        .withMessage('Receipt path cannot exceed 255 characters')
+        .withMessage('Date must be valid ISO date')
 ], async (req, res) => {
     try {
         const errors = (0, express_validator_1.validationResult)(req);
@@ -157,11 +152,10 @@ router.post('/', [
             });
         }
         const userId = req.user.userId;
-        const { amount, description = null, category, payment_method = 'Cash', date, receipt_path = null } = req.body;
-        const expenseResult = await (0, database_1.dbRun)('INSERT INTO expenses (user_id, amount, description, category, payment_method, date, receipt_path) VALUES (?, ?, ?, ?, ?, ?, ?)', [userId, amount, description, category, payment_method, date, receipt_path]);
+        const { amount, description = null, category_id, payment_method, date } = req.body;
+        const expenseResult = await (0, database_1.dbRun)('INSERT INTO expenses (business_id, amount, description, category_id, payment_method, date) VALUES ($1, $2, $3, $4, $5, $6) RETURNING id', [userId, amount, description, category_id, payment_method, date]);
         const expenseId = expenseResult.lastID;
-        const expenseRecord = await (0, database_1.dbGet)('SELECT * FROM expenses WHERE id = ?', [expenseId]);
-        await (0, database_1.dbRun)('INSERT INTO transactions (user_id, transaction_type, reference_id, reference_table, amount, description, date) VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING id', [userId, 'expense', expenseId, 'expenses', amount, `Expense: ${description || category}`, date]);
+        const expenseRecord = await (0, database_1.dbGet)('SELECT * FROM expenses WHERE id = $1', [expenseId]);
         res.status(201).json({
             success: true,
             message: 'Expense record created successfully',
@@ -186,26 +180,19 @@ router.put('/:id', [
         .trim()
         .isLength({ max: 500 })
         .withMessage('Description cannot exceed 500 characters'),
-    (0, express_validator_1.body)('category')
+    (0, express_validator_1.body)('category_id')
         .optional()
-        .trim()
-        .notEmpty()
-        .isLength({ max: 50 })
-        .withMessage('Category cannot be empty and cannot exceed 50 characters'),
+        .isInt({ min: 1 })
+        .withMessage('Invalid category ID'),
     (0, express_validator_1.body)('payment_method')
         .optional()
         .trim()
-        .isLength({ max: 50 })
-        .withMessage('Payment method cannot exceed 50 characters'),
+        .notEmpty()
+        .withMessage('Payment method cannot be empty'),
     (0, express_validator_1.body)('date')
         .optional()
         .isISO8601()
-        .withMessage('Date must be valid ISO date'),
-    (0, express_validator_1.body)('receipt_path')
-        .optional()
-        .trim()
-        .isLength({ max: 255 })
-        .withMessage('Receipt path cannot exceed 255 characters')
+        .withMessage('Date must be valid ISO date')
 ], async (req, res) => {
     try {
         const errors = (0, express_validator_1.validationResult)(req);
@@ -224,39 +211,36 @@ router.put('/:id', [
                 message: 'Invalid expense ID'
             });
         }
-        const existingRecord = await (0, database_1.dbGet)('SELECT id FROM expenses WHERE id = $1 AND user_id = $2', [expenseId, userId]);
+        const existingRecord = await (0, database_1.dbGet)('SELECT id, category_id FROM expenses WHERE id = $1 AND business_id = $2', [expenseId, userId]);
         if (!existingRecord) {
             return res.status(404).json({
                 success: false,
                 message: 'Expense record not found'
             });
         }
-        const { amount, description, category, payment_method, date, receipt_path } = req.body;
+        const { amount, description, category_id, payment_method, date } = req.body;
         const updates = [];
         const values = [];
+        let paramIndex = 1;
         if (amount !== undefined) {
-            updates.push('amount = $1');
+            updates.push(`amount = $${paramIndex++}`);
             values.push(amount);
         }
         if (description !== undefined) {
-            updates.push('description = $2');
+            updates.push(`description = $${paramIndex++}`);
             values.push(description);
         }
-        if (category !== undefined) {
-            updates.push('category = $3');
-            values.push(category);
-        }
         if (payment_method !== undefined) {
-            updates.push('payment_method = $4');
+            updates.push(`payment_method = $${paramIndex++}`);
             values.push(payment_method);
         }
-        if (date !== undefined) {
-            updates.push('date = $5');
-            values.push(date);
+        if (category_id) {
+            updates.push(`category_id = $${paramIndex++}`);
+            values.push(category_id);
         }
-        if (receipt_path !== undefined) {
-            updates.push('receipt_path = $6');
-            values.push(receipt_path);
+        if (date !== undefined) {
+            updates.push(`date = $${paramIndex++}`);
+            values.push(date);
         }
         if (updates.length === 0) {
             return res.status(400).json({
@@ -264,9 +248,8 @@ router.put('/:id', [
                 message: 'No valid fields to update'
             });
         }
-        updates.push('updated_at = NOW()');
         values.push(expenseId);
-        await (0, database_1.dbRun)(`UPDATE expenses SET ${updates.join(', ')} WHERE id = $1`, values);
+        await (0, database_1.dbRun)(`UPDATE expenses SET ${updates.join(', ')}, updated_at = NOW() WHERE id = $${paramIndex++}`, values);
         const updatedRecord = await (0, database_1.dbGet)('SELECT * FROM expenses WHERE id = $1', [expenseId]);
         res.json({
             success: true,
@@ -292,15 +275,13 @@ router.delete('/:id', async (req, res) => {
                 message: 'Invalid expense ID'
             });
         }
-        const existingRecord = await (0, database_1.dbGet)('SELECT id FROM expenses WHERE id = $1 AND user_id = $2', [expenseId, userId]);
-        if (!existingRecord) {
+        const result = await (0, database_1.dbRun)('DELETE FROM expenses WHERE id = $1 AND business_id = $2', [expenseId, userId]);
+        if (result.changes === 0) {
             return res.status(404).json({
                 success: false,
                 message: 'Expense record not found'
             });
         }
-        await (0, database_1.dbRun)('DELETE FROM transactions WHERE reference_id = $2 AND reference_table = $3 AND user_id = $4', [expenseId, 'expenses', userId]);
-        await (0, database_1.dbRun)('DELETE FROM expenses WHERE id = $5 AND user_id = $6', [expenseId, userId]);
         res.json({
             success: true,
             message: 'Expense record deleted successfully'
@@ -324,40 +305,32 @@ router.get('/stats/summary', async (req, res) => {
         MIN(date) as earliest_date,
         MAX(date) as latest_date
        FROM expenses 
-       WHERE user_id = $1`, [userId]);
+       WHERE business_id = $1`, [userId]);
         const monthlyStats = await (0, database_1.dbAll)(`SELECT 
-        strftime('%m', date) as month,
-        strftime('%Y', date) as year,
+        to_char(date, 'MM') as month,
+        to_char(date, 'YYYY') as year,
         SUM(amount) as monthly_expenses,
         COUNT(*) as monthly_count
        FROM expenses 
-       WHERE user_id = $1 AND strftime('%Y', date) = strftime('%Y', 'now')
-       GROUP BY strftime('%Y', date), strftime('%m', date)
+       WHERE business_id = $1 AND to_char(date, 'YYYY') = to_char(CURRENT_DATE, 'YYYY')
+       GROUP BY to_char(date, 'YYYY'), to_char(date, 'MM')
        ORDER BY month`, [userId]);
         const categoryStats = await (0, database_1.dbAll)(`SELECT 
-        category,
+        c.name as category,
         COUNT(*) as count,
-        SUM(amount) as total_amount,
-        AVG(amount) as average_amount
-       FROM expenses 
-       WHERE user_id = $1 
-       GROUP BY category
-       ORDER BY total_amount DESC`, [userId]);
-        const paymentStats = await (0, database_1.dbAll)(`SELECT 
-        payment_method,
-        COUNT(*) as count,
-        SUM(amount) as total_amount
-       FROM expenses 
-       WHERE user_id = $2 
-       GROUP BY payment_method
+        SUM(e.amount) as total_amount,
+        AVG(e.amount) as average_amount
+       FROM expenses e
+       JOIN categories c ON e.category_id = c.id
+       WHERE e.business_id = $1 
+       GROUP BY c.name
        ORDER BY total_amount DESC`, [userId]);
         res.json({
             success: true,
             data: {
                 summary: stats,
                 monthly: monthlyStats,
-                by_category: categoryStats,
-                by_payment_method: paymentStats
+                by_category: categoryStats
             }
         });
     }

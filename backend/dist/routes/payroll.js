@@ -8,6 +8,34 @@ const database_1 = require("../config/database");
 const auth_1 = require("../middleware/auth");
 const router = express_1.default.Router();
 router.use(auth_1.authenticateToken);
+const getBusinessIdFromRequest = (req) => {
+    return req.user.userType === 'employee' ? req.user.businessId : req.user.userId;
+};
+const isEmployeeUser = (req) => req.user.userType === 'employee';
+const round2 = (value) => Math.round(value * 100) / 100;
+const normalizeDateKey = (value) => {
+    if (!value)
+        return '';
+    if (value instanceof Date) {
+        if (Number.isNaN(value.getTime()))
+            return '';
+        const year = value.getFullYear();
+        const month = String(value.getMonth() + 1).padStart(2, '0');
+        const day = String(value.getDate()).padStart(2, '0');
+        return `${year}-${month}-${day}`;
+    }
+    const raw = String(value).trim();
+    if (/^\d{4}-\d{2}-\d{2}/.test(raw)) {
+        return raw.slice(0, 10);
+    }
+    const parsed = new Date(raw);
+    if (Number.isNaN(parsed.getTime()))
+        return '';
+    const year = parsed.getFullYear();
+    const month = String(parsed.getMonth() + 1).padStart(2, '0');
+    const day = String(parsed.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
+};
 const calculatePayroll = async (employeeId, payPeriodStart, payPeriodEnd) => {
     const employee = await (0, database_1.dbGet)('SELECT * FROM employees WHERE id = $1', [employeeId]);
     if (!employee) {
@@ -18,7 +46,13 @@ const calculatePayroll = async (employeeId, payPeriodStart, payPeriodEnd) => {
     WHERE employee_id = $1 AND date BETWEEN $2 AND $3
   `, [employeeId, payPeriodStart, payPeriodEnd]);
     const totalWorkingDays = attendanceRecords.length;
-    const totalPresentDays = attendanceRecords.filter(a => a.status === 'present').length;
+    const totalPresentDays = attendanceRecords.reduce((sum, a) => {
+        if (a.status === 'present' || a.status === 'late')
+            return sum + 1;
+        if (a.status === 'half_day')
+            return sum + 0.5;
+        return sum;
+    }, 0);
     const totalOvertimeHours = attendanceRecords.reduce((sum, a) => sum + (a.overtime_hours || 0), 0);
     const totalHours = attendanceRecords.reduce((sum, a) => sum + (a.total_hours || 0), 0);
     let basicSalary = 0;
@@ -44,18 +78,15 @@ const calculatePayroll = async (employeeId, payPeriodStart, payPeriodEnd) => {
         basicSalary: Math.round(basicSalary * 100) / 100,
         overtimeAmount: Math.round(overtimeAmount * 100) / 100,
         totalWorkingDays,
-        totalPresentDays,
-        totalOvertimeHours: Math.round(totalOvertimeHours * 100) / 100
+        totalPresentDays: Math.round(totalPresentDays * 100) / 100,
+        totalOvertimeHours: Math.round(totalOvertimeHours * 100) / 100,
     };
 };
 router.get('/', async (req, res) => {
     try {
         const userType = req.user.userType;
-        let businessId = req.user.userId;
-        if (userType === 'employee') {
-            businessId = req.user.businessId;
-        }
-        const { employee_id, status, pay_period_start, pay_period_end, page = 1, limit = 20 } = req.query;
+        const businessId = getBusinessIdFromRequest(req);
+        const { employee_id, status, pay_period_start, pay_period_end, time_range, year, month, page = 1, limit = 20 } = req.query;
         let query = `
       SELECT 
         p.*,
@@ -66,55 +97,88 @@ router.get('/', async (req, res) => {
         e.position
       FROM payroll p
       JOIN employees e ON p.employee_id = e.id
-      WHERE p.business_id = $2
+      WHERE e.business_id = $1
     `;
         const params = [businessId];
         if (userType === 'employee') {
-            query += ' AND p.employee_id = ?';
+            query += ` AND p.employee_id = $${params.length + 1}`;
             params.push(req.user?.userId);
         }
         else if (employee_id) {
-            query += ' AND p.employee_id = ?';
+            query += ` AND p.employee_id = $${params.length + 1}`;
             params.push(employee_id);
         }
         if (status && status !== 'all') {
-            query += ' AND p.status = ?';
+            query += ` AND p.status = $${params.length + 1}`;
             params.push(status);
         }
         if (pay_period_start && pay_period_end) {
-            query += ' AND p.pay_period_start >= ? AND p.pay_period_end <= ?';
+            query += ` AND p.pay_period_start >= $${params.length + 1} AND p.pay_period_end <= $${params.length + 2}`;
             params.push(pay_period_start, pay_period_end);
         }
+        let dateFilter = '';
+        if (pay_period_start && pay_period_end) {
+            dateFilter = ` AND p.pay_period_start >= '${pay_period_start}' AND p.pay_period_end <= '${pay_period_end}'`;
+        }
+        else if (month && year) {
+            dateFilter = ` AND to_char(p.pay_period_end, 'YYYY-MM') = '${year}-${String(month).padStart(2, '0')}'`;
+        }
+        else if (time_range) {
+            switch (time_range) {
+                case '3months':
+                    dateFilter = ` AND p.pay_period_end >= NOW() - INTERVAL '3 months'`;
+                    break;
+                case '6months':
+                    dateFilter = ` AND p.pay_period_end >= NOW() - INTERVAL '6 months'`;
+                    break;
+                case '12months':
+                    dateFilter = ` AND p.pay_period_end >= NOW() - INTERVAL '12 months'`;
+                    break;
+                case '24months':
+                    dateFilter = ` AND p.pay_period_end >= NOW() - INTERVAL '24 months'`;
+                    break;
+                case 'current_year':
+                    dateFilter = ` AND to_char(p.pay_period_end, 'YYYY') = to_char(NOW(), 'YYYY')`;
+                    break;
+                case 'last_year':
+                    dateFilter = ` AND to_char(p.pay_period_end, 'YYYY') = to_char(NOW() - INTERVAL '1 year', 'YYYY')`;
+                    break;
+                case 'all_time':
+                    dateFilter = '';
+                    break;
+            }
+        }
+        query += dateFilter;
         query += ' ORDER BY p.pay_period_end DESC, p.created_at DESC';
         const offset = (parseInt(page) - 1) * parseInt(limit);
-        query += ` LIMIT ? OFFSET ?`;
+        query += ` LIMIT $${params.length + 1} OFFSET $${params.length + 2}`;
         params.push(parseInt(limit), offset);
         const payrollRecords = await (0, database_1.dbAll)(query, params);
         let countQuery = `
       SELECT COUNT(*) as total
       FROM payroll p
       JOIN employees e ON p.employee_id = e.id
-      WHERE p.business_id = $1
+      WHERE e.business_id = $1
     `;
         const countParams = [businessId];
         if (userType === 'employee') {
-            const employee = await (0, database_1.dbGet)('SELECT id FROM employees WHERE user_id = $1', [req.user?.userId]);
-            if (employee) {
-                countQuery += ' AND p.employee_id = ?';
-                countParams.push(employee.id);
-            }
+            countQuery += ` AND p.employee_id = $${countParams.length + 1}`;
+            countParams.push(req.user.userId);
         }
         else if (employee_id) {
-            countQuery += ' AND p.employee_id = ?';
+            countQuery += ` AND p.employee_id = $${countParams.length + 1}`;
             countParams.push(employee_id);
         }
         if (status && status !== 'all') {
-            countQuery += ' AND p.status = ?';
+            countQuery += ` AND p.status = $${countParams.length + 1}`;
             countParams.push(status);
         }
         if (pay_period_start && pay_period_end) {
-            countQuery += ' AND p.pay_period_start >= ? AND p.pay_period_end <= ?';
+            countQuery += ` AND p.pay_period_start >= $${countParams.length + 1} AND p.pay_period_end <= $${countParams.length + 2}`;
             countParams.push(pay_period_start, pay_period_end);
+        }
+        if (dateFilter) {
+            countQuery += dateFilter;
         }
         const { total } = await (0, database_1.dbGet)(countQuery, countParams);
         res.json({
@@ -132,10 +196,147 @@ router.get('/', async (req, res) => {
         res.status(500).json({ error: 'Failed to fetch payroll records' });
     }
 });
+router.get('/ledger', async (req, res) => {
+    try {
+        const businessId = getBusinessIdFromRequest(req);
+        const { employee_id, month } = req.query;
+        if (!employee_id || !month || !/^\d{4}-\d{2}$/.test(String(month))) {
+            return res.status(400).json({ error: 'employee_id and month (YYYY-MM) are required' });
+        }
+        const requestedEmployeeId = Number(employee_id);
+        if (!Number.isFinite(requestedEmployeeId) || requestedEmployeeId <= 0) {
+            return res.status(400).json({ error: 'Invalid employee_id' });
+        }
+        if (isEmployeeUser(req) && requestedEmployeeId !== req.user.userId) {
+            return res.status(403).json({ error: 'Employees can only view their own ledger' });
+        }
+        const employee = await (0, database_1.dbGet)(`SELECT id, first_name, last_name, employee_code, department, salary_type, base_salary, daily_wage, hourly_rate
+       FROM employees
+       WHERE id = $1 AND business_id = $2`, [requestedEmployeeId, businessId]);
+        if (!employee) {
+            return res.status(404).json({ error: 'Employee not found' });
+        }
+        const [yearStr, monthStr] = String(month).split('-');
+        const year = Number(yearStr);
+        const monthNum = Number(monthStr);
+        const daysInMonth = new Date(year, monthNum, 0).getDate();
+        const periodStart = `${year}-${String(monthNum).padStart(2, '0')}-01`;
+        const periodEnd = `${year}-${String(monthNum).padStart(2, '0')}-${String(daysInMonth).padStart(2, '0')}`;
+        const attendanceRecords = await (0, database_1.dbAll)(`SELECT
+          date,
+          status,
+          check_in_time AS clock_in_time,
+          check_out_time AS clock_out_time,
+          total_hours,
+          overtime_hours
+       FROM attendance
+       WHERE employee_id = $1 AND date BETWEEN $2 AND $3
+       ORDER BY date ASC`, [requestedEmployeeId, periodStart, periodEnd]);
+        const attendanceByDate = new Map();
+        const statusPriority = {
+            present: 5,
+            late: 4,
+            half_day: 3,
+            holiday: 2,
+            absent: 1,
+        };
+        for (const record of attendanceRecords) {
+            const dateKey = normalizeDateKey(record.date);
+            if (!dateKey)
+                continue;
+            const existing = attendanceByDate.get(dateKey);
+            if (!existing) {
+                attendanceByDate.set(dateKey, record);
+                continue;
+            }
+            const existingPriority = statusPriority[String(existing.status)] ?? 0;
+            const currentPriority = statusPriority[String(record.status)] ?? 0;
+            if (currentPriority >= existingPriority) {
+                attendanceByDate.set(dateKey, record);
+            }
+        }
+        const dailyRateMonthly = (employee.base_salary || 0) / daysInMonth;
+        const dailyRate = employee.daily_wage || employee.base_salary || 0;
+        const hourlyRate = employee.hourly_rate || (employee.base_salary || 0) / 160;
+        const entries = [];
+        for (let day = 1; day <= daysInMonth; day++) {
+            const dateKey = `${year}-${String(monthNum).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+            const record = attendanceByDate.get(dateKey);
+            const isSunday = new Date(year, monthNum - 1, day).getDay() === 0;
+            const status = (record?.status || (isSunday ? 'holiday' : 'absent'));
+            const totalHours = Number(record?.total_hours || 0);
+            const overtimeHours = Number(record?.overtime_hours || 0);
+            let amount = 0;
+            if (employee.salary_type === 'monthly') {
+                if (status === 'present' || status === 'late' || status === 'holiday')
+                    amount += dailyRateMonthly;
+                else if (status === 'half_day')
+                    amount += dailyRateMonthly / 2;
+                amount += hourlyRate * 1.5 * overtimeHours;
+            }
+            else if (employee.salary_type === 'daily') {
+                if (status === 'present' || status === 'late' || status === 'holiday')
+                    amount += dailyRate;
+                else if (status === 'half_day')
+                    amount += dailyRate / 2;
+                const dailyHourlyRate = employee.hourly_rate || dailyRate / 8;
+                amount += dailyHourlyRate * 1.5 * overtimeHours;
+            }
+            else {
+                const holidayDefaultHours = status === 'holiday' && totalHours === 0 ? 8 : 0;
+                const standardHours = Math.max(0, (totalHours || holidayDefaultHours) - overtimeHours);
+                amount += standardHours * hourlyRate;
+                amount += overtimeHours * hourlyRate * 1.5;
+            }
+            entries.push({
+                date: dateKey,
+                attendance: status,
+                clock_in_time: record?.clock_in_time || null,
+                clock_out_time: record?.clock_out_time || null,
+                amount: round2(amount),
+                total_hours: round2(totalHours),
+                overtime_hours: round2(overtimeHours),
+            });
+        }
+        const totalAmount = round2(entries.reduce((sum, entry) => sum + entry.amount, 0));
+        const summary = entries.reduce((acc, entry) => {
+            const status = String(entry.attendance || '');
+            if (status === 'present')
+                acc.present += 1;
+            else if (status === 'late')
+                acc.late += 1;
+            else if (status === 'absent')
+                acc.absent += 1;
+            else if (status === 'holiday')
+                acc.holiday += 1;
+            else if (status === 'half_day')
+                acc.half_day += 1;
+            return acc;
+        }, { present: 0, late: 0, absent: 0, holiday: 0, half_day: 0, month_days: daysInMonth });
+        res.json({
+            employee: {
+                id: employee.id,
+                name: `${employee.first_name} ${employee.last_name}`,
+                employee_code: employee.employee_code,
+                department: employee.department,
+            },
+            month: String(month),
+            period_start: periodStart,
+            period_end: periodEnd,
+            total_amount: totalAmount,
+            summary,
+            entries,
+        });
+    }
+    catch (error) {
+        console.error('Error fetching payroll ledger:', error);
+        res.status(500).json({ error: 'Failed to fetch payroll ledger' });
+    }
+});
 router.get('/:id', async (req, res) => {
     try {
         const { id } = req.params;
-        const businessId = req.user.userId;
+        const businessId = getBusinessIdFromRequest(req);
         const userType = req.user.userType;
         let query = `
       SELECT 
@@ -149,15 +350,12 @@ router.get('/:id', async (req, res) => {
         e.base_salary
       FROM payroll p
       JOIN employees e ON p.employee_id = e.id
-      WHERE p.id = $3 AND p.business_id = $4
+      WHERE p.id = $1 AND e.business_id = $2
     `;
         const params = [id, businessId];
         if (userType === 'employee') {
-            const employee = await (0, database_1.dbGet)('SELECT id FROM employees WHERE user_id = $1', [req.user?.userId]);
-            if (employee) {
-                query += ' AND p.employee_id = ?';
-                params.push(employee.id);
-            }
+            query += ` AND p.employee_id = $${params.length + 1}`;
+            params.push(req.user.userId);
         }
         const payroll = await (0, database_1.dbGet)(query, params);
         if (!payroll) {
@@ -172,8 +370,11 @@ router.get('/:id', async (req, res) => {
 });
 router.post('/', async (req, res) => {
     try {
-        const businessId = req.user?.userId;
-        const { employee_id, pay_period_start, pay_period_end, bonus = 0, allowances = 0, tax_deduction = 0, insurance_deduction = 0, other_deductions = 0, payment_method, notes, auto_calculate = true } = req.body;
+        if (isEmployeeUser(req)) {
+            return res.status(403).json({ error: 'Employees are not allowed to create payroll records' });
+        }
+        const businessId = getBusinessIdFromRequest(req);
+        const { employee_id, pay_period_start, pay_period_end, bonuses = 0, reimbursements = 0, tax_deduction = 0, insurance_deduction = 0, other_deductions = 0, pay_method, notes, auto_calculate = true, } = req.body;
         if (!employee_id || !pay_period_start || !pay_period_end) {
             return res.status(400).json({
                 error: 'Employee ID, pay period start, and pay period end are required'
@@ -187,43 +388,22 @@ router.post('/', async (req, res) => {
         if (existingPayroll) {
             return res.status(400).json({ error: 'Payroll already exists for this period' });
         }
-        let basicSalary = 0;
-        let overtimeAmount = 0;
-        let totalWorkingDays = 0;
-        let totalPresentDays = 0;
-        let totalOvertimeHours = 0;
-        if (auto_calculate) {
-            const calculated = await calculatePayroll(employee_id, pay_period_start, pay_period_end);
-            basicSalary = calculated.basicSalary;
-            overtimeAmount = calculated.overtimeAmount;
-            totalWorkingDays = calculated.totalWorkingDays;
-            totalPresentDays = calculated.totalPresentDays;
-            totalOvertimeHours = calculated.totalOvertimeHours;
-        }
-        else {
-            basicSalary = req.body.basic_salary || 0;
-            overtimeAmount = req.body.overtime_amount || 0;
-            totalWorkingDays = req.body.total_working_days || 0;
-            totalPresentDays = req.body.total_present_days || 0;
-            totalOvertimeHours = req.body.total_overtime_hours || 0;
-        }
-        const grossSalary = basicSalary + overtimeAmount + bonus + allowances;
+        const { basic_salary: basicSalary = 0, overtime_amount: overtimeAmount = 0, total_working_days: totalWorkingDays = 0, total_present_days: totalPresentDays = 0, total_overtime_hours: totalOvertimeHours = 0, } = req.body;
+        const grossSalary = basicSalary + overtimeAmount + bonuses + reimbursements;
         const totalDeductions = tax_deduction + insurance_deduction + other_deductions;
         const netSalary = grossSalary - totalDeductions;
         const result = await (0, database_1.dbRun)(`
       INSERT INTO payroll (
-        employee_id, business_id, pay_period_start, pay_period_end,
-        basic_salary, overtime_amount, bonus, allowances,
-        tax_deduction, insurance_deduction, other_deductions,
+        employee_id, pay_period_start, pay_period_end,
+        gross_salary, deductions, net_salary,
         total_working_days, total_present_days, total_overtime_hours,
-        payment_method, notes
-      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16) RETURNING id
+        bonuses, reimbursements, pay_method, notes, status, business_id
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, 'draft', $14) RETURNING id
     `, [
-            employee_id, businessId, pay_period_start, pay_period_end,
-            basicSalary, overtimeAmount, bonus, allowances,
-            tax_deduction, insurance_deduction, other_deductions,
+            employee_id, pay_period_start, pay_period_end,
+            grossSalary, totalDeductions, netSalary,
             totalWorkingDays, totalPresentDays, totalOvertimeHours,
-            payment_method, notes
+            bonuses, reimbursements, pay_method, notes, businessId
         ]);
         const newPayroll = await (0, database_1.dbGet)(`
       SELECT 
@@ -234,7 +414,7 @@ router.post('/', async (req, res) => {
         e.department
       FROM payroll p
       JOIN employees e ON p.employee_id = e.id
-      WHERE p.id = $17
+      WHERE p.id = $1
     `, [result.lastID]);
         res.status(201).json(newPayroll);
     }
@@ -245,10 +425,13 @@ router.post('/', async (req, res) => {
 });
 router.put('/:id', async (req, res) => {
     try {
+        if (isEmployeeUser(req)) {
+            return res.status(403).json({ error: 'Employees are not allowed to update payroll records' });
+        }
         const { id } = req.params;
-        const businessId = req.user?.userId;
-        const { basic_salary, overtime_amount, bonus, allowances, tax_deduction, insurance_deduction, other_deductions, total_working_days, total_present_days, total_overtime_hours, payment_method, notes } = req.body;
-        const existingPayroll = await (0, database_1.dbGet)('SELECT * FROM payroll WHERE id = $1 AND business_id = $2', [id, businessId]);
+        const businessId = getBusinessIdFromRequest(req);
+        const { basic_salary, overtime_amount, bonuses, reimbursements, tax_deduction, insurance_deduction, other_deductions, pay_method, notes, } = req.body;
+        const existingPayroll = await (0, database_1.dbGet)('SELECT p.* FROM payroll p JOIN employees e ON p.employee_id = e.id WHERE p.id = $1 AND e.business_id = $2', [id, businessId]);
         if (!existingPayroll) {
             return res.status(404).json({ error: 'Payroll record not found' });
         }
@@ -257,32 +440,34 @@ router.put('/:id', async (req, res) => {
         }
         const finalBasicSalary = basic_salary ?? existingPayroll.basic_salary;
         const finalOvertimeAmount = overtime_amount ?? existingPayroll.overtime_amount;
-        const finalBonus = bonus ?? existingPayroll.bonus;
-        const finalAllowances = allowances ?? existingPayroll.allowances;
+        const finalBonuses = bonuses ?? existingPayroll.bonuses;
+        const finalReimbursements = reimbursements ?? existingPayroll.reimbursements;
         const finalTaxDeduction = tax_deduction ?? existingPayroll.tax_deduction;
         const finalInsuranceDeduction = insurance_deduction ?? existingPayroll.insurance_deduction;
         const finalOtherDeductions = other_deductions ?? existingPayroll.other_deductions;
-        const grossSalary = finalBasicSalary + finalOvertimeAmount + finalBonus + finalAllowances;
+        const grossSalary = finalBasicSalary + finalOvertimeAmount + finalBonuses + finalReimbursements;
         const totalDeductions = finalTaxDeduction + finalInsuranceDeduction + finalOtherDeductions;
         const netSalary = grossSalary - totalDeductions;
         await (0, database_1.dbRun)(`
       UPDATE payroll SET
-        basic_salary = $1, overtime_amount = $2, bonus = $3, allowances = $4,
-        gross_salary = $5, tax_deduction = $6, insurance_deduction = $7,
-        other_deductions = $8, total_deductions = $9, net_salary = $10,
-        total_working_days = $11, total_present_days = $12, total_overtime_hours = $13,
-        payment_method = $14, notes = $15, updated_at = NOW()
-      WHERE id = $16 AND business_id = $17
+        gross_salary = $1,
+        deductions = $2,
+        net_salary = $3,
+        bonuses = $4,
+        reimbursements = $5,
+        pay_method = $6,
+        notes = $7,
+        updated_at = NOW()
+      WHERE id = $8
     `, [
-            finalBasicSalary, finalOvertimeAmount, finalBonus, finalAllowances,
-            grossSalary, finalTaxDeduction, finalInsuranceDeduction,
-            finalOtherDeductions, totalDeductions, netSalary,
-            total_working_days ?? existingPayroll.total_working_days,
-            total_present_days ?? existingPayroll.total_present_days,
-            total_overtime_hours ?? existingPayroll.total_overtime_hours,
-            payment_method ?? existingPayroll.payment_method,
+            grossSalary,
+            totalDeductions,
+            netSalary,
+            finalBonuses,
+            finalReimbursements,
+            pay_method ?? existingPayroll.pay_method,
             notes ?? existingPayroll.notes,
-            id, businessId
+            id,
         ]);
         const updatedPayroll = await (0, database_1.dbGet)(`
       SELECT 
@@ -304,22 +489,25 @@ router.put('/:id', async (req, res) => {
 });
 router.put('/:id/status', async (req, res) => {
     try {
+        if (isEmployeeUser(req)) {
+            return res.status(403).json({ error: 'Employees are not allowed to change payroll status' });
+        }
         const { id } = req.params;
-        const businessId = req.user?.userId;
+        const businessId = getBusinessIdFromRequest(req);
         const { status, payment_date } = req.body;
         if (!['draft', 'approved', 'paid'].includes(status)) {
             return res.status(400).json({ error: 'Invalid status. Must be draft, approved, or paid' });
         }
-        const payroll = await (0, database_1.dbGet)('SELECT * FROM payroll WHERE id = $1 AND business_id = $2', [id, businessId]);
+        const payroll = await (0, database_1.dbGet)('SELECT p.* FROM payroll p JOIN employees e ON p.employee_id = e.id WHERE p.id = $1 AND e.business_id = $2', [id, businessId]);
         if (!payroll) {
             return res.status(404).json({ error: 'Payroll record not found' });
         }
         const updatePaymentDate = status === 'paid' ? (payment_date || new Date().toISOString().split('T')[0]) : null;
         await (0, database_1.dbRun)(`
       UPDATE payroll SET
-        status = $1, payment_date = $2, updated_at = NOW()
-      WHERE id = $3 AND business_id = $4
-    `, [status, updatePaymentDate, id, businessId]);
+        status = $1, updated_at = NOW()
+      WHERE id = $2
+    `, [status, id]);
         const updatedPayroll = await (0, database_1.dbGet)(`
       SELECT 
         p.*,
@@ -328,7 +516,7 @@ router.put('/:id/status', async (req, res) => {
         e.employee_code
       FROM payroll p
       JOIN employees e ON p.employee_id = e.id
-      WHERE p.id = $5
+      WHERE p.id = $1
     `, [id]);
         res.json(updatedPayroll);
     }
@@ -339,16 +527,19 @@ router.put('/:id/status', async (req, res) => {
 });
 router.delete('/:id', async (req, res) => {
     try {
+        if (isEmployeeUser(req)) {
+            return res.status(403).json({ error: 'Employees are not allowed to delete payroll records' });
+        }
         const { id } = req.params;
-        const businessId = req.user?.userId;
-        const payroll = await (0, database_1.dbGet)('SELECT status FROM payroll WHERE id = $1 AND business_id = $2', [id, businessId]);
+        const businessId = getBusinessIdFromRequest(req);
+        const payroll = await (0, database_1.dbGet)('SELECT p.status FROM payroll p JOIN employees e ON p.employee_id = e.id WHERE p.id = $1 AND e.business_id = $2', [id, businessId]);
         if (!payroll) {
             return res.status(404).json({ error: 'Payroll record not found' });
         }
         if (payroll.status === 'paid') {
             return res.status(400).json({ error: 'Cannot delete payroll that has already been paid' });
         }
-        await (0, database_1.dbRun)('DELETE FROM payroll WHERE id = $1 AND business_id = $2', [id, businessId]);
+        await (0, database_1.dbRun)('DELETE FROM payroll WHERE id = $1', [id]);
         res.json({ message: 'Payroll record deleted successfully' });
     }
     catch (error) {
@@ -358,7 +549,10 @@ router.delete('/:id', async (req, res) => {
 });
 router.post('/bulk-create', async (req, res) => {
     try {
-        const businessId = req.user?.userId;
+        if (isEmployeeUser(req)) {
+            return res.status(403).json({ error: 'Employees are not allowed to bulk create payroll records' });
+        }
+        const businessId = getBusinessIdFromRequest(req);
         const { pay_period_start, pay_period_end, employee_ids, auto_calculate = true } = req.body;
         if (!pay_period_start || !pay_period_end || !employee_ids || !Array.isArray(employee_ids)) {
             return res.status(400).json({
@@ -393,17 +587,20 @@ router.post('/bulk-create', async (req, res) => {
                     totalOvertimeHours = calculated.totalOvertimeHours;
                 }
                 const grossSalary = basicSalary + overtimeAmount;
-                const netSalary = grossSalary;
+                const totalDeductions = 0;
+                const netSalary = grossSalary - totalDeductions;
                 const result = await (0, database_1.dbRun)(`
           INSERT INTO payroll (
-            employee_id, business_id, pay_period_start, pay_period_end,
-            basic_salary, overtime_amount,
-            total_working_days, total_present_days, total_overtime_hours
-          ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) RETURNING id
+            employee_id, pay_period_start, pay_period_end,
+            gross_salary, deductions, net_salary,
+            total_working_days, total_present_days, total_overtime_hours,
+            status, business_id
+          ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, 'draft', $10) RETURNING id
         `, [
-                    employeeId, businessId, pay_period_start, pay_period_end,
-                    basicSalary, overtimeAmount,
-                    totalWorkingDays, totalPresentDays, totalOvertimeHours
+                    employeeId, pay_period_start, pay_period_end,
+                    grossSalary, totalDeductions, netSalary,
+                    totalWorkingDays, totalPresentDays, totalOvertimeHours,
+                    businessId
                 ]);
                 results.push({
                     employeeId,
@@ -429,26 +626,53 @@ router.post('/bulk-create', async (req, res) => {
         res.status(500).json({ error: 'Failed to create bulk payroll' });
     }
 });
+router.post('/calculate', async (req, res) => {
+    try {
+        const businessId = getBusinessIdFromRequest(req);
+        const { employee_id, pay_period_start, pay_period_end } = req.body;
+        if (!employee_id || !pay_period_start || !pay_period_end) {
+            return res.status(400).json({ error: 'Employee ID, pay period start, and pay period end are required' });
+        }
+        if (isEmployeeUser(req) && Number(employee_id) !== req.user.userId) {
+            return res.status(403).json({ error: 'Employees can only calculate payroll for themselves' });
+        }
+        const employee = await (0, database_1.dbGet)('SELECT id FROM employees WHERE id = $1 AND business_id = $2', [employee_id, businessId]);
+        if (!employee) {
+            return res.status(404).json({ error: 'Employee not found' });
+        }
+        const calculated = await calculatePayroll(employee_id, pay_period_start, pay_period_end);
+        res.json(calculated);
+    }
+    catch (error) {
+        console.error('Error calculating payroll:', error);
+        res.status(500).json({ error: 'Failed to calculate payroll' });
+    }
+});
 router.get('/stats/summary', async (req, res) => {
     try {
-        const businessId = req.user.userId;
+        const businessId = getBusinessIdFromRequest(req);
         const { pay_period_start, pay_period_end } = req.query;
         let query = `
       SELECT 
         COUNT(*) as total_payrolls,
-        COUNT(CASE WHEN status = 'draft' THEN 1 END) as draft_payrolls,
-        COUNT(CASE WHEN status = 'approved' THEN 1 END) as approved_payrolls,
-        COUNT(CASE WHEN status = 'paid' THEN 1 END) as paid_payrolls,
-        ROUND(SUM(gross_salary), 2) as total_gross_salary,
-        ROUND(SUM(net_salary), 2) as total_net_salary,
-        ROUND(SUM(total_deductions), 2) as total_deductions,
-        ROUND(AVG(net_salary), 2) as avg_net_salary
-      FROM payroll
-      WHERE business_id = $1
+        COUNT(CASE WHEN p.status = 'draft' THEN 1 END) as draft_payrolls,
+        COUNT(CASE WHEN p.status = 'approved' THEN 1 END) as approved_payrolls,
+        COUNT(CASE WHEN p.status = 'paid' THEN 1 END) as paid_payrolls,
+        COALESCE(ROUND(CAST(SUM(gross_salary) AS numeric), 2), 0) as total_gross_salary,
+        COALESCE(ROUND(CAST(SUM(net_salary) AS numeric), 2), 0) as total_net_salary,
+        COALESCE(ROUND(CAST(SUM(deductions) AS numeric), 2), 0) as total_deductions,
+        COALESCE(ROUND(CAST(AVG(net_salary) AS numeric), 2), 0) as avg_net_salary
+      FROM payroll p
+      JOIN employees e ON p.employee_id = e.id
+      WHERE e.business_id = $1
     `;
         const params = [businessId];
+        if (isEmployeeUser(req)) {
+            query += ` AND p.employee_id = $${params.length + 1}`;
+            params.push(req.user.userId);
+        }
         if (pay_period_start && pay_period_end) {
-            query += ' AND pay_period_start >= ? AND pay_period_end <= ?';
+            query += ` AND p.pay_period_start >= $${params.length + 1} AND p.pay_period_end <= $${params.length + 2}`;
             params.push(pay_period_start, pay_period_end);
         }
         const summary = await (0, database_1.dbGet)(query, params);
